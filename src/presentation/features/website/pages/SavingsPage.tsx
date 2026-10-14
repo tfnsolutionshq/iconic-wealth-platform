@@ -10,8 +10,8 @@ const EXPLAINERS = [
       <>
         Each payment is at least <b className="text-ink">₦10,000</b>, with no
         maximum. Save as much as you can each month, in as many payments as you
-        like. Set a monthly target to keep yourself on track; it’s a goal, not
-        a rule.
+        like. Set a monthly target to keep yourself on track; it’s a goal, not a
+        rule.
       </>
     ),
   },
@@ -40,9 +40,9 @@ const EXPLAINERS = [
     title: "Withdrawals",
     body: (
       <>
-        Savings are held until year-end and paid out on payout day, on or
-        before <b className="text-ink">14 December</b>. Withdrawals are not
-        available before then.
+        Savings are held until year-end and paid out on payout day, on or before{" "}
+        <b className="text-ink">14 December</b>. Withdrawals are not available
+        before then.
       </>
     ),
   },
@@ -54,7 +54,7 @@ export function SavingsPage() {
     <>
       {/* Hero */}
       <section className="bg-soft px-5 pt-16 pb-10 lg:px-16">
-        <div className="mx-auto max-w-[1440px]">
+        <div className="mx-auto max-w-360">
           <h1 className="max-w-[18ch] font-display text-5xl leading-[1.04] tracking-tight lg:text-[60px]">
             Savings
           </h1>
@@ -65,7 +65,7 @@ export function SavingsPage() {
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 lg:grid-cols-2 lg:gap-16 lg:px-16">
+      <section className="mx-auto grid max-w-360 gap-10 px-5 py-14 lg:grid-cols-2 lg:gap-16 lg:px-16">
         {/* Explainers */}
         <div className="flex flex-col gap-6">
           {EXPLAINERS.map((s) => (
@@ -123,7 +123,7 @@ export function SavingsPage() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-2.5 rounded-card bg-soft p-[22px]">
+          <div className="flex flex-col gap-2.5 rounded-card bg-soft p-5.5">
             <h3 className="text-[19px] font-extrabold">Annual interest</h3>
             <p className="leading-relaxed text-mute">
               Interest is decided each year by Iconic Wealth Hub. Members see

@@ -26,11 +26,7 @@ const NEXT_STEPS = [
     "Join the WhatsApp community",
     "Unlocks once your first payment is confirmed.",
   ],
-  [
-    Bell,
-    "Get monthly reminders",
-    "Before each deadline on the 5th.",
-  ],
+  [Bell, "Get monthly reminders", "Before each deadline on the 5th."],
 ] as const;
 
 export function MembershipPage() {
@@ -38,7 +34,7 @@ export function MembershipPage() {
     <>
       {/* Hero */}
       <section className="bg-soft px-5 pt-16 pb-10 lg:px-16">
-        <div className="mx-auto max-w-[1440px]">
+        <div className="mx-auto max-w-360">
           <h1 className="max-w-[18ch] font-display text-5xl leading-[1.04] tracking-tight lg:text-[60px]">
             Membership
           </h1>
@@ -49,7 +45,7 @@ export function MembershipPage() {
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-[1440px] items-start gap-10 px-5 py-14 lg:grid-cols-2 lg:gap-16 lg:px-16">
+      <section className="mx-auto grid max-w-360 items-start gap-10 px-5 py-14 lg:grid-cols-2 lg:gap-16 lg:px-16">
         <div className="flex flex-col gap-4">
           <h2 className="text-[28px] font-extrabold tracking-tight">
             Who can join
@@ -88,7 +84,7 @@ export function MembershipPage() {
               key={title}
               className="flex items-center gap-3 border-b border-line py-3 last:border-0"
             >
-              <span className="flex size-[42px] shrink-0 items-center justify-center rounded-[14px] bg-brand-tint text-brand-dark">
+              <span className="flex size-10.5 shrink-0 items-center justify-center rounded-input bg-brand-tint text-brand-dark">
                 <Icon size={20} />
               </span>
               <span className="flex flex-1 flex-col">

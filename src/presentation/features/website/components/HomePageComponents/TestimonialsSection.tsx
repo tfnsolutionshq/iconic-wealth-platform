@@ -16,8 +16,8 @@ export function TestimonialsSection() {
   if (!items.length) return null;
   const scroll = items.length > 3;
   return (
-    <section className="mx-auto max-w-[1440px] px-5 py-11 lg:px-16">
-      <div className="mb-[18px] flex flex-col gap-2">
+    <section className="mx-auto max-w-360 px-5 py-11 lg:px-16">
+      <div className="mb-4.5 flex flex-col gap-2">
         <span className="w-max rounded-pill bg-brand-tint px-3 py-1 text-[11px] font-extrabold tracking-wider text-brand-dark uppercase">
           Testimonials
         </span>
@@ -43,7 +43,7 @@ function Card({ t, hidden }: { t: Testimonial; hidden?: boolean }) {
     <figure
       aria-hidden={hidden || undefined}
       tabIndex={hidden ? -1 : 0}
-      className="flex w-[280px] shrink-0 flex-col gap-3 rounded-[20px] border border-line bg-white p-[22px] transition duration-300 hover:-translate-y-1.5 hover:shadow-lift md:w-[360px] md:shrink md:[.grid_&]:w-auto"
+      className="flex w-70 shrink-0 flex-col gap-3 rounded-card border border-line bg-white p-5.5 transition duration-300 hover:-translate-y-1.5 hover:shadow-lift md:w-90 md:shrink md:in-[.grid_&]:w-auto"
     >
       <span className="font-display text-5xl leading-[.5] text-gold">“</span>
       <q className="font-display text-[17.5px] leading-snug">{t.quote}</q>
@@ -81,7 +81,7 @@ function Marquee({ items }: { items: Testimonial[] }) {
   return (
     <div
       aria-label="Member testimonials"
-      className="group overflow-hidden py-2.5 [mask-image:linear-gradient(90deg,transparent,#000_5%,#000_95%,transparent)]"
+      className="group overflow-hidden py-2.5 mask-[linear-gradient(90deg,transparent,#000_5%,#000_95%,transparent)]"
     >
       <div
         className="testimonial-track flex w-max gap-3.5 pr-3.5 group-hover:[animation-play-state:paused] group-focus-within:[animation-play-state:paused]"

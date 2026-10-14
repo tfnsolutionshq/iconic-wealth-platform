@@ -6,7 +6,7 @@ export function YearCard() {
   const months = "JFMAMJJASOND".split("");
   return (
     <div className="relative py-5 pl-10">
-      <div className="flex w-[470px] max-w-full flex-col gap-[18px] rounded-[28px] bg-night p-[26px] text-white">
+      <div className="flex w-117.5 max-w-full flex-col gap-4.5 rounded-sheet bg-night p-6.5 text-white">
         <div className="flex items-center justify-between">
           <span className="text-[13px] font-semibold text-white/65">
             Your 2026 savings
@@ -25,7 +25,7 @@ export function YearCard() {
               className="flex flex-col items-center gap-1 text-[10.5px] font-bold text-white/60"
             >
               <i
-                className={`flex h-[30px] w-full items-center justify-center rounded-lg not-italic ${i < 8 ? "bg-[#9b6bf2]" : i === 8 ? "border-2 border-white" : "bg-white/10"}`}
+                className={`flex h-7.5 w-full items-center justify-center rounded-lg not-italic ${i < 8 ? "bg-[#9b6bf2]" : i === 8 ? "border-2 border-white" : "bg-white/10"}`}
               >
                 {i < 8 ? "✓" : ""}
               </i>
@@ -41,13 +41,13 @@ export function YearCard() {
             </span>
             <b>Due by Mon 5 Oct</b>
           </span>
-          <span className="rounded-pill bg-gold px-[18px] py-2.5 text-[15px] font-bold text-[#2a1a00]">
+          <span className="rounded-pill bg-gold px-4.5 py-2.5 text-[15px] font-bold text-[#2a1a00]">
             Contribute
           </span>
         </div>
       </div>
-      <div className="absolute -bottom-12 -left-2 flex w-[330px] items-center gap-3 rounded-card border border-line bg-white p-4 text-ink shadow-lift">
-        <span className="flex size-[42px] items-center justify-center rounded-[14px] bg-brand-tint text-brand-dark">
+      <div className="absolute -bottom-12 -left-2 flex w-82.5 items-center gap-3 rounded-card border border-line bg-white p-4 text-ink shadow-lift">
+        <span className="flex size-10.5 items-center justify-center rounded-input bg-brand-tint text-brand-dark">
           <Check size={20} />
         </span>
         <span className="flex flex-1 flex-col">
