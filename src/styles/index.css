@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+/* Design tokens from the approved build (Kora palette: violet + gold). Tailwind v4 CSS-first theme. */
+@theme {
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --color-night: #21104a;
+  --color-ink: #16131d;
+  --color-brand: #6c2bd9;
+  --color-brand-dark: #4b1a9e;
+  --color-brand-tint: #f1eafd;
+  --color-gold: #f2a93b;
+  --color-gold-tint: #fdf3e4;
+  --color-soft: #f6f4f9;
+  --color-line: #e7e3ec;
+  --color-mute: #686273;
+  --color-mute-2: #8a8494;
+  --color-ok: #0e7a5c;
+  --color-ok-tint: #e4f3ee;
+  --color-pending: #7a4a00;
+  --color-pending-tint: #fdf3e4;
+  --color-fail: #b42318;
+  --color-fail-tint: #fdecea;
+  --color-info: #1d5fd1;
+  --color-info-tint: #e8f0fd;
+
+  --radius-pill: 999px;
+  --radius-card: 20px;
+  --radius-sheet: 28px;
+  --radius-input: 14px;
+
+  --shadow-lift: 0 24px 44px -26px rgb(108 43 217 / 0.45);
+}
+
+@layer base {
+  html { -webkit-font-smoothing: antialiased; }
+  body { @apply bg-white font-sans text-ink; }
+  :focus-visible { outline: 3px solid #b794f6; outline-offset: 2px; }
+}
+
+/* testimonials strip (more than three published) */
+@keyframes testimonial-scroll { to { transform: translateX(-50%); } }
+.testimonial-track { animation: testimonial-scroll 40s linear infinite; }
+
+/* how-it-works year strip: payout month pulse (prototype paypulse) */
+@keyframes paypulse { from { box-shadow: 0 0 0 0 rgb(242 169 59 / 0.55); } to { box-shadow: 0 0 0 10px rgb(242 169 59 / 0); } }
+.paypulse { animation: paypulse 1s ease-in-out infinite alternate; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

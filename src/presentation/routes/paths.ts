@@ -1,0 +1,10 @@
+/** Route helpers so pages never hard-code URLs. */
+export const paths = {
+  home: '/', about: '/about', howItWorks: '/how-it-works', savings: '/savings', membership: '/membership', faqs: '/faqs', contact: '/contact', sitemap: '/sitemap',
+  login: '/login', pending: '/login/pending', register: '/register', registerDone: '/register/done',
+  member: { home: '/member', savings: '/member/savings', contribute: '/member/contribute', review: '/member/contribute/review', result: '/member/contribute/result',
+    activity: '/member/activity', receipt: (id: string) => `/member/activity/${id}`, notifications: '/member/notifications', profile: '/member/profile', support: '/member/support', payout: '/member/payout' },
+  admin: { home: '/admin', members: '/admin/members', member: (id: string) => `/admin/members/${id}`, registrations: '/admin/registrations', savings: '/admin/savings', transactions: '/admin/transactions',
+    interest: '/admin/interest', interestYear: (year: number | string) => `/admin/interest/${year}`,
+    payouts: '/admin/payouts', payoutBatch: (id: string) => `/admin/payouts/${id}`, reports: '/admin/reports', referrals: '/admin/referrals', audit: '/admin/audit-log', settings: '/admin/settings', content: '/admin/content' },
+} as const;
