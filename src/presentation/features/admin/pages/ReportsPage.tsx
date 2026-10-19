@@ -5,7 +5,7 @@ import { MONTHS } from "@/domain/rules";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
 import { useAuth } from "../../../contexts/AuthContext";
-import { Button, Card, DataTable, OpenDecisionTag } from "../../../design-system";
+import { Button, Card, DataTable, OpenDecisionTag, Select } from "../../../design-system";
 import { AdminPageHeader } from "../../../layouts/AdminLayout";
 import { downloadCsv } from "../../../utils/csv";
 import { cn } from "../../../design-system";
@@ -59,7 +59,7 @@ export function ReportsPage() {
         sub="Pick a report, filter it and export"
         actions={<Button size="md" icon={<Download size={18} />} onClick={exportCsv}>Export CSV</Button>}
       />
-      <div className="flex flex-col gap-5 px-8 py-6">
+      <div className="flex flex-col gap-5 px-4 py-5 sm:px-8 sm:py-6">
         <div className="grid gap-3 md:grid-cols-4">
           {KINDS.map((k) => (
             <button key={k.value} onClick={() => setKind(k.value)}
@@ -71,23 +71,12 @@ export function ReportsPage() {
           ))}
         </div>
         <div className="flex flex-wrap gap-2">
-          <select aria-label="Report year" className="h-10.5 rounded-xl border-[1.5px] border-line bg-white px-3 text-sm font-semibold outline-none focus:border-brand" value={year} onChange={(e) => setYear(e.target.value)}>
-            <option value="2026">2026</option>
-            <option value="2025">2025</option>
-            <option value="2024">2024</option>
-          </select>
+          <Select aria-label="Report year" value={year} onChange={(e) => setYear(e.target.value)} options={["2026", "2025", "2024"]} />
           {(kind === "compliance" || kind === "charges") && (
-            <select aria-label="Report month" className="h-10.5 rounded-xl border-[1.5px] border-line bg-white px-3 text-sm font-semibold outline-none focus:border-brand" value={month} onChange={(e) => setMonth(e.target.value)}>
-              {kind === "charges" && <option value="all">All months</option>}
-              {MONTHS.map((m, i) => <option key={m} value={i}>{m}</option>)}
-            </select>
+            <Select aria-label="Report month" value={month} onChange={(e) => setMonth(e.target.value)} options={[...(kind === "charges" ? [{ value: "all", label: "All months" }] : []), ...MONTHS.map((m, i) => ({ value: String(i), label: m }))]} />
           )}
           {(kind === "compliance" || kind === "eligibility") && (
-            <select aria-label="Filter by status" className="h-10.5 rounded-xl border-[1.5px] border-line bg-white px-3 text-sm font-semibold outline-none focus:border-brand" value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="All">All</option>
-              <option value="Eligible">Eligible</option>
-              <option value="Forfeited">Forfeited</option>
-            </select>
+            <Select aria-label="Filter by status" value={status} onChange={(e) => setStatus(e.target.value)} options={["All", "Eligible", "Forfeited"]} />
           )}
         </div>
         {result && (

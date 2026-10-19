@@ -33,7 +33,7 @@ export function RegistrationDonePage() {
         <span className="flex size-21 items-center justify-center rounded-sheet bg-pending-tint text-pending">
           <Clock size={40} />
         </span>
-        <h1 className="font-display text-5xl">Registration received</h1>
+        <h1 className="font-display text-4xl sm:text-5xl">Registration received</h1>
         <p className="max-w-[52ch] text-lg text-[#474252]">
           Thanks, {r.firstName}. An admin reviews every new member. We’ll email{" "}
           {r.email} when your account opens.
@@ -46,7 +46,7 @@ export function RegistrationDonePage() {
           />
           <KeyValue label="Referred by" value={r.referredBy ?? "—"} />
         </Card>
-        <div className="flex gap-2.5">
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:justify-center">
           <ButtonLink to={paths.login}>Go to log in</ButtonLink>
           <ButtonLink to={paths.home} variant="outline">
             Back to home
@@ -97,7 +97,7 @@ export function AwaitingApprovalPage() {
             <Pill tone={rejected ? "fail" : "pending"}>
               {rejected ? "Not approved" : "Awaiting approval"}
             </Pill>
-            <h1 className="font-display text-[44px] leading-tight">
+            <h1 className="font-display text-3xl leading-tight sm:text-[44px]">
               {rejected
                 ? "Your registration wasn’t approved"
                 : "Your account is awaiting approval"}

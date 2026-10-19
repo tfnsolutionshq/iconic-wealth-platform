@@ -6,7 +6,7 @@ import { formatNaira } from "@/domain/rules";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
 import { useAuth } from "../../../contexts/AuthContext";
-import { Banner, Button, Card, Checkbox, Chips, DataTable, Kpi, Modal, Pill, SelectField } from "../../../design-system";
+import { Banner, Button, Card, Checkbox, Chips, DataTable, Kpi, Modal, Pill, Select, SelectField } from "../../../design-system";
 import { AdminPageHeader } from "../../../layouts/AdminLayout";
 import { paths } from "../../../routes/paths";
 import { downloadCsv } from "../../../utils/csv";
@@ -105,7 +105,7 @@ export function PayoutBatchPage() {
         sub={`${b.month} ${b.year} disbursement · ${b.status}`}
         back={paths.admin.payouts}
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="md" icon={<Download size={18} />} onClick={exportCsv}>Export</Button>
             {b.status === "Awaiting approval" && canCheck && (
               <>
@@ -126,7 +126,7 @@ export function PayoutBatchPage() {
           </div>
         }
       />
-      <div className="flex flex-col gap-5 px-8 py-6">
+      <div className="flex flex-col gap-5 px-4 py-5 sm:px-8 sm:py-6">
         {b.status === "Awaiting approval" && !canCheck && (
           <Banner tone="neutral">Prepared by {b.maker}. {isMaker ? "You can’t approve your own work — waiting for a Super Admin." : "Switch to a Super Admin to approve."}</Banner>
         )}
@@ -160,16 +160,12 @@ export function PayoutBatchPage() {
                   { value: "Pending", label: `Pending ${count("Pending")}` },
                 ]}
               />
-              <div className="ml-auto flex gap-2">
-                <label className="flex h-10 w-56 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute focus-within:border-brand">
+              <div className="ml-auto flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                <label className="flex h-10 w-full sm:w-56 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute focus-within:border-brand">
                   <Search size={16} />
                   <input className="w-full bg-transparent text-sm font-semibold text-ink outline-none" placeholder="Search member" value={search} onChange={(e) => setSearch(e.target.value)} />
                 </label>
-                <select aria-label="Sort rows" className="h-10 rounded-xl border-[1.5px] border-line bg-white px-3 text-sm font-semibold outline-none focus:border-brand" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
-                  <option value="failed">Failed first</option>
-                  <option value="name">Name A–Z</option>
-                  <option value="amount">Largest amount</option>
-                </select>
+                <Select aria-label="Sort rows" value={sort} onChange={(e) => setSort(e.target.value as Sort)} options={[{ value: "failed", label: "Failed first" }, { value: "name", label: "Name A–Z" }, { value: "amount", label: "Largest amount" }]} />
               </div>
             </div>
             <DataTable<PayoutRow>

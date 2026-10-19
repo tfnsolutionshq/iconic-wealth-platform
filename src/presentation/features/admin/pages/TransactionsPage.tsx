@@ -5,7 +5,7 @@ import { MONTHS, formatNaira } from "@/domain/rules";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
 import { useAuth } from "../../../contexts/AuthContext";
-import { Banner, Button, Card, Chips, DataTable, Modal, Pill } from "../../../design-system";
+import { Banner, Button, Card, Chips, DataTable, Modal, Pill, Select } from "../../../design-system";
 import { AdminPageHeader } from "../../../layouts/AdminLayout";
 import { downloadCsv } from "../../../utils/csv";
 
@@ -94,7 +94,7 @@ export function AdminTransactionsPage() {
         sub="All contributions and payouts · click a row to preview the receipt"
         actions={<Button variant="outline" size="md" icon={<Download size={18} />} onClick={exportCsv}>Export</Button>}
       />
-      <div className="flex flex-col gap-4 px-8 py-6">
+      <div className="flex flex-col gap-4 px-4 py-5 sm:px-8 sm:py-6">
         <div className="flex flex-wrap items-center gap-2">
           <Chips<Tab>
             value={tab}
@@ -107,8 +107,8 @@ export function AdminTransactionsPage() {
               { value: "Late", label: `Late ${count("Late")}` },
             ]}
           />
-          <div className="ml-auto flex gap-2">
-            <label className="flex h-10.5 w-64 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute focus-within:border-brand">
+          <div className="ml-auto flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <label className="flex h-10.5 w-full sm:w-64 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute focus-within:border-brand">
               <Search size={18} />
               <input
                 className="w-full bg-transparent text-sm font-semibold text-ink outline-none"
@@ -117,17 +117,8 @@ export function AdminTransactionsPage() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </label>
-            <select aria-label="Transaction type" className="h-10.5 rounded-xl border-[1.5px] border-line bg-white px-3 text-sm font-semibold outline-none focus:border-brand" value={kind} onChange={(e) => setKind(e.target.value as Kind)}>
-              <option value="All">All types</option>
-              <option value="Contribution">Contributions</option>
-              <option value="Payout">Payouts</option>
-            </select>
-            <select aria-label="Filter by date" className="h-10.5 rounded-xl border-[1.5px] border-line bg-white px-3 text-sm font-semibold outline-none focus:border-brand" value={range} onChange={(e) => setRange(e.target.value as Range)}>
-              <option value="all">Any date</option>
-              <option value="today">Today</option>
-              <option value="7">Last 7 days</option>
-              <option value="30">Last 30 days</option>
-            </select>
+            <Select aria-label="Transaction type" value={kind} onChange={(e) => setKind(e.target.value as Kind)} options={[{ value: "All", label: "All types" }, { value: "Contribution", label: "Contributions" }, { value: "Payout", label: "Payouts" }]} />
+            <Select aria-label="Filter by date" value={range} onChange={(e) => setRange(e.target.value as Range)} options={[{ value: "all", label: "Any date" }, { value: "today", label: "Today" }, { value: "7", label: "Last 7 days" }, { value: "30", label: "Last 30 days" }]} />
           </div>
         </div>
         <DataTable<Transaction>
@@ -166,7 +157,7 @@ export function AdminTransactionsPage() {
       >
         {open && (
           <Card tone="soft" className="flex flex-col">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <b>{describe(open)}</b>
               <Pill tone={STATUS_TONE[open.status]}>{open.status}</Pill>
             </div>
@@ -174,9 +165,9 @@ export function AdminTransactionsPage() {
               ["Platform charge", formatNaira(open.platformChargeKobo)], ["Reference", open.reference],
               ["Paystack ref", open.gatewayReference ?? "—"], ["Date", fmtDateTime(open.createdAt)],
               ...(open.failureReason ? [["Reason", open.failureReason] as [string, string]] : [])].map(([k, v]) => (
-              <div key={k} className="flex justify-between gap-3 border-t border-line py-2 text-sm first:border-t-0">
-                <span className="font-semibold text-mute">{k}</span>
-                <span className="text-right font-bold">{v}</span>
+              <div key={k} className="flex flex-col gap-1 border-t border-line py-2 text-sm first:border-t-0 sm:flex-row sm:justify-between sm:gap-3">
+                <span className="shrink-0 font-semibold text-mute">{k}</span>
+                <span className="min-w-0 font-bold break-all sm:text-right">{v}</span>
               </div>
             ))}
           </Card>

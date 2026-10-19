@@ -66,15 +66,15 @@ export function AdminSavingsPage() {
         title="Savings"
         sub={`Monthly savings across members · ${year}`}
         actions={
-          <div className="flex items-center gap-2">
-            <div className="w-40">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="w-full sm:w-40">
               <SelectField aria-label="Savings year" options={["2026", "2025", "2024"]} value={year} onChange={(e) => setYear(e.target.value)} />
             </div>
             <Button variant="outline" size="md" icon={<Download size={18} />} onClick={exportCsv}>Export</Button>
           </div>
         }
       />
-      <div className="flex flex-col gap-5 px-8 py-6">
+      <div className="flex flex-col gap-5 px-4 py-5 sm:px-8 sm:py-6">
         <div className="grid gap-3.5 md:grid-cols-4">
           <Kpi label="Saved by sample members" value={formatNaira(saved)} note={`${rows.length} members`} />
           <Kpi label="Up to date" value={upToDate} note="Paid September" tone="good" />
@@ -88,7 +88,7 @@ export function AdminSavingsPage() {
             <ResponsiveContainer>
               <BarChart data={monthly}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e7e3ec" vertical={false} />
-                <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={12} />
+                <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={12} interval="preserveStartEnd" tickMargin={8} />
                 <YAxis tickLine={false} axisLine={false} fontSize={12} allowDecimals={false} />
                 <Tooltip />
                 <Bar dataKey="members" name="Members saving" radius={[6, 6, 0, 0]}>
@@ -112,7 +112,7 @@ export function AdminSavingsPage() {
               { value: "Missed", label: "Missed" },
             ]}
           />
-          <label className="ml-auto flex h-10.5 w-72 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute focus-within:border-brand">
+          <label className="flex h-10.5 w-full items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute focus-within:border-brand sm:ml-auto sm:w-72">
             <Search size={18} />
             <input
               className="w-full bg-transparent text-sm font-semibold text-ink outline-none"

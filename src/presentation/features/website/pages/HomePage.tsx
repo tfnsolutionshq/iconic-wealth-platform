@@ -76,7 +76,7 @@ export function HomePage() {
           <span className="w-max rounded-pill bg-gold-tint px-3 py-1 text-[13px] font-bold text-[#7a5410]">
             Members-only savings community
           </span>
-          <h1 className="max-w-[11ch] font-display text-5xl leading-[1.04] tracking-tight lg:text-[76px]">
+          <h1 className="max-w-[11ch] font-display text-4xl leading-[1.04] tracking-tight sm:text-5xl lg:text-[76px]">
             Save every month. Collect it all at year-end.
           </h1>
           <p className="max-w-[46ch] text-lg leading-relaxed text-[#474252]">
@@ -109,13 +109,13 @@ export function HomePage() {
       </section>
       <section className="bg-soft px-5 py-20 lg:px-16">
         <div className="mx-auto max-w-360">
-          <div className="mb-11 flex items-end justify-between gap-4">
+          <div className="mb-11 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <h2 className="max-w-[16ch] font-display text-4xl lg:text-5xl">
               How saving with Iconic Wealth Hub works
             </h2>
             <Link
               to={paths.howItWorks}
-              className="text-sm font-bold text-brand"
+              className="shrink-0 text-sm font-bold text-brand"
             >
               Full walkthrough
             </Link>
@@ -126,7 +126,7 @@ export function HomePage() {
       <section className="bg-night px-5 py-20 text-white lg:px-16">
         <div className="mx-auto flex max-w-360 flex-col gap-10 lg:flex-row">
           <div className="flex flex-col gap-4 lg:w-95">
-            <h2 className="font-display text-5xl">The rules, up front</h2>
+            <h2 className="font-display text-4xl sm:text-5xl">The rules, up front</h2>
             <p className="leading-relaxed text-white/70">
               These come from Iconic Wealth Hub’s operational guidelines. You’ll
               see them again before every payment.
@@ -177,10 +177,10 @@ export function HomePage() {
             <Link
               key={q}
               to={paths.faqs}
-              className="flex justify-between border-b border-line py-4.5 text-[17px] font-extrabold"
+              className="flex items-center justify-between gap-4 border-b border-line py-4.5 text-[17px] font-extrabold"
             >
-              {q}
-              <ChevronRight size={20} />
+              <span className="min-w-0">{q}</span>
+              <ChevronRight size={20} className="shrink-0" />
             </Link>
           ))}
         </div>

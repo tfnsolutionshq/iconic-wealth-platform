@@ -237,7 +237,7 @@ export function ProfilePage() {
             !curNokName.trim() ||
             saving
           }
-          className="self-start"
+          className="w-full sm:w-auto sm:self-start"
         >
           {saving ? "Saving…" : "Save changes"}
         </Button>
@@ -247,7 +247,7 @@ export function ProfilePage() {
         <h2 className="text-base font-extrabold">Payout account</h2>
         {member.payoutAccount ? (
           <>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <span className="flex size-10.5 items-center justify-center rounded-input bg-soft">
                 <Landmark size={20} />
               </span>

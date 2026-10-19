@@ -101,7 +101,7 @@ export function ContentPage() {
         sub="Website content managed by Iconic Wealth Hub"
         actions={<Button size="md" icon={<Plus size={18} />} onClick={addNew}>Add testimonial</Button>}
       />
-      <div className="flex flex-col gap-4 px-8 py-6">
+      <div className="flex flex-col gap-4 px-4 py-5 sm:px-8 sm:py-6">
         <h2 className="text-base font-extrabold">Testimonials</h2>
         <Banner tone="info">
           Published testimonials appear on the website home page in this order. Only publish with the member’s consent.
@@ -110,7 +110,7 @@ export function ContentPage() {
           <Card><EmptyState icon={<Plus size={24} />} title="No testimonials yet">Add the first one.</EmptyState></Card>
         ) : (
           list.map((t, i) => (
-            <Card key={t.id} className="flex items-start gap-4">
+            <Card key={t.id} className="flex flex-col gap-4 sm:flex-row sm:items-start">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#e4d7fb] text-sm font-extrabold text-[#3b1580]">{initials(t.name)}</span>
               <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                 <div className="flex flex-wrap items-center gap-2">
@@ -120,11 +120,11 @@ export function ContentPage() {
                 </div>
                 <q className="font-display text-[17px] leading-snug">“{t.quote}”</q>
               </div>
-              <div className="flex shrink-0 flex-col items-center gap-1">
+              <div className="flex shrink-0 flex-row items-center gap-1 sm:flex-col">
                 <button aria-label="Move up" disabled={i === 0} onClick={() => move(t, -1)} className="flex size-9 items-center justify-center rounded-full border-[1.5px] border-line disabled:opacity-40"><ChevronUp size={16} /></button>
                 <button aria-label="Move down" disabled={i === list.length - 1} onClick={() => move(t, 1)} className="flex size-9 items-center justify-center rounded-full border-[1.5px] border-line disabled:opacity-40"><ChevronDown size={16} /></button>
               </div>
-              <div className="flex shrink-0 items-center gap-3 text-sm font-bold">
+              <div className="flex shrink-0 flex-wrap items-center gap-3 text-sm font-bold">
                 <button className="text-brand" onClick={() => edit(t)}>Edit</button>
                 <button className="text-brand" onClick={() => flip(t)}>{t.status === "Published" ? "Unpublish" : "Publish"}</button>
                 <button className="text-fail" onClick={() => remove(t)}>Delete</button>

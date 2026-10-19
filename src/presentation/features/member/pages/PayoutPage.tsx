@@ -60,7 +60,7 @@ export function PayoutPage() {
       </div>
 
       <Card tone="night" className="flex flex-col gap-2.5 p-5.5">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-[13px] font-bold text-white/70">
             Saved so far in {year.year}
           </span>
@@ -68,7 +68,7 @@ export function PayoutPage() {
             Opens on payout day
           </Pill>
         </div>
-        <div className="text-4xl font-extrabold tabular-nums">
+        <div className="text-3xl font-extrabold break-words tabular-nums sm:text-4xl">
           {formatNaira(savedThisYear(year, txs))}
         </div>
         <span className="text-[13px] font-semibold leading-relaxed text-white/75">
@@ -97,7 +97,7 @@ export function PayoutPage() {
       </Card>
 
       <Card>
-        <div className="flex items-center justify-between gap-3 py-2.5 text-[15px]">
+        <div className="flex flex-wrap items-center justify-between gap-3 py-2.5 text-[15px]">
           <span className="font-semibold text-mute">Interest eligibility</span>
           {onTrack ? (
             <Pill tone="ok" icon={<Shield size={12} />}>

@@ -35,7 +35,7 @@ export function MembershipPage() {
       {/* Hero */}
       <section className="bg-soft px-5 pt-16 pb-10 lg:px-16">
         <div className="mx-auto max-w-360">
-          <h1 className="max-w-[18ch] font-display text-5xl leading-[1.04] tracking-tight lg:text-[60px]">
+          <h1 className="max-w-[18ch] font-display text-4xl leading-[1.04] tracking-tight sm:text-5xl lg:text-[60px]">
             Membership
           </h1>
           <p className="mt-4 max-w-[60ch] text-lg leading-relaxed text-[#474252]">
@@ -77,7 +77,7 @@ export function MembershipPage() {
           </span>
         </div>
 
-        <div className="flex flex-col gap-4 rounded-card border border-line bg-white p-7">
+        <div className="flex flex-col gap-4 rounded-card border border-line bg-white p-5 sm:p-7">
           <h2 className="text-[19px] font-extrabold">After you register</h2>
           {NEXT_STEPS.map(([Icon, title, body]) => (
             <div

@@ -87,7 +87,7 @@ export function AboutPage() {
             <span className="w-max rounded-pill bg-gold-tint px-3 py-1 text-[13px] font-bold text-[#7a5410]">
               About us
             </span>
-            <h1 className="max-w-[14ch] font-display text-5xl leading-[1.04] tracking-tight lg:text-[64px]">
+            <h1 className="max-w-[14ch] font-display text-4xl leading-[1.04] tracking-tight sm:text-5xl lg:text-[64px]">
               Where women build and multiply wealth
             </h1>
             <p className="max-w-[56ch] text-lg leading-relaxed text-[#474252]">
@@ -96,7 +96,7 @@ export function AboutPage() {
               first here, and there’s no room for slacking: we keep every member
               motivated and on track.
             </p>
-            <div className="mt-2 flex gap-8">
+            <div className="mt-2 flex flex-wrap gap-6 sm:gap-8">
               {STATS.map(([v, k]) => (
                 <span key={k} className="flex flex-col gap-0.5">
                   <b className="font-display text-[34px] leading-none text-brand-dark">
@@ -109,14 +109,14 @@ export function AboutPage() {
               ))}
             </div>
           </div>
-          <figure className="w-110 max-w-full shrink-0 rounded-sheet bg-linear-to-br from-night to-[#3b1580] p-10 text-white shadow-lift">
+          <figure className="w-110 max-w-full shrink-0 rounded-sheet bg-linear-to-br from-night to-[#3b1580] p-6 sm:p-10 text-white shadow-lift">
             <span
               aria-hidden
               className="font-display text-[80px] leading-[0.6] text-gold"
             >
               “
             </span>
-            <blockquote className="mt-1.5 mb-4.5 font-display text-[30px] leading-tight">
+            <blockquote className="mt-1.5 mb-4.5 font-display text-2xl leading-tight sm:text-[30px]">
               In 2027, we’re set to take charge of our finances and lay up gold
               as dust.
             </blockquote>
@@ -257,7 +257,7 @@ export function AboutPage() {
                 <span className="w-max rounded-pill bg-gold-tint px-3 py-1 text-[11px] font-extrabold tracking-wider text-pending uppercase">
                   {f.role}
                 </span>
-                <h3 className="font-display text-[30px]">{f.name}</h3>
+                <h3 className="font-display text-2xl sm:text-[30px]">{f.name}</h3>
                 {f.body.map((p) => (
                   <p
                     key={p.slice(0, 24)}

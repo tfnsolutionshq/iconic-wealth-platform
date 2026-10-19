@@ -47,10 +47,10 @@ export function InterestPage() {
         sub="One configuration per savings year. Closed years are read-only."
         actions={<Button size="md" onClick={newConfig}>New interest configuration</Button>}
       />
-      <div className="flex flex-col gap-5 px-8 py-6">
+      <div className="flex flex-col gap-5 px-4 py-5 sm:px-8 sm:py-6">
         <Card className="flex flex-col gap-3">
           <h2 className="text-base font-extrabold">How a configuration runs</h2>
-          <ol className="grid gap-2 md:grid-cols-4">
+          <ol className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-4">
             {INTEREST_STAGES.map((s, i) => (
               <li key={s} className="flex items-center gap-2.5 text-sm font-semibold">
                 <span className={`flex size-7 shrink-0 items-center justify-center rounded-full text-[13px] font-extrabold ${i < done ? "bg-brand text-white" : i === done ? "bg-gold text-[#2a1a00]" : "bg-soft text-mute"}`}>

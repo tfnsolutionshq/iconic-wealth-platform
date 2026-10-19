@@ -209,7 +209,7 @@ export function HowItWorksPage() {
       {/* Hero */}
       <section className="bg-soft px-5 pt-16 pb-10 lg:px-16">
         <div className="mx-auto max-w-360">
-          <h1 className="max-w-[18ch] font-display text-5xl leading-[1.04] tracking-tight lg:text-[60px]">
+          <h1 className="max-w-[18ch] font-display text-4xl leading-[1.04] tracking-tight sm:text-5xl lg:text-[60px]">
             How it works
           </h1>
           <p className="mt-4 max-w-[60ch] text-lg leading-relaxed text-[#474252]">
@@ -234,7 +234,7 @@ export function HowItWorksPage() {
 
       {/* Year at a glance */}
       <section className="mx-auto max-w-360 px-5 py-14 lg:px-16">
-        <div className="flex flex-col gap-4 rounded-card border border-line bg-white p-7">
+        <div className="flex flex-col gap-4 rounded-card border border-line bg-white p-5 sm:p-7">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-col gap-2.5">
               <span className="w-max rounded-pill bg-brand-tint px-3 py-1 text-[11px] font-extrabold tracking-wider text-brand-dark uppercase">

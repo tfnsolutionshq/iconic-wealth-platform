@@ -115,11 +115,11 @@ export function ContributePage() {
           month.
         </Banner>
       ) : (
-        <Card className="flex items-center gap-3">
-          <span className="flex size-10.5 items-center justify-center rounded-input bg-soft">
+        <Card className="flex flex-wrap items-center gap-3">
+          <span className="flex size-10.5 shrink-0 items-center justify-center rounded-input bg-soft">
             <Calendar size={20} />
           </span>
-          <span className="flex flex-1 flex-col">
+          <span className="flex min-w-0 flex-1 basis-40 flex-col">
             <b>
               This payment goes to {MONTHS[i]} {year.year}
             </b>
@@ -141,15 +141,15 @@ export function ContributePage() {
         </label>
         <div
           className={cn(
-            "flex h-18 items-center gap-2 rounded-2xl border-2 bg-white px-4 text-3xl font-extrabold",
+            "flex min-h-18 items-center gap-2 rounded-2xl border-2 bg-white px-4 py-2 text-2xl font-extrabold sm:text-3xl",
             plan.ok ? "border-brand" : "border-fail",
           )}
         >
-          <span className="text-mute">₦</span>
+          <span className="shrink-0 text-mute">₦</span>
           <input
             id="amount"
             inputMode="numeric"
-            className="w-full bg-transparent outline-none"
+            className="w-full min-w-0 bg-transparent tabular-nums outline-none"
             value={(amount / 100).toLocaleString("en-NG")}
             onChange={(e) => setText(e.target.value.replace(/\D/g, ""))}
           />

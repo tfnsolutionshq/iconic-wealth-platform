@@ -101,7 +101,7 @@ export function FAQPage() {
       {/* Hero + search */}
       <section className="bg-soft px-5 pt-14 pb-8 lg:px-16">
         <div className="mx-auto max-w-360">
-          <h1 className="font-display text-5xl leading-[1.04] tracking-tight lg:text-[60px]">
+          <h1 className="font-display text-4xl leading-[1.04] tracking-tight sm:text-5xl lg:text-[60px]">
             FAQs
           </h1>
           <div className="mt-6 flex flex-wrap items-center gap-2.5">

@@ -60,14 +60,14 @@ export function TxRow({ t }: { t: Transaction }) {
         {tile.icon}
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <b className="text-[15px] text-ink">{describeTx(t)}</b>
-        <span className="text-[13px] font-semibold text-mute">
+        <b className="text-[15px] break-words text-ink">{describeTx(t)}</b>
+        <span className="text-[13px] font-semibold break-words text-mute">
           {fmtDateTime(t.createdAt)}
           {months > 1 ? ` · split across ${months} months` : ""}
           {t.failureReason ? ` · ${t.failureReason}` : ""}
         </span>
       </span>
-      <span className="flex flex-col items-end gap-1">
+      <span className="flex shrink-0 flex-col items-end gap-1">
         <b className="text-[15px] tabular-nums text-ink">
           {formatNaira(t.amountKobo)}
         </b>

@@ -35,8 +35,9 @@
 
 @layer base {
   html { -webkit-font-smoothing: antialiased; }
-  body { @apply bg-white font-sans text-ink; }
+  body { @apply bg-white font-sans text-ink; overflow-x: clip; }
   :focus-visible { outline: 3px solid #b794f6; outline-offset: 2px; }
+  img, video, canvas, svg { max-width: 100%; }
 }
 
 /* testimonials strip (more than three published) */

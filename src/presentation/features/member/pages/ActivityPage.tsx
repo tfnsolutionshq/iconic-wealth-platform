@@ -65,7 +65,7 @@ export function ActivityPage() {
 
   return (
     <div className="mx-auto flex max-w-245 flex-col gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-[28px] font-extrabold tracking-tight">Activity</h1>
         <Button
           variant="outline"

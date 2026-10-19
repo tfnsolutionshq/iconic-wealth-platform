@@ -60,9 +60,9 @@ export function KeyValue({
   value: ReactNode;
 }) {
   return (
-    <div className="flex justify-between gap-3 py-2.5 text-[15px]">
-      <span className="font-semibold text-mute">{label}</span>
-      <span className="text-right font-extrabold">{value}</span>
+    <div className="flex flex-col gap-1 py-2.5 text-[15px] sm:flex-row sm:justify-between sm:gap-3">
+      <span className="shrink-0 font-semibold text-mute">{label}</span>
+      <span className="min-w-0 font-extrabold break-words sm:text-right">{value}</span>
     </div>
   );
 }

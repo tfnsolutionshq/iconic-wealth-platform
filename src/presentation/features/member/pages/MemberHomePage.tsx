@@ -76,7 +76,7 @@ export function MemberHomePage() {
               </Pill>
             )}
           </div>
-          <div className="text-[40px] font-extrabold tracking-tight tabular-nums">
+          <div className="text-3xl font-extrabold tracking-tight break-words tabular-nums sm:text-[40px]">
             {formatNaira(savedThisYear(year, txs))}
           </div>
           <YearStrip
@@ -86,7 +86,7 @@ export function MemberHomePage() {
             settings={settings}
             onDark
           />
-          <div className="flex justify-between text-[13px] font-semibold text-white/75">
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[13px] font-semibold text-white/75">
             <span>
               {monthsSaved(year, txs, settings)} of{" "}
               {settings.lastSavingsMonth + 1 - year.startMonth} months saved
@@ -98,7 +98,7 @@ export function MemberHomePage() {
       </div>
       <TargetCard {...props} compact />
       {member.community === "Locked" && (
-        <Card className="flex items-center gap-3">
+        <Card className="flex flex-wrap items-center gap-3">
           <span className="flex size-10.5 items-center justify-center rounded-input bg-soft">
             <Lock size={20} />
           </span>

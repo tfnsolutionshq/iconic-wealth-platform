@@ -68,7 +68,7 @@ export function ReferralsPage() {
         title="Referrals"
         sub="Who referred whom, and whether they're saving"
       />
-      <div className="flex flex-col gap-5 px-8 py-6">
+      <div className="flex flex-col gap-5 px-4 py-5 sm:px-8 sm:py-6">
         <div className="grid gap-3.5 md:grid-cols-4">
           <Kpi
             label="Referred members"
@@ -88,7 +88,7 @@ export function ReferralsPage() {
           />
         </div>
         <div className="flex">
-          <label className="flex h-10.5 w-72 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute focus-within:border-brand">
+          <label className="flex h-10.5 w-full sm:w-72 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute focus-within:border-brand">
             <Search size={18} />
             <input
               className="w-full bg-transparent text-sm font-semibold text-ink outline-none"

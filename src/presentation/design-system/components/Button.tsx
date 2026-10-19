@@ -12,7 +12,7 @@ const variants: Record<Variant, string> = {
   danger: 'bg-fail text-white hover:brightness-95',
 };
 const sizes: Record<Size, string> = { lg: 'h-14 px-6 text-base', md: 'h-11 px-[18px] text-[15px]', sm: 'h-9 px-3.5 text-[13px]' };
-const base = 'inline-flex items-center justify-center gap-2 rounded-pill font-bold whitespace-nowrap transition disabled:bg-soft disabled:text-[#a39dad] disabled:border-transparent disabled:cursor-not-allowed';
+const base = 'inline-flex items-center justify-center gap-2 rounded-pill text-center font-bold transition disabled:bg-soft disabled:text-[#a39dad] disabled:border-transparent disabled:cursor-not-allowed';
 
 interface Common { variant?: Variant; size?: Size; full?: boolean; icon?: ReactNode; className?: string; children: ReactNode }
 export type ButtonProps = Common & ButtonHTMLAttributes<HTMLButtonElement>;

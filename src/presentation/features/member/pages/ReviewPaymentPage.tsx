@@ -78,7 +78,7 @@ export function ReviewPaymentPage() {
         <span className="text-[13px] font-semibold text-mute">
           Total to pay
         </span>
-        <span className="text-[44px] font-extrabold tabular-nums">
+        <span className="text-3xl font-extrabold break-words tabular-nums sm:text-[44px]">
           {formatNaira(b.total)}
         </span>
         <span className="text-[13px] font-semibold text-mute">

@@ -30,7 +30,7 @@ export function AdminDashboardPage() {
         title="Dashboard"
         sub={`Savings year ${year}`}
         actions={
-          <div className="w-44">
+          <div className="w-full sm:w-44">
             <SelectField
               options={["2026", "2025", "2024"]}
               value={year}
@@ -42,7 +42,7 @@ export function AdminDashboardPage() {
       {!d ? (
         <p className="p-8 text-mute">Loading…</p>
       ) : (
-        <div className="flex flex-col gap-5 px-8 py-6">
+        <div className="flex flex-col gap-5 px-4 py-5 sm:px-8 sm:py-6">
           <div className="grid gap-3.5 md:grid-cols-4">
             <Kpi
               label="Total members"
@@ -83,6 +83,8 @@ export function AdminDashboardPage() {
                       tickLine={false}
                       axisLine={false}
                       fontSize={12}
+                      interval="preserveStartEnd"
+                      tickMargin={8}
                     />
                     <YAxis tickLine={false} axisLine={false} fontSize={12} />
                     <Tooltip />
@@ -111,7 +113,7 @@ export function AdminDashboardPage() {
               </h2>
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <span className="text-3xl font-extrabold text-ok">
+                  <span className="text-2xl font-extrabold text-ok sm:text-3xl">
                     {d.eligible.toLocaleString()}
                   </span>
                   <p className="text-[13px] font-semibold text-mute">
@@ -119,7 +121,7 @@ export function AdminDashboardPage() {
                   </p>
                 </div>
                 <div>
-                  <span className="text-3xl font-extrabold text-fail">
+                  <span className="text-2xl font-extrabold text-fail sm:text-3xl">
                     {d.forfeited}
                   </span>
                   <p className="text-[13px] font-semibold text-mute">

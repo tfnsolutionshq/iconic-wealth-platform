@@ -17,7 +17,14 @@ const NAV = [
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-white/95 backdrop-blur">
+    <header
+      className={cn(
+        "sticky top-0 z-40 border-b border-line bg-white/95",
+        // backdrop-blur creates a containing block for fixed descendants,
+        // which would trap the mobile menu overlay inside the header.
+        !open && "backdrop-blur",
+      )}
+    >
       <div className="mx-auto flex h-20 max-w-360 items-center gap-7 px-5 lg:px-16">
         <Logo />
         <nav className="ml-6 hidden gap-6 lg:flex">
@@ -66,7 +73,7 @@ export function SiteHeader() {
             onClick={() => setOpen(false)}
           >
             <motion.nav
-              className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white p-5 pb-8"
+              className="absolute inset-x-0 bottom-0 max-h-[90vh] overflow-y-auto rounded-t-3xl bg-white p-5 pb-8"
               initial={{ y: 40 }}
               animate={{ y: 0 }}
               exit={{ y: 40 }}
@@ -109,12 +116,12 @@ export function SiteHeader() {
 
 export function CtaBand() {
   return (
-    <section className="mx-5 my-10 flex flex-col justify-between gap-5 rounded-sheet bg-brand-tint p-8 lg:mx-16 lg:flex-row lg:items-center lg:px-14 lg:py-12">
-      <div className="flex flex-col gap-2">
+    <section className="mx-5 my-10 flex flex-col justify-between gap-5 rounded-sheet bg-brand-tint p-6 sm:p-8 lg:mx-16 lg:flex-row lg:items-center lg:px-14 lg:py-12">
+      <div className="flex min-w-0 flex-col gap-2">
         <span className="w-max rounded-pill bg-white px-3 py-1 text-[11px] font-extrabold tracking-wider text-brand-dark uppercase">
           Iconic Wealth Queens
         </span>
-        <h2 className="font-display text-[34px] leading-tight lg:text-[40px]">
+        <h2 className="font-display text-3xl leading-tight sm:text-[34px] lg:text-[40px]">
           Ready to build and multiply your wealth?
         </h2>
         <p className="text-mute">
@@ -122,9 +129,9 @@ export function CtaBand() {
           about five minutes.
         </p>
       </div>
-      <div className="flex gap-3">
-        <ButtonLink to={paths.register}>Join our savings community</ButtonLink>
-        <ButtonLink to={paths.login} variant="outline">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap lg:flex-nowrap">
+        <ButtonLink to={paths.register} className="w-full sm:w-auto">Join our savings community</ButtonLink>
+        <ButtonLink to={paths.login} variant="outline" className="w-full sm:w-auto">
           Log in
         </ButtonLink>
       </div>

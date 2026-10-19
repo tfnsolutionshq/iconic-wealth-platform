@@ -78,11 +78,11 @@ export function PaymentResultPage() {
         </motion.div>
       )}
       {result.communityUnlocked && (
-        <Card className="flex w-full items-center gap-3 border-[#cdb8f6] bg-linear-to-b from-[#f7f2fe] to-white text-left">
-          <span className="flex size-10.5 items-center justify-center rounded-input bg-brand-tint text-brand-dark">
+        <Card className="flex w-full flex-wrap items-center gap-3 border-[#cdb8f6] bg-linear-to-b from-[#f7f2fe] to-white text-left">
+          <span className="flex size-10.5 shrink-0 items-center justify-center rounded-input bg-brand-tint text-brand-dark">
             <Users size={20} />
           </span>
-          <span className="flex flex-1 flex-col">
+          <span className="flex min-w-0 flex-1 basis-40 flex-col">
             <b>WhatsApp community unlocked</b>
             <span className="text-[13px] font-semibold text-mute">
               Join other members for reminders and support.

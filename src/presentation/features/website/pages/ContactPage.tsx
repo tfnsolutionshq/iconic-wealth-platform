@@ -96,7 +96,7 @@ export function ContactPage() {
       {/* Hero */}
       <section className="bg-soft px-5 pt-16 pb-10 lg:px-16">
         <div className="mx-auto max-w-360">
-          <h1 className="font-display text-5xl leading-[1.04] tracking-tight lg:text-[60px]">
+          <h1 className="font-display text-4xl leading-[1.04] tracking-tight sm:text-5xl lg:text-[60px]">
             Contact us
           </h1>
           <p className="mt-4 max-w-[60ch] text-lg leading-relaxed text-[#474252]">
@@ -151,12 +151,12 @@ export function ContactPage() {
             onChange={setMessage}
             error={errors.message}
           />
-          <div>
-            <Button type="submit">Send message</Button>
+          <div className="w-full sm:w-auto">
+            <Button type="submit" className="w-full sm:w-auto">Send message</Button>
           </div>
         </form>
 
-        <div className="flex flex-1 flex-col gap-4 rounded-card bg-soft p-7">
+        <div className="flex flex-1 flex-col gap-4 rounded-card bg-soft p-5 sm:p-7">
           <h2 className="text-[19px] font-extrabold">Other ways to reach us</h2>
           <ButtonLink
             to={env.waSupportUrl}

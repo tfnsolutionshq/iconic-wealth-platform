@@ -3,7 +3,7 @@ import { Download, Search } from "lucide-react";
 import type { AuditCategory, AuditEntry } from "@/domain/entities";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
-import { Banner, Button, Chips, DataTable, Pill } from "../../../design-system";
+import { Banner, Button, Chips, DataTable, Pill, Select } from "../../../design-system";
 import { AdminPageHeader } from "../../../layouts/AdminLayout";
 import { downloadCsv } from "../../../utils/csv";
 
@@ -54,7 +54,7 @@ export function AuditLogPage() {
         sub="Every privileged and financial action"
         actions={<Button variant="outline" size="md" icon={<Download size={18} />} onClick={exportCsv}>Export</Button>}
       />
-      <div className="flex flex-col gap-4 px-8 py-6">
+      <div className="flex flex-col gap-4 px-4 py-5 sm:px-8 sm:py-6">
         <Banner tone="neutral">
           Audit entries can’t be edited or deleted by anyone, including Super Admins. Actions you take in this build appear here.
         </Banner>
@@ -70,17 +70,12 @@ export function AuditLogPage() {
               { value: "Roles", label: "Roles" },
             ]}
           />
-          <div className="ml-auto flex gap-2">
-            <label className="flex h-10.5 w-72 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute focus-within:border-brand">
+          <div className="ml-auto flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <label className="flex h-10.5 w-full sm:w-72 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute focus-within:border-brand">
               <Search size={18} />
               <input className="w-full bg-transparent text-sm font-semibold text-ink outline-none" placeholder="Search person, action or record" value={search} onChange={(e) => setSearch(e.target.value)} />
             </label>
-            <select aria-label="Filter by date" className="h-10.5 rounded-xl border-[1.5px] border-line bg-white px-3 text-sm font-semibold outline-none focus:border-brand" value={range} onChange={(e) => setRange(e.target.value as Range)}>
-              <option value="all">Any date</option>
-              <option value="today">Today</option>
-              <option value="7">Last 7 days</option>
-              <option value="30">Last 30 days</option>
-            </select>
+            <Select aria-label="Filter by date" value={range} onChange={(e) => setRange(e.target.value as Range)} options={[{ value: "all", label: "Any date" }, { value: "today", label: "Today" }, { value: "7", label: "Last 7 days" }, { value: "30", label: "Last 30 days" }]} />
           </div>
         </div>
         <DataTable<AuditEntry>

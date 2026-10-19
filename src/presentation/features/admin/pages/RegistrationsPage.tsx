@@ -15,6 +15,7 @@ import {
   Modal,
   OpenDecisionTag,
   Pill,
+  Select,
 } from "../../../design-system";
 import { AdminPageHeader } from "../../../layouts/AdminLayout";
 import { paths } from "../../../routes/paths";
@@ -156,7 +157,7 @@ export function RegistrationsPage() {
         title="Registrations"
         sub="Review new members before their accounts open"
       />
-      <div className="flex flex-col gap-4 px-8 py-6">
+      <div className="flex flex-col gap-4 px-4 py-5 sm:px-8 sm:py-6">
         <div className="flex flex-wrap items-center gap-2">
           <Chips<Tab>
             value={tab}
@@ -171,8 +172,8 @@ export function RegistrationsPage() {
               { value: "All", label: `All ${count("All")}` },
             ]}
           />
-          <div className="ml-auto flex gap-2">
-            <label className="flex h-10.5 w-72 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute focus-within:border-brand">
+          <div className="ml-auto flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <label className="flex h-10.5 w-full sm:w-72 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute focus-within:border-brand">
               <Search size={18} />
               <input
                 className="w-full bg-transparent text-sm font-semibold text-ink outline-none"
@@ -181,17 +182,12 @@ export function RegistrationsPage() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </label>
-            <select
+            <Select
               aria-label="Filter by date"
-              className="h-10.5 rounded-xl border-[1.5px] border-line bg-white px-3 text-sm font-semibold text-ink outline-none focus:border-brand"
               value={range}
               onChange={(e) => setRange(e.target.value as DateRange)}
-            >
-              <option value="all">Any date</option>
-              <option value="today">Today</option>
-              <option value="7">Last 7 days</option>
-              <option value="30">Last 30 days</option>
-            </select>
+              options={[{ value: "all", label: "Any date" }, { value: "today", label: "Today" }, { value: "7", label: "Last 7 days" }, { value: "30", label: "Last 30 days" }]}
+            />
           </div>
         </div>
 

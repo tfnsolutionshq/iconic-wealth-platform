@@ -74,7 +74,7 @@ export function MembersPage() {
         title="Members"
         sub="Search, filter and manage member records"
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               size="md"
@@ -101,15 +101,15 @@ export function MembersPage() {
           </div>
         }
       />
-      <div className="flex flex-col gap-4 px-8 py-6">
+      <div className="flex flex-col gap-4 px-4 py-5 sm:px-8 sm:py-6">
         <div className="flex flex-wrap items-center gap-2">
           <Chips
             value={q.tab}
             options={tabs}
             onChange={(tab) => setQ({ ...q, tab })}
           />
-          <div className="ml-auto flex gap-2">
-            <label className="flex h-10.5 w-72 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute focus-within:border-brand">
+          <div className="ml-auto flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <label className="flex h-10.5 w-full sm:w-72 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute focus-within:border-brand">
               <Search size={18} />
               <input
                 className="w-full bg-transparent text-sm font-semibold text-ink outline-none"

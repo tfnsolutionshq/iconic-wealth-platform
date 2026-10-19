@@ -19,6 +19,7 @@ import {
   Modal,
   OpenDecisionTag,
   Pill,
+  Select,
   SelectField,
   TextField,
 } from "../../../design-system";
@@ -126,7 +127,7 @@ export function SettingsPage() {
         title="Settings"
         sub="Roles, platform settings, admin users and notifications"
       />
-      <div className="flex flex-col gap-5 px-8 py-6">
+      <div className="flex flex-col gap-5 px-4 py-5 sm:px-8 sm:py-6">
         <Chips<Tab>
           value={tab}
           onChange={setTab}
@@ -160,7 +161,8 @@ export function SettingsPage() {
             {PERMS.map(([group, rows]) => (
               <Card key={group} className="flex flex-col gap-1">
                 <h2 className="mb-1 text-base font-extrabold">{group}</h2>
-                <div className="grid grid-cols-[1fr_repeat(3,minmax(110px,140px))] items-center gap-2 text-sm">
+                <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+                  <div className="grid min-w-[560px] grid-cols-[1fr_repeat(3,minmax(110px,140px))] items-center gap-2 text-sm">
                   <span />
                   {["Member", "Administrator", "Super Admin"].map((h) => (
                     <b key={h} className="text-xs font-extrabold text-mute">
@@ -183,6 +185,7 @@ export function SettingsPage() {
                       ))}
                     </Fragment>
                   ))}
+                  </div>
                 </div>
               </Card>
             ))}
@@ -314,15 +317,13 @@ function PlatformTab({
       <Card className="flex min-w-0 flex-1 flex-col gap-4">
         <div className="flex items-center gap-2">
           <h2 className="text-base font-extrabold">Platform settings</h2>
-          <select
+          <Select
             aria-label="Settings year"
-            className="ml-auto h-10 rounded-xl border-[1.5px] border-line bg-white px-3 text-sm font-semibold outline-none"
+            className="ml-auto w-auto min-w-28"
             value={year}
             onChange={(e) => setYear(e.target.value)}
-          >
-            <option value="2026">2026</option>
-            <option value="2027">2027</option>
-          </select>
+            options={["2026", "2027"]}
+          />
         </div>
         <TextField
           label={`Minimum per payment (₦)`}

@@ -137,16 +137,16 @@ export function SavingsPage() {
         </Pill>
       </div>
 
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         <Card tone="night" className="flex flex-col gap-1">
           <span className="text-xs font-bold text-white/70">Total saved</span>
-          <b className="text-2xl tabular-nums">
+          <b className="text-xl break-words tabular-nums sm:text-2xl">
             {formatNaira(savedThisYear(year, txs))}
           </b>
         </Card>
         <Card className="flex flex-col gap-1 bg-soft">
           <span className="text-xs font-bold text-mute">Months saved</span>
-          <b className="text-2xl tabular-nums">
+          <b className="text-xl tabular-nums sm:text-2xl">
             {monthsSaved(year, txs, settings)} of{" "}
             {settings.lastSavingsMonth + 1 - year.startMonth}
           </b>
@@ -235,7 +235,7 @@ export function SavingsPage() {
               </span>
             );
           const actions = active && (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <ButtonLink to={paths.member.contribute} size="sm">
                 {s === "catchup" ? "Pay catch-up" : "Pay now"}
               </ButtonLink>

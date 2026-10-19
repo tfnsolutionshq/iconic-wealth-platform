@@ -87,10 +87,10 @@ export function ReceiptPage() {
         <span className="text-[13px] font-semibold text-mute">
           {describeTx(tx)}
         </span>
-        <span className="text-[34px] font-extrabold tabular-nums">
+        <span className="text-2xl font-extrabold break-words tabular-nums sm:text-[34px]">
           {formatNaira(tx.amountKobo)}
         </span>
-        <span className="flex gap-2">
+        <span className="flex flex-wrap justify-center gap-2">
           <Pill tone={TX_STATUS_TONE[tx.status]}>{tx.status}</Pill>
           {tx.kind === "Contribution" && tx.status === "Successful" && (
             <Pill tone={tx.late ? "pending" : "ok"} icon={<Shield size={12} />}>

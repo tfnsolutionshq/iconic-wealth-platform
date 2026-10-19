@@ -25,7 +25,7 @@ export function Modal({ open, title, onClose, children, footer, wide, locked }: 
               {!locked && <button aria-label="Close" onClick={onClose} className="flex size-11 items-center justify-center rounded-full border-[1.5px] border-line"><X size={18} /></button>}
             </div>
             <div className="flex flex-col gap-3.5 overflow-auto px-6 pt-2 pb-4">{children}</div>
-            {footer && <div className="flex flex-wrap justify-end gap-2.5 border-t border-line px-6 pt-3.5 pb-5">{footer}</div>}
+            {footer && <div className="flex flex-col-reverse gap-2.5 border-t border-line px-6 pt-3.5 pb-5 sm:flex-row sm:flex-wrap sm:justify-end [&>a]:w-full sm:[&>a]:w-auto [&>button]:w-full sm:[&>button]:w-auto">{footer}</div>}
           </motion.div>
         </div>
       )}

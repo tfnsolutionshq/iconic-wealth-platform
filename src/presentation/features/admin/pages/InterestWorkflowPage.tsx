@@ -92,7 +92,7 @@ export function InterestWorkflowPage() {
     return (
       <>
         <AdminPageHeader title={`Interest · savings year ${y}`} sub="Closed period · read-only" back={paths.admin.interest} />
-        <div className="flex flex-col gap-5 px-8 py-6">
+        <div className="flex flex-col gap-5 px-4 py-5 sm:px-8 sm:py-6">
           <Banner tone="neutral" icon={<Lock size={20} />}>This period is closed. Figures below are the approved record.</Banner>
           <div className="grid gap-3.5 md:grid-cols-4">
             <Kpi label="Rate applied" value={`${w.rate}%`} />
@@ -109,9 +109,9 @@ export function InterestWorkflowPage() {
             </div>
           </Card>
           <Card className="flex flex-col gap-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-base font-extrabold">Members</h2>
-              <label className="ml-auto flex h-10 w-64 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute">
+              <label className="flex h-10 w-full items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute sm:ml-auto sm:w-64">
                 <Search size={16} />
                 <input className="w-full bg-transparent text-sm font-semibold text-ink outline-none" placeholder="Search member" value={q} onChange={(e) => setQ(e.target.value)} />
               </label>
@@ -158,8 +158,8 @@ export function InterestWorkflowPage() {
         sub={<span className="flex items-center gap-2"><Pill tone={STATUS_TONE[w.status]}>{w.status}</Pill> Maker: Administrator · Checker: Super Admin</span>}
         back={paths.admin.interest}
       />
-      <div className="flex flex-col gap-5 px-8 py-6">
-        <div className="grid gap-2 md:grid-cols-8">
+      <div className="flex flex-col gap-5 px-4 py-5 sm:px-8 sm:py-6">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-8">
           {INTEREST_STAGES.map((s, i) => {
             const n = i + 1;
             const openable = n <= w.done + 1;
@@ -232,10 +232,10 @@ export function InterestWorkflowPage() {
                 <Card className="flex flex-col gap-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-base font-extrabold">Calculation preview · sample of {preview.length}</h2>
-                    <div className="ml-auto flex gap-2">
+                    <div className="ml-auto flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                       {!locked && <Button variant="outline" size="sm" onClick={calculate} disabled={busy}>Recalculate</Button>}
                       <Button variant="outline" size="sm" onClick={() => { downloadCsv(`iwh-interest-${y}-preview.csv`, ["Member", "Contributions", "Share %", "Interest", "Status"], preview.map((p) => [p.memberName, formatNaira(p.contributionsKobo), `${p.sharePct}%`, formatNaira(p.interestKobo), p.eligible ? "Eligible" : "Forfeited"])); toast("Preview exported."); }}>Export</Button>
-                      <label className="flex h-9 w-56 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute">
+                      <label className="flex h-9 w-full sm:w-56 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute">
                         <Search size={16} />
                         <input className="w-full bg-transparent text-sm font-semibold text-ink outline-none" placeholder="Search member" value={q} onChange={(e) => setQ(e.target.value)} />
                       </label>

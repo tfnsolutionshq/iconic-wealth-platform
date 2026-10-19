@@ -49,7 +49,7 @@ export function LoginPage() {
             submit();
           }}
         >
-          <h1 className="font-display text-5xl">Welcome back</h1>
+          <h1 className="font-display text-4xl sm:text-5xl">Welcome back</h1>
           <p className="text-mute">Log in to your member or admin account.</p>
           <TextField
             label="Email or phone number"

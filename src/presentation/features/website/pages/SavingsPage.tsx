@@ -55,7 +55,7 @@ export function SavingsPage() {
       {/* Hero */}
       <section className="bg-soft px-5 pt-16 pb-10 lg:px-16">
         <div className="mx-auto max-w-360">
-          <h1 className="max-w-[18ch] font-display text-5xl leading-[1.04] tracking-tight lg:text-[60px]">
+          <h1 className="max-w-[18ch] font-display text-4xl leading-[1.04] tracking-tight sm:text-5xl lg:text-[60px]">
             Savings
           </h1>
           <p className="mt-4 max-w-[60ch] text-lg leading-relaxed text-[#474252]">
@@ -88,8 +88,8 @@ export function SavingsPage() {
               A <b className="text-ink">₦100 platform charge</b> applies to each
               payment. It’s included in the total you see before you pay.
             </p>
-            <div className="overflow-hidden rounded-2xl border border-line bg-white">
-              <table className="w-full text-sm">
+            <div className="max-w-full overflow-x-auto rounded-2xl border border-line bg-white">
+              <table className="w-full min-w-[520px] text-sm">
                 <thead>
                   <tr className="bg-soft text-left text-xs font-bold text-mute">
                     <th className="px-3.5 py-2.5 font-bold">You save</th>
