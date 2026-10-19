@@ -25,9 +25,9 @@ export function SiteHeader() {
         !open && "backdrop-blur",
       )}
     >
-      <div className="mx-auto flex h-20 max-w-360 items-center gap-7 px-5 lg:px-16">
+      <div className="w-full flex h-20 items-center gap-1 lg:gap-7 px-10 lg:mx-auto">
         <Logo />
-        <nav className="ml-6 hidden gap-6 lg:flex">
+        <nav className="ml-3.5 lg:ml-6 hidden gap-6 lg:flex">
           {NAV.map(([l, to]) => (
             <NavLink
               key={to}
@@ -43,7 +43,7 @@ export function SiteHeader() {
             </NavLink>
           ))}
         </nav>
-        <div className="ml-auto hidden items-center gap-2.5 lg:flex">
+        <div className="ml-auto hidden items-center gap-2.5 xl:flex">
           <ButtonLink to={paths.admin.home} variant="outline" size="md">
             Admin portal
           </ButtonLink>
@@ -55,7 +55,7 @@ export function SiteHeader() {
           </ButtonLink>
         </div>
         <button
-          className="ml-auto flex size-11 items-center justify-center rounded-full border-[1.5px] border-line lg:hidden"
+          className="ml-auto flex size-11 items-center justify-center rounded-full border-[1.5px] border-line xl:hidden cursor-pointer"
           aria-label="Menu"
           aria-expanded={open}
           onClick={() => setOpen(true)}
@@ -66,7 +66,7 @@ export function SiteHeader() {
       <AnimatePresence>
         {open && (
           <motion.div
-            className="fixed inset-0 z-50 bg-ink/55 lg:hidden"
+            className="fixed inset-0 z-50 bg-ink/55 xl:hidden"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -84,14 +84,27 @@ export function SiteHeader() {
                 <button
                   aria-label="Close"
                   onClick={() => setOpen(false)}
-                  className="flex size-10 items-center justify-center rounded-full border border-line"
+                  className="flex size-10 items-center justify-center rounded-full border border-line cursor-pointer"
                 >
                   <X size={18} />
                 </button>
               </div>
+              {/* Main links are already visible in the header from lg up, so the
+                  1024–1280px menu shows only the auth list. */}
+              <div className="lg:hidden">
+                {[["Home", paths.home], ...NAV].map(([l, to]) => (
+                  <Link
+                    key={to}
+                    to={to}
+                    onClick={() => setOpen(false)}
+                    className="flex items-center justify-between border-b border-line py-3 font-bold last:border-0"
+                  >
+                    {l}
+                    <ChevronRight size={18} />
+                  </Link>
+                ))}
+              </div>
               {[
-                ["Home", paths.home],
-                ...NAV,
                 ["Log in", paths.login],
                 ["Become a member", paths.register],
                 ["Admin portal", paths.admin.home],
@@ -130,8 +143,14 @@ export function CtaBand() {
         </p>
       </div>
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap lg:flex-nowrap">
-        <ButtonLink to={paths.register} className="w-full sm:w-auto">Join our savings community</ButtonLink>
-        <ButtonLink to={paths.login} variant="outline" className="w-full sm:w-auto">
+        <ButtonLink to={paths.register} className="w-full sm:w-auto">
+          Join our savings community
+        </ButtonLink>
+        <ButtonLink
+          to={paths.login}
+          variant="outline"
+          className="w-full sm:w-auto"
+        >
           Log in
         </ButtonLink>
       </div>
