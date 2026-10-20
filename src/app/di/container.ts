@@ -19,6 +19,7 @@ import {
   MockRegistrationRepository,
   MockSettingsRepository,
   MockTestimonialRepository,
+  MockWalletRepository,
 } from "@/data/repositories/mock";
 import { DemoGateway, PaystackInlineGateway } from "@/data/gateways";
 import { DEMO_TODAY } from "@/data/mock/seed";
@@ -53,6 +54,7 @@ export function createContainer(): Container {
         ),
         admin: new MockAdminRepository(),
         gateway,
+        wallet: new MockWalletRepository(clock),
       },
     };
   }
@@ -74,6 +76,8 @@ export function createContainer(): Container {
       testimonials: new HttpTestimonialRepository(http),
       admin: new HttpAdminRepository(http),
       gateway,
+      // No wallet API yet: the wallet stays local so it never makes a network request.
+      wallet: new MockWalletRepository(clock),
     },
   };
 }

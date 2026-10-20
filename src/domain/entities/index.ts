@@ -108,6 +108,49 @@ export type Session =
   | { kind: 'admin'; admin: AdminUser }
   | { kind: 'pending'; registration: Registration };
 
+/* ---------------- Member wallet ---------------- */
+
+export type WalletEntryKind = 'TopUp' | 'Withdrawal' | 'Adjustment';
+export type WalletEntryStatus = 'Pending' | 'Processing' | 'Successful' | 'Failed';
+
+/** One money movement in or out of the member's wallet. Statuses mirror Transaction; Pending/Failed never count. */
+export interface WalletEntry {
+  id: string;
+  reference: string;            // our reference, e.g. IWH-W-...
+  memberId: MemberId;
+  kind: WalletEntryKind;
+  direction: 'Credit' | 'Debit';
+  amountKobo: Kobo;
+  status: WalletEntryStatus;
+  note?: string;                // human detail, e.g. "To GTBank •••• 6789"
+  failureReason?: string;
+  createdAt: string;            // ISO
+}
+
+/** A member's request to move wallet money to their verified payout account; an admin disburses it later. */
+export interface WalletWithdrawal {
+  id: string;
+  reference: string;
+  memberId: MemberId;
+  amountKobo: Kobo;
+  status: 'Processing' | 'Paid' | 'Failed';
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  createdAt: string;
+  failureReason?: string;
+}
+
+/** Balances are DERIVED from entries (see rules/wallet.ts), never stored. */
+export interface WalletSnapshot {
+  memberId: MemberId;
+  availableKobo: Kobo;         // spendable: settled credits − settled debits − in-flight withdrawals
+  pendingDepositKobo: Kobo;    // top-ups awaiting confirmation
+  pendingWithdrawalKobo: Kobo; // requested, awaiting disbursement to the bank
+  entries: WalletEntry[];      // newest first
+  withdrawals: WalletWithdrawal[]; // newest first
+}
+
 /* ---------------- Admin portal (ADM-13 and later) ---------------- */
 
 export type AuditCategory = 'Financial' | 'Members' | 'Access' | 'Roles';

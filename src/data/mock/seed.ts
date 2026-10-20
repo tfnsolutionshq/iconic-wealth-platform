@@ -1,5 +1,5 @@
 /** Sample data matching the approved build v5 (names, amounts and dates are fictional). */
-import type { AdminListItem, AuditEntry, InterestWorkflow, Member, MemberSummary, MonthIndex, PayoutBatch, PayoutRow, Registration, SavingsYear, Testimonial, Transaction } from '@/domain/entities';
+import type { AdminListItem, AuditEntry, InterestWorkflow, Member, MemberSummary, MonthIndex, PayoutBatch, PayoutRow, Registration, SavingsYear, Testimonial, Transaction, WalletEntry, WalletWithdrawal } from '@/domain/entities';
 import { naira } from '@/domain/rules';
 
 export const DEMO_TODAY = '2026-10-02T09:40:00';
@@ -55,6 +55,20 @@ const extraTransactions: Transaction[] = [
 ];
 
 export const transactions: Transaction[] = [...extraTransactions, ...baseTransactions];
+
+/** Member wallet ledgers (demo): top-ups and withdrawals for the primary demo member. Newest first. */
+export const walletEntries: WalletEntry[] = [
+  { id: 'WE5', reference: 'IWH-W-D7F2K9', memberId: 'IWH-00412', kind: 'Withdrawal', direction: 'Debit', amountKobo: naira(5_000), status: 'Processing', note: 'To GTBank •••• 6789', createdAt: '2026-10-01T14:30:00' },
+  { id: 'WE4', reference: 'IWH-W-C4R8N1', memberId: 'IWH-00412', kind: 'Withdrawal', direction: 'Debit', amountKobo: naira(15_000), status: 'Successful', note: 'To GTBank •••• 6789', createdAt: '2026-09-20T11:05:00' },
+  { id: 'WE3', reference: 'IWH-W-9VX3M8', memberId: 'IWH-00412', kind: 'TopUp', direction: 'Credit', amountKobo: naira(25_000), status: 'Successful', createdAt: '2026-09-10T09:15:00' },
+  { id: 'WE2', reference: 'IWH-W-9TQ7B2', memberId: 'IWH-00412', kind: 'TopUp', direction: 'Credit', amountKobo: naira(10_000), status: 'Failed', failureReason: 'Payment abandoned at checkout', createdAt: '2026-09-05T18:03:00' },
+  { id: 'WE1', reference: 'IWH-W-8K2P4D', memberId: 'IWH-00412', kind: 'TopUp', direction: 'Credit', amountKobo: naira(30_000), status: 'Successful', createdAt: '2026-08-15T10:20:00' },
+];
+
+export const walletWithdrawals: WalletWithdrawal[] = [
+  { id: 'WR2', reference: 'IWH-W-D7F2K9', memberId: 'IWH-00412', amountKobo: naira(5_000), status: 'Processing', bankName: 'GTBank', accountNumber: '0123456789', accountName: 'FUNMILAYO ADEBAYO', createdAt: '2026-10-01T14:30:00' },
+  { id: 'WR1', reference: 'IWH-W-C4R8N1', memberId: 'IWH-00412', amountKobo: naira(15_000), status: 'Paid', bankName: 'GTBank', accountNumber: '0123456789', accountName: 'FUNMILAYO ADEBAYO', createdAt: '2026-09-20T11:05:00' },
+];
 
 export const testimonials: Testimonial[] = [
   { id: 'T1', name: 'Ngozi O.', descriptor: 'Member since 2023 · Lagos', quote: 'Saving every month used to be a resolution I broke by March. With the reminders and the community, I saved all eleven months.', status: 'Published', order: 1 },

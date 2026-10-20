@@ -12,6 +12,7 @@ import {
   Plus,
   User,
   X,
+  Wallet,
 } from "lucide-react";
 import type { Member } from "@/domain/entities";
 import { useAuth } from "../contexts/AuthContext";
@@ -24,6 +25,7 @@ const SIDE = [
   [House, "Home", paths.member.home],
   [PiggyBank, "Savings", paths.member.savings],
   [Plus, "Contribute", paths.member.contribute],
+  [Wallet, "Wallet", paths.member.wallet],
   [List, "Activity", paths.member.activity],
   [Banknote, "Year-end payout", paths.member.payout],
   [Bell, "Notifications", paths.member.notifications],

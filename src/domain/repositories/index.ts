@@ -4,7 +4,7 @@
  *  - http: calls the backend API — see data/repositories/http
  * The presentation layer never imports data-layer classes directly; it receives these via ServicesContext.
  */
-import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, InterestCalcRow, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsYear, Session, Testimonial, Transaction } from '../entities';
+import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, InterestCalcRow, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsYear, Session, Testimonial, Transaction, WalletEntry, WalletSnapshot, WalletWithdrawal } from '../entities';
 import type { RegistrationDetails } from '../rules/registration';
 import type { PlatformSettings } from '../rules/savings';
 
@@ -56,6 +56,15 @@ export interface ContributionRepository {
 
 export type GatewayOutcome = 'success' | 'failed' | 'closed';
 export interface PaymentGateway { checkout(intent: ContributionIntent): Promise<GatewayOutcome> }
+
+export interface WalletRepository {
+  /** Balances derived from the ledger; entries and withdrawals newest first. */
+  getSnapshot(memberId: string): Promise<WalletSnapshot>;
+  /** Member-initiated top-up. No gateway yet: demo mode settles it automatically shortly after. */
+  requestTopUp(memberId: string, amountKobo: Kobo): Promise<WalletEntry>;
+  /** Reserves the amount and targets the member's verified payout account; an admin disburses it later. */
+  requestWithdrawal(memberId: string, amountKobo: Kobo): Promise<WalletWithdrawal>;
+}
 
 export interface TestimonialRepository {
   listPublished(): Promise<Testimonial[]>;
@@ -117,5 +126,5 @@ export interface AdminRepository {
 
 export interface Repositories {
   auth: AuthRepository; registration: RegistrationRepository; member: MemberRepository; contribution: ContributionRepository;
-  settings: SettingsRepository; testimonials: TestimonialRepository; admin: AdminRepository; gateway: PaymentGateway;
+  settings: SettingsRepository; testimonials: TestimonialRepository; admin: AdminRepository; gateway: PaymentGateway; wallet: WalletRepository;
 }

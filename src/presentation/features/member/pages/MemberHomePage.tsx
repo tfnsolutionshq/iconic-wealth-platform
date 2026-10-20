@@ -76,7 +76,7 @@ export function MemberHomePage() {
               </Pill>
             )}
           </div>
-          <div className="text-3xl font-extrabold tracking-tight break-words tabular-nums sm:text-[40px]">
+          <div className="text-3xl font-extrabold tracking-tight wrap-break-word tabular-nums sm:text-[40px]">
             {formatNaira(savedThisYear(year, txs))}
           </div>
           <YearStrip

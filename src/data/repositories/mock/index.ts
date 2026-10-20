@@ -1,8 +1,8 @@
-import type { AdminListItem, AdminRole, AdminUser, Allocation, AuditEntry, InterestCalcRow, InterestScope, InterestWorkflow, Kobo, MonthIndex, NotificationSettings, PayoutBatch, Registration, ReportKind, ReportResult, Session, Testimonial, Transaction } from '@/domain/entities';
-import type { AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, MemberQuery, MemberRepository, NewRegistration, RegistrationRepository, SettingsRepository, TestimonialRepository, VerifiedContribution } from '@/domain/repositories';
-import { DEFAULT_SETTINGS, MONTHS_SHORT, autoLocksAfter, canLock, chargeBreakdown, formatNaira, minimumFor, naira, planAllocation, type PlatformSettings } from '@/domain/rules';
+import type { AdminListItem, AdminRole, AdminUser, Allocation, AuditEntry, InterestCalcRow, InterestScope, InterestWorkflow, Kobo, MonthIndex, NotificationSettings, PayoutBatch, Registration, ReportKind, ReportResult, Session, Testimonial, Transaction, WalletEntry, WalletWithdrawal } from '@/domain/entities';
+import type { AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, MemberQuery, MemberRepository, NewRegistration, RegistrationRepository, SettingsRepository, TestimonialRepository, VerifiedContribution, WalletRepository } from '@/domain/repositories';
+import { DEFAULT_SETTINGS, MONTHS_SHORT, autoLocksAfter, canLock, chargeBreakdown, formatNaira, minimumFor, naira, planAllocation, walletBalances, type PlatformSettings } from '@/domain/rules';
 import type { Clock } from '@/domain/services/clock';
-import { adminUsers, auditEntries, interestYears, memberSummaries, members, payoutBatches, registrations, savingsYears, testimonials, transactions } from '@/data/mock/seed';
+import { adminUsers, auditEntries, interestYears, memberSummaries, members, payoutBatches, registrations, savingsYears, testimonials, transactions, walletEntries, walletWithdrawals } from '@/data/mock/seed';
 
 const delay = <T,>(v: T, ms = 250) => new Promise<T>(r => setTimeout(() => r(structuredClone(v)), ms));
 const notFound = (what: string) => new Error(`${what} not found`);
@@ -400,4 +400,41 @@ export class MockAdminRepository implements AdminRepository {
   async getNotifications() { return delay(notifications, 80); }
   async saveNotifications(s: NotificationSettings) { Object.assign(notifications, structuredClone(s)); return delay(notifications, 80); }
   async currentAdmin(role: AdminUser['role']) { return delay(admins.find(a => a.role === role)!); }
+}
+
+/** Demo only: no payment gateway yet, so a top-up settles itself shortly after it is requested. */
+const TOPUP_SETTLE_MS = 2500;
+
+export class MockWalletRepository implements WalletRepository {
+  constructor(private readonly clock: Clock) {}
+  private entriesOf(memberId: string) { return walletEntries.filter(e => e.memberId === memberId); }
+  async getSnapshot(memberId: string) {
+    memberOf(memberId);
+    const entries = this.entriesOf(memberId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const withdrawals = walletWithdrawals.filter(w => w.memberId === memberId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return delay({ memberId, ...walletBalances(this.entriesOf(memberId)), entries, withdrawals });
+  }
+  async requestTopUp(memberId: string, amountKobo: Kobo): Promise<WalletEntry> {
+    memberOf(memberId);
+    if (!Number.isInteger(amountKobo) || amountKobo <= 0) throw new Error('Enter an amount greater than ₦0.');
+    const entry: WalletEntry = { id: ref('WE'), reference: ref('IWH-W'), memberId, kind: 'TopUp', direction: 'Credit',
+      amountKobo, status: 'Pending', createdAt: this.clock.now().toISOString() };
+    walletEntries.unshift(entry);
+    setTimeout(() => { entry.status = 'Successful'; }, TOPUP_SETTLE_MS);
+    return delay(entry);
+  }
+  async requestWithdrawal(memberId: string, amountKobo: Kobo): Promise<WalletWithdrawal> {
+    const m = memberOf(memberId);
+    if (!m.payoutAccount) throw new Error('Set up your payout account in Profile before withdrawing.');
+    if (!Number.isInteger(amountKobo) || amountKobo <= 0) throw new Error('Enter an amount greater than ₦0.');
+    const availableKobo = walletBalances(this.entriesOf(memberId)).availableKobo;
+    if (amountKobo > availableKobo) throw new Error('That is more than your available balance.');
+    const a = m.payoutAccount, now = this.clock.now().toISOString();
+    const withdrawal: WalletWithdrawal = { id: ref('WR'), reference: ref('IWH-WD'), memberId, amountKobo, status: 'Processing',
+      bankName: a.bankName, accountNumber: a.accountNumber, accountName: a.accountName, createdAt: now };
+    walletWithdrawals.unshift(withdrawal);
+    walletEntries.unshift({ id: ref('WE'), reference: withdrawal.reference, memberId, kind: 'Withdrawal', direction: 'Debit',
+      amountKobo, status: 'Processing', note: `To ${a.bankName} •••• ${a.accountNumber.slice(-4)}`, createdAt: now });
+    return delay(withdrawal);
+  }
 }

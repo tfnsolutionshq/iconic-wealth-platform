@@ -19,6 +19,7 @@ const MemberHomePage = lazy(() => import('../features/member/pages/MemberHomePag
 const ContributePage = lazy(() => import('../features/member/pages/ContributePage').then(m => ({ default: m.ContributePage })));
 const ReviewPaymentPage = lazy(() => import('../features/member/pages/ReviewPaymentPage').then(m => ({ default: m.ReviewPaymentPage })));
 const PaymentResultPage = lazy(() => import('../features/member/pages/PaymentResultPage').then(m => ({ default: m.PaymentResultPage })));
+const WalletPage = lazy(() => import('../features/member/pages/WalletPage').then(m => ({ default: m.WalletPage })));
 const MemberSavingsPage = lazy(() => import('../features/member/pages/SavingsPage').then(m => ({ default: m.SavingsPage })));
 const ActivityPage = lazy(() => import('../features/member/pages/ActivityPage').then(m => ({ default: m.ActivityPage })));
 const ReceiptPage = lazy(() => import('../features/member/pages/ReceiptPage').then(m => ({ default: m.ReceiptPage })));
@@ -45,6 +46,7 @@ const ContentPage = lazy(() => import('../features/admin/pages/ContentPage').the
 const PAGES: Record<string, ReactElement> = {
   '/': <HomePage />, '/about': <AboutPage />, '/how-it-works': <HowItWorksPage />, '/savings': <SavingsPage />, '/membership': <MembershipPage />, '/faqs': <FAQPage />, '/contact': <ContactPage />, '/login': <LoginPage />, '/register': <RegisterPage />, '/register/done': <RegistrationDonePage />, '/login/pending': <AwaitingApprovalPage />,
   '/member': <MemberHomePage />, '/member/savings': <MemberSavingsPage />, '/member/contribute': <ContributePage />, '/member/contribute/review': <ReviewPaymentPage />, '/member/contribute/result': <PaymentResultPage />,
+  '/member/wallet': <WalletPage />,
   '/member/activity': <ActivityPage />, '/member/activity/:id': <ReceiptPage />, '/member/notifications': <NotificationsPage />,
   '/member/profile': <ProfilePage />, '/member/support': <SupportPage />, '/member/payout': <PayoutPage />,
   '/admin': <AdminDashboardPage />, '/admin/members': <MembersPage />, '/admin/registrations': <RegistrationsPage />,
