@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Check, Lock, Search } from "lucide-react";
-import type { AuditCategory, InterestCalcRow, InterestWorkflow } from "@/domain/entities";
+import type { AuditCategory, InterestCalcRow, InterestScope, InterestWorkflow, MemberSummary } from "@/domain/entities";
 import { formatNaira } from "@/domain/rules";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
 import { useAuth } from "../../../contexts/AuthContext";
-import { Banner, Button, Card, Checkbox, DataTable, Kpi, Modal, OpenDecisionTag, Pill, SelectField, TextField } from "../../../design-system";
+import { Banner, Button, Card, Checkbox, Chips, DataTable, Kpi, Modal, OpenDecisionTag, Pill, SelectField, TextField } from "../../../design-system";
 import { AdminPageHeader } from "../../../layouts/AdminLayout";
 import { paths } from "../../../routes/paths";
 import { INTEREST_STAGES } from "./InterestPage";
@@ -41,6 +41,13 @@ export function InterestWorkflowPage() {
   const [returnOpen, setReturnOpen] = useState(false);
   const [channels, setChannels] = useState({ InApp: true, Email: true, SMS: true, WhatsApp: true });
   const [q, setQ] = useState("");
+  const [scope, setScope] = useState<InterestScope>("All members");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState("");
+  const [pickerMembers, setPickerMembers] = useState<MemberSummary[]>([]);
+  const [draftIds, setDraftIds] = useState<string[]>([]);
+  const [pickerBusy, setPickerBusy] = useState(false);
 
   const reload = async (keepStage?: number) => {
     const d = await repos.admin.getInterest(y);
@@ -51,6 +58,8 @@ export function InterestWorkflowPage() {
     setRate(d.workflow.rate != null ? String(d.workflow.rate) : "");
     setRounding(d.workflow.rounding);
     setNote(d.workflow.note);
+    setScope(d.workflow.scope);
+    setSelectedIds(d.workflow.selectedMemberIds);
   };
   useEffect(() => {
     reload().catch(() => setMissing(true));
@@ -62,12 +71,12 @@ export function InterestWorkflowPage() {
     return repos.admin.logAudit({ at: clock.now().toISOString(), actor: admin.name, role: roleLabel(admin.role), action, entity, change, category }).then(() => {});
   };
 
-  const run = async (fn: () => Promise<unknown>, ok: () => void, done: string, after?: () => void) => {
+  /** Runs an action, then adopts the workflow's own stage so the wizard advances automatically (submit → approval → batch → notify → history). */
+  const run = async (fn: () => Promise<unknown>, ok: () => void, done: string) => {
     setBusy(true);
     try {
       await fn();
-      await reload(after ? undefined : stage);
-      after?.();
+      await reload();
       toast(done);
       ok();
     } catch (e) {
@@ -81,6 +90,23 @@ export function InterestWorkflowPage() {
     const s = q.trim().toLowerCase();
     return preview.filter((p) => !s || `${p.memberName} ${p.memberId}`.toLowerCase().includes(s));
   }, [preview, q]);
+
+  const pickerFiltered = useMemo(() => {
+    const s = pickerQuery.trim().toLowerCase();
+    return pickerMembers.filter((m) => !s || `${m.name} ${m.id}`.toLowerCase().includes(s));
+  }, [pickerMembers, pickerQuery]);
+
+  const openPicker = async () => {
+    setPickerOpen(true);
+    setPickerQuery("");
+    setDraftIds(selectedIds);
+    if (pickerMembers.length === 0) {
+      setPickerBusy(true);
+      try { setPickerMembers(await repos.admin.listMembers({ tab: "All", search: "" })); }
+      catch (e) { toast((e as Error).message); }
+      finally { setPickerBusy(false); }
+    }
+  };
 
   if (missing) {
     return (<><AdminPageHeader title="Not found" back={paths.admin.interest} /><p className="p-8 text-mute">No interest configuration for this year.</p></>);
@@ -136,18 +162,20 @@ export function InterestWorkflowPage() {
   /* ---------- current year: wizard ---------- */
   const locked = LOCKED.includes(w.status);
   const isMaker = w.maker === adminName;
-  const canCheck = isSuper && !isMaker;
+  /** ADM-16/17: a Super Admin checks — including their own maker request; only non-Super Admins are blocked from approving. */
+  const canCheck = isSuper;
 
   const savePeriod = () => run(() => repos.admin.saveInterestPeriod(y, period), () => setStage(2), "Period saved.");
   const saveRules = () => {
     const r = Number(rate);
     if (!Number.isFinite(r) || r < 0.1 || r > 30) { toast("Rate must be between 0.1% and 30%."); return; }
-    run(() => repos.admin.saveInterestRules(y, { rate: r, rounding }), () => setStage(3), "Rules saved.");
+    if (scope === "Selected members" && selectedIds.length === 0) { toast("Select at least one member, or apply interest to all members."); return; }
+    run(() => repos.admin.saveInterestRules(y, { rate: r, rounding, scope, selectedMemberIds: scope === "Selected members" ? selectedIds : [] }), () => setStage(3), "Rules saved.");
   };
   const calculate = () => run(() => repos.admin.runInterestCalculation(y), () => setStage(4), "Calculation complete.");
   const submit = () => run(() => repos.admin.submitInterest(y, note, adminName).then((wf) => audit("Submitted interest for approval", `Interest ${y}`, `${wf.eligible} eligible · ${wf.rate}%`, "Financial")), () => {}, "Sent for approval.");
-  const approve = () => run(() => repos.admin.decideInterest(y, "Approved", { by: adminName }).then((wf) => audit("Approved interest configuration", `Interest ${y}`, `${wf.rate}% · ${formatNaira(wf.interestKobo)}`, "Financial")), () => setApproveOpen(false), "Configuration approved.");
-  const returnToMaker = () => run(() => repos.admin.decideInterest(y, "Returned", { by: adminName, reason }).then(() => audit("Returned interest to maker", `Interest ${y}`, reason, "Financial")), () => { setReturnOpen(false); setReason(""); }, "Returned to maker.");
+  const approve = () => run(() => repos.admin.decideInterest(y, "Approved", { by: adminName, role: admin?.role }).then((wf) => audit("Approved interest configuration", `Interest ${y}`, `${wf.rate}% · ${formatNaira(wf.interestKobo)}`, "Financial")), () => setApproveOpen(false), "Configuration approved.");
+  const returnToMaker = () => run(() => repos.admin.decideInterest(y, "Returned", { by: adminName, role: admin?.role, reason }).then(() => audit("Returned interest to maker", `Interest ${y}`, reason, "Financial")), () => { setReturnOpen(false); setReason(""); }, "Returned to maker.");
   const createBatch = () => run(() => repos.admin.createPayoutBatch(y, adminName).then((b) => audit("Created payout batch", b.id, `${b.count} members`, "Financial")), () => {}, "Batch created.");
   const notify = () => run(() => repos.admin.notifyInterest(y, adminName).then(() => audit("Notified members of interest", `Interest ${y}`, `${w.eligible} eligible`, "Financial")), () => {}, `Sent to ${w.eligible.toLocaleString()} members.`);
 
@@ -203,6 +231,30 @@ export function InterestWorkflowPage() {
               <TextField label="Interest rate (%)" inputMode="decimal" placeholder="e.g. 10" hint="2025 · 10%, 2024 · 9%" value={rate} disabled={locked} onChange={(e) => setRate(e.target.value)} />
               <SelectField label="Rounding" options={["Nearest naira", "Nearest kobo"]} value={rounding} disabled={locked} onChange={(e) => setRounding(e.target.value)} />
             </div>
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-bold">Apply interest to</span>
+              <Chips<InterestScope>
+                value={scope}
+                options={[
+                  { value: "All members", label: "All members" },
+                  { value: "Selected members", label: "Select members manually" },
+                ]}
+                onChange={(v) => { if (!locked) setScope(v); }}
+              />
+              <p className="text-sm font-semibold leading-relaxed text-mute">
+                {scope === "All members"
+                  ? "Interest is calculated for every eligible member in this savings year."
+                  : "Interest is calculated only for the members you pick. Everyone else is marked as not selected."}
+              </p>
+            </div>
+            {scope === "Selected members" && (
+              <div className="flex flex-wrap items-center gap-3 rounded-2xl border-[1.5px] border-line bg-soft px-3.5 py-3">
+                <span className="text-sm font-bold">
+                  {selectedIds.length === 0 ? "No members selected yet." : `${selectedIds.length} member${selectedIds.length === 1 ? "" : "s"} selected.`}
+                </span>
+                <Button variant="outline" size="sm" disabled={locked} onClick={openPicker}>{selectedIds.length === 0 ? "Choose members" : "Edit selection"}</Button>
+              </div>
+            )}
             <TextField label="Basis" value="Proportional to savings" readOnly />
             <p className="text-sm font-semibold leading-relaxed text-mute">A month that closes with nothing saved forfeits interest unless a Super Admin approves an exception.</p>
             <div className="flex flex-wrap gap-2">
@@ -263,6 +315,7 @@ export function InterestWorkflowPage() {
           <Card className="flex max-w-2xl flex-col gap-4">
             <h2 className="text-base font-extrabold">Review and submit</h2>
             {[["Period", `${w.start} – ${w.end}`], ["Rate", w.rate != null ? `${w.rate}%` : "—"],
+              ["Applies to", w.scope === "Selected members" ? `${w.selectedMemberIds.length} selected members` : "All members"],
               ["Eligible", w.eligible.toLocaleString()], ["Forfeited", String(w.forfeited)], ["Total interest", formatNaira(w.interestKobo)]].map(([k, v]) => (
               <div key={k} className="flex justify-between gap-3 border-b border-line py-2 text-sm last:border-b-0">
                 <span className="font-semibold text-mute">{k}</span><b>{v}</b>
@@ -283,11 +336,10 @@ export function InterestWorkflowPage() {
               <Banner tone="info" icon={<Check size={20} />}>Approved by {w.checker} on {w.approvedAt}.</Banner>
             ) : w.status !== "Pending approval" ? (
               <p className="text-sm font-semibold text-mute">Submit the configuration for approval first (stage 4).</p>
-            ) : isMaker ? (
-              <Banner tone="neutral">Waiting for a Super Admin to approve. You can’t approve your own work — switch role from the header in demo mode.</Banner>
             ) : canCheck ? (
               <>
                 <p className="text-sm font-semibold">Rate {w.rate}% · total interest {formatNaira(w.interestKobo)} · {w.eligible.toLocaleString()} eligible.</p>
+                {isMaker && <p className="text-sm text-mute">You prepared this request — as a Super Admin you can approve it yourself.</p>}
                 {w.note && <p className="text-sm text-mute">Maker’s note: {w.note}</p>}
                 <div className="flex flex-wrap gap-2.5">
                   <Button size="md" onClick={() => setApproveOpen(true)}>Approve configuration</Button>
@@ -295,6 +347,8 @@ export function InterestWorkflowPage() {
                   <Button size="md" variant="outline" onClick={() => setStage(3)}>Review calculation</Button>
                 </div>
               </>
+            ) : isMaker ? (
+              <Banner tone="neutral">Waiting for a Super Admin to approve. Switch role from the header in demo mode.</Banner>
             ) : (
               <Banner tone="neutral">Only a Super Admin can approve. {isSuper ? "" : "Switch role from the header in demo mode."}</Banner>
             )}
@@ -360,6 +414,38 @@ export function InterestWorkflowPage() {
           <textarea rows={4} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Required"
             className="w-full rounded-input border-[1.5px] border-line bg-white p-3.5 text-[15px] font-semibold outline-none focus:border-brand" />
         </label>
+      </Modal>
+
+      <Modal open={pickerOpen} title="Choose members for interest" wide onClose={() => setPickerOpen(false)}
+        footer={<>
+          <Button variant="outline" onClick={() => setPickerOpen(false)}>Cancel</Button>
+          <Button disabled={draftIds.length === 0} onClick={() => { setSelectedIds(draftIds); setPickerOpen(false); }}>Apply selection ({draftIds.length})</Button>
+        </>}>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex h-10 w-full items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute sm:w-64">
+            <Search size={16} />
+            <input className="w-full bg-transparent text-sm font-semibold text-ink outline-none" placeholder="Search member" value={pickerQuery} onChange={(e) => setPickerQuery(e.target.value)} />
+          </label>
+          <div className="ml-auto flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setDraftIds(pickerFiltered.map((m) => m.id))}>Select all shown</Button>
+            <Button variant="outline" size="sm" onClick={() => setDraftIds([])}>Clear</Button>
+          </div>
+        </div>
+        {pickerBusy ? (
+          <p className="text-sm font-semibold text-mute">Loading members…</p>
+        ) : pickerFiltered.length === 0 ? (
+          <p className="text-sm font-semibold text-mute">No members match your search.</p>
+        ) : (
+          <div className="flex flex-col">
+            {pickerFiltered.map((m) => (
+              <label key={m.id} className="flex cursor-pointer items-center gap-3 border-b border-line py-2.5 text-sm last:border-b-0">
+                <input type="checkbox" className="size-5 shrink-0 accent-brand" checked={draftIds.includes(m.id)} onChange={(e) => setDraftIds((d) => (e.target.checked ? [...d, m.id] : d.filter((x) => x !== m.id)))} />
+                <span className="flex-1"><b>{m.name}</b> <span className="text-mute">{m.id}</span></span>
+                <Pill tone={m.eligibility === "Eligible" ? "ok" : "fail"}>{m.eligibility}</Pill>
+              </label>
+            ))}
+          </div>
+        )}
       </Modal>
     </>
   );

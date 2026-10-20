@@ -1,4 +1,4 @@
-import type { AdminListItem, AdminUser, Allocation, AuditEntry, InterestCalcRow, Kobo, MonthIndex, NotificationSettings, PayoutBatch, Registration, ReportKind, ReportResult, Session, Testimonial, Transaction } from '@/domain/entities';
+import type { AdminListItem, AdminRole, AdminUser, Allocation, AuditEntry, InterestCalcRow, InterestScope, InterestWorkflow, Kobo, MonthIndex, NotificationSettings, PayoutBatch, Registration, ReportKind, ReportResult, Session, Testimonial, Transaction } from '@/domain/entities';
 import type { AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, MemberQuery, MemberRepository, NewRegistration, RegistrationRepository, SettingsRepository, TestimonialRepository, VerifiedContribution } from '@/domain/repositories';
 import { DEFAULT_SETTINGS, MONTHS_SHORT, autoLocksAfter, canLock, chargeBreakdown, formatNaira, minimumFor, naira, planAllocation, type PlatformSettings } from '@/domain/rules';
 import type { Clock } from '@/domain/services/clock';
@@ -144,12 +144,16 @@ const notifications: NotificationSettings = {
 };
 
 const interestOf = (year: number) => { const w = interestYears.find(x => x.year === year); if (!w) throw notFound('Interest configuration'); return w; };
-const calcPreview = (rate: number): InterestCalcRow[] => {
+const calcPreview = (rate: number, w?: InterestWorkflow): InterestCalcRow[] => {
   const total = memberSummaries.reduce((s, m) => s + m.savedKobo, 0) || 1;
-  return memberSummaries.map(m => ({ memberId: m.id, memberName: m.name, contributionsKobo: m.savedKobo,
-    sharePct: Math.round(m.savedKobo / total * 1000) / 10,
-    interestKobo: m.eligibility === 'Eligible' ? Math.round(m.savedKobo * rate / 100 / 100) * 100 : 0,
-    eligible: m.eligibility === 'Eligible', reason: m.forfeitReason }));
+  const inScope = (id: string) => !w || w.scope !== 'Selected members' || w.selectedMemberIds.includes(id);
+  return memberSummaries.map(m => {
+    const eligible = m.eligibility === 'Eligible' && inScope(m.id);
+    return { memberId: m.id, memberName: m.name, contributionsKobo: m.savedKobo,
+      sharePct: Math.round(m.savedKobo / total * 1000) / 10,
+      interestKobo: eligible ? Math.round(m.savedKobo * rate / 100 / 100) * 100 : 0,
+      eligible, reason: inScope(m.id) ? m.forfeitReason : 'Not selected for interest' };
+  });
 };
 const batchOf = (id: string) => { const b = payoutBatches.find(x => x.id === id); if (!b) throw notFound('Payout batch'); return b; };
 const completeBatchIfDone = (b: PayoutBatch) => {
@@ -199,7 +203,7 @@ export class MockAdminRepository implements AdminRepository {
   }
   async getInterest(year: number) {
     const w = interestOf(year);
-    return delay({ workflow: w, preview: w.rate ? calcPreview(w.rate) : [] }, 120);
+    return delay({ workflow: w, preview: w.rate ? calcPreview(w.rate, w) : [] }, 120);
   }
   async saveInterestPeriod(year: number, period: { start: string; end: string; close: string }) {
     const w = interestOf(year); if (w.closed) throw new Error('Closed years are read-only.');
@@ -209,20 +213,24 @@ export class MockAdminRepository implements AdminRepository {
     w.history.push([new Date().toISOString(), 'Saved period setup', 'You']);
     return delay(w);
   }
-  async saveInterestRules(year: number, rules: { rate: number; rounding: string }) {
+  async saveInterestRules(year: number, rules: { rate: number; rounding: string; scope: InterestScope; selectedMemberIds: string[] }) {
     const w = interestOf(year); if (w.closed) throw new Error('Closed years are read-only.');
     if (rules.rate < 0.1 || rules.rate > 30) throw new Error('Rate must be between 0.1% and 30%.');
-    if (w.rate !== rules.rate) w.calc = false;
-    w.rate = rules.rate; w.rounding = rules.rounding;
+    if (rules.scope === 'Selected members' && rules.selectedMemberIds.length === 0) throw new Error('Select at least one member to apply interest to.');
+    const scopeChanged = w.scope !== rules.scope || w.selectedMemberIds.join(',') !== rules.selectedMemberIds.join(',');
+    if (w.rate !== rules.rate || scopeChanged) w.calc = false;
+    w.rate = rules.rate; w.rounding = rules.rounding; w.scope = rules.scope; w.selectedMemberIds = rules.selectedMemberIds;
     if (w.status === 'Not started' || w.status === 'Returned') w.status = 'Draft';
     w.done = Math.max(w.done, 2); w.stage = 3;
-    w.history.push([new Date().toISOString(), `Set rate to ${rules.rate}%`, 'You']);
+    w.history.push([new Date().toISOString(), rules.scope === 'Selected members'
+      ? `Set rate to ${rules.rate}% · interest for ${rules.selectedMemberIds.length} selected members`
+      : `Set rate to ${rules.rate}% for all members`, 'You']);
     return delay(w);
   }
   async runInterestCalculation(year: number) {
     const w = interestOf(year); if (w.closed) throw new Error('Closed years are read-only.');
     if (!w.rate) throw new Error('Set a rate first.');
-    const preview = calcPreview(w.rate);
+    const preview = calcPreview(w.rate, w);
     w.eligible = preview.filter(p => p.eligible).length; w.forfeited = preview.filter(p => !p.eligible).length;
     w.contributionsKobo = preview.reduce((s, p) => s + p.contributionsKobo, 0);
     w.interestKobo = preview.reduce((s, p) => s + p.interestKobo, 0);
@@ -238,9 +246,10 @@ export class MockAdminRepository implements AdminRepository {
     w.history.push([new Date().toISOString(), 'Submitted for approval', by]);
     return delay(w);
   }
-  async decideInterest(year: number, decision: 'Approved' | 'Returned', opts: { by: string; reason?: string }) {
+  async decideInterest(year: number, decision: 'Approved' | 'Returned', opts: { by: string; role?: AdminRole; reason?: string }) {
     const w = interestOf(year); if (w.closed) throw new Error('Closed years are read-only.');
-    if (opts.by === w.maker) throw new Error('You can’t approve your own work. A Super Admin must approve it.');
+    if (opts.role && opts.role !== 'SuperAdmin') throw new Error('Only a Super Admin can approve.');
+    if (opts.by === w.maker && opts.role !== 'SuperAdmin') throw new Error('You can’t approve your own work. A Super Admin must approve it.');
     if (decision === 'Approved') {
       w.status = 'Approved'; w.checker = opts.by; w.approvedAt = new Date().toISOString().slice(0, 10);
       w.done = Math.max(w.done, 5); w.stage = 6;
@@ -260,7 +269,7 @@ export class MockAdminRepository implements AdminRepository {
     const banks = ['GTBank', 'Access Bank', 'First Bank', 'UBA', 'Zenith Bank'];
     const batch: PayoutBatch = { id: `PB-${year}-12`, year, month: 'December', status: 'Awaiting approval', count: w.eligible,
       savingsKobo: w.contributionsKobo, interestKobo: w.interestKobo, maker: by, createdAt: new Date().toISOString(),
-      rows: calcPreview(w.rate ?? 0).filter(p => p.eligible).map((p, i) => ({ memberId: p.memberId, memberName: p.memberName,
+      rows: calcPreview(w.rate ?? 0, w).filter(p => p.eligible).map((p, i) => ({ memberId: p.memberId, memberName: p.memberName,
         savingsKobo: p.contributionsKobo, interestKobo: p.interestKobo, totalKobo: p.contributionsKobo + p.interestKobo,
         account: `${banks[i % banks.length]} •••• ${(1000 + i * 137).toString().slice(-4)}`, status: 'Pending',
         reference: `IWH-P-${String(year).slice(2)}1218-${(2000 + i * 53).toString(36).toUpperCase().padStart(4, '0')}` })),

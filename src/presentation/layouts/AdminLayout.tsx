@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet } from "react-router-dom";
 import {
   Banknote,
@@ -20,7 +20,10 @@ import {
   Users,
   X,
 } from "lucide-react";
+import type { AdminRole } from "@/domain/entities";
 import { useAuth } from "../contexts/AuthContext";
+import { useServices } from "../contexts/ServicesContext";
+import { useToast } from "../contexts/ToastContext";
 import { Logo, cn } from "../design-system";
 import { paths } from "../routes/paths";
 import { env } from "@/app/config/env";
@@ -200,8 +203,52 @@ export function AdminPageHeader({
   actions?: ReactNode;
 }) {
   const { session, switchAdminRole } = useAuth();
+  const { repos } = useServices();
+  const toast = useToast();
   const [menu, setMenu] = useState(false);
+  const [people, setPeople] = useState<Partial<Record<AdminRole, string>>>({});
+  const wrapRef = useRef<HTMLDivElement>(null);
   const admin = session?.kind === "admin" ? session.admin : null;
+  /** The role switcher is a demo of maker-checker: available in demo mode and whenever the in-memory mock backend is in use. */
+  const canSwitch = env.demoMode || !env.apiBaseUrl;
+  const roleLabel = (r: AdminRole) => (r === "SuperAdmin" ? "Super Admin" : "Administrator");
+
+  useEffect(() => {
+    if (!menu) return;
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setMenu(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenu(false);
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
+
+  useEffect(() => {
+    if (!menu || people.Administrator) return;
+    let live = true;
+    Promise.all([repos.admin.currentAdmin("Administrator"), repos.admin.currentAdmin("SuperAdmin")])
+      .then(([maker, checker]) => {
+        if (live) setPeople({ Administrator: maker?.name, SuperAdmin: checker?.name });
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [menu, people.Administrator, repos.admin]);
+
+  const switchTo = async (r: AdminRole) => {
+    try {
+      await switchAdminRole(r);
+      setMenu(false);
+      toast(`Now acting as ${people[r] ?? roleLabel(r)} (${roleLabel(r)}).`);
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  };
   return (
     <div className="relative z-30 flex min-h-20 shrink-0 flex-wrap items-center gap-x-4 gap-y-3 border-b border-line bg-white px-4 py-3 sm:px-8">
       {back && (
@@ -230,10 +277,15 @@ export function AdminPageHeader({
         <span className="absolute top-2 right-2.5 size-2.5 rounded-full border-2 border-white bg-gold" />
       </button>
       {admin && (
-        <div className="relative shrink-0">
+        <div ref={wrapRef} className="relative shrink-0">
           <button
-            onClick={() => env.demoMode && setMenu(!menu)}
-            className="flex items-center gap-2 rounded-pill border-[1.5px] border-line bg-white py-1 pr-2.5 pl-1"
+            onClick={() => canSwitch && setMenu((m) => !m)}
+            aria-haspopup="menu"
+            aria-expanded={menu}
+            className={cn(
+              "flex items-center gap-2 rounded-pill border-[1.5px] border-line bg-white py-1 pr-2.5 pl-1",
+              canSwitch && "hover:border-brand",
+            )}
           >
             <span className="flex size-8 items-center justify-center rounded-full bg-[#f1dfb9] text-xs font-extrabold text-[#6e4a0c]">
               {admin.name
@@ -244,31 +296,46 @@ export function AdminPageHeader({
             <span className="hidden flex-col text-left sm:flex">
               <b className="text-[13px]">{admin.name}</b>
               <span className="text-[11px] font-semibold text-mute">
-                {admin.role === "SuperAdmin" ? "Super Admin" : "Administrator"}
+                {roleLabel(admin.role)}
               </span>
             </span>
-            {env.demoMode && <ChevronDown size={16} />}
+            {canSwitch && (
+              <ChevronDown size={16} className={cn("transition", menu && "rotate-180")} />
+            )}
           </button>
           {menu && (
-            <div className="absolute top-12 right-0 w-64 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-line bg-white shadow-xl">
+            <div
+              role="menu"
+              className="absolute top-12 right-0 w-64 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-line bg-white shadow-xl"
+            >
               <div className="px-3.5 pt-3 pb-1.5 text-xs font-semibold text-mute">
                 Switch role (demo of maker-checker)
               </div>
-              {(["Administrator", "SuperAdmin"] as const).map((r) => (
-                <button
-                  key={r}
-                  onClick={async () => {
-                    await switchAdminRole(r);
-                    setMenu(false);
-                  }}
-                  className="flex w-full items-center justify-between border-t border-line px-3.5 py-3 text-left text-sm font-bold hover:bg-soft"
-                >
-                  {r === "SuperAdmin"
-                    ? "Super Admin · checker"
-                    : "Administrator · maker"}
-                  {admin.role === r && <Check size={16} />}
-                </button>
-              ))}
+              {(["Administrator", "SuperAdmin"] as const).map((r) => {
+                const name = people[r] ?? roleLabel(r);
+                return (
+                  <button
+                    key={r}
+                    role="menuitem"
+                    onClick={() => switchTo(r)}
+                    className="flex w-full items-center gap-2.5 border-t border-line px-3.5 py-3 text-left text-sm font-bold hover:bg-soft"
+                  >
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#f1dfb9] text-[11px] font-extrabold text-[#6e4a0c]">
+                      {name
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")}
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <b className="truncate text-[13px]">{name}</b>
+                      <span className="text-[11px] font-semibold text-mute">
+                        {roleLabel(r)} · {r === "SuperAdmin" ? "checker" : "maker"}
+                      </span>
+                    </span>
+                    {admin.role === r && <Check size={16} className="shrink-0" />}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>

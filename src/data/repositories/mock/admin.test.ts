@@ -50,8 +50,9 @@ describe('MockAdminRepository interest → payout flow', () => {
   const admin = new MockAdminRepository();
   it('runs the 8-stage workflow with maker-checker', async () => {
     await admin.saveInterestPeriod(2026, { start: '2026-01-01', end: '2026-11-30', close: '2027-01-05' });
-    const rules = await admin.saveInterestRules(2026, { rate: 10, rounding: 'Nearest naira' });
+    const rules = await admin.saveInterestRules(2026, { rate: 10, rounding: 'Nearest naira', scope: 'All members', selectedMemberIds: [] });
     expect(rules.rate).toBe(10);
+    expect(rules.scope).toBe('All members');
     const calc = await admin.runInterestCalculation(2026);
     expect(calc.calc).toBe(true);
     expect(calc.eligible + calc.forfeited).toBeGreaterThan(0);
@@ -74,6 +75,17 @@ describe('MockAdminRepository interest → payout flow', () => {
     const notified = await admin.notifyInterest(2026, 'Adaeze Okafor');
     expect(notified.notified).toBe(true);
     expect(notified.done).toBe(8);
+  });
+  it('lets a Super Admin make and approve their own interest request, but not other roles', async () => {
+    await admin.saveInterestPeriod(2026, { start: '2026-01-01', end: '2026-11-30', close: '2027-01-05' });
+    await admin.saveInterestRules(2026, { rate: 12, rounding: 'Nearest kobo', scope: 'All members', selectedMemberIds: [] });
+    await admin.runInterestCalculation(2026);
+    await admin.submitInterest(2026, 'Self review', 'Olumide Bakare');
+    await expect(admin.decideInterest(2026, 'Approved', { by: 'Olumide Bakare', role: 'Administrator' })).rejects.toThrow('Only a Super Admin');
+    await expect(admin.decideInterest(2026, 'Approved', { by: 'Olumide Bakare' })).rejects.toThrow('approve your own work');
+    const approved = await admin.decideInterest(2026, 'Approved', { by: 'Olumide Bakare', role: 'SuperAdmin' });
+    expect(approved.status).toBe('Approved');
+    expect(approved.checker).toBe('Olumide Bakare');
   });
 });
 

@@ -4,7 +4,7 @@
  *  - http: calls the backend API — see data/repositories/http
  * The presentation layer never imports data-layer classes directly; it receives these via ServicesContext.
  */
-import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, InterestCalcRow, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsYear, Session, Testimonial, Transaction } from '../entities';
+import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, InterestCalcRow, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsYear, Session, Testimonial, Transaction } from '../entities';
 import type { RegistrationDetails } from '../rules/registration';
 import type { PlatformSettings } from '../rules/savings';
 
@@ -83,10 +83,11 @@ export interface AdminRepository {
   listInterest(): Promise<InterestYearSummary[]>;
   getInterest(year: number): Promise<{ workflow: InterestWorkflow; preview: InterestCalcRow[] }>;
   saveInterestPeriod(year: number, period: { start: string; end: string; close: string }): Promise<InterestWorkflow>;
-  saveInterestRules(year: number, rules: { rate: number; rounding: string }): Promise<InterestWorkflow>;
+  saveInterestRules(year: number, rules: { rate: number; rounding: string; scope: InterestScope; selectedMemberIds: string[] }): Promise<InterestWorkflow>;
   runInterestCalculation(year: number): Promise<InterestWorkflow>;
   submitInterest(year: number, note: string, by: string): Promise<InterestWorkflow>;
-  decideInterest(year: number, decision: 'Approved' | 'Returned', opts: { by: string; reason?: string }): Promise<InterestWorkflow>;
+  /** `role` identifies the checker: only a Super Admin may approve — including their own maker request. */
+  decideInterest(year: number, decision: 'Approved' | 'Returned', opts: { by: string; role?: AdminRole; reason?: string }): Promise<InterestWorkflow>;
   createPayoutBatch(year: number, by: string): Promise<PayoutBatch>;
   notifyInterest(year: number, by: string): Promise<InterestWorkflow>;
   /** ADM-18 to ADM-20: year-end payout batches. */

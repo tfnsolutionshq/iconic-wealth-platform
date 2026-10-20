@@ -117,6 +117,8 @@ export interface AuditEntry {
 }
 
 export type InterestStatus = 'Not started' | 'Draft' | 'Pending approval' | 'Returned' | 'Approved' | 'Paid out';
+/** Whether interest applies to every eligible member or only to members picked manually (Rule configuration). */
+export type InterestScope = 'All members' | 'Selected members';
 export interface InterestYearSummary {
   year: number; status: InterestStatus; rate: number | null;
   eligible: number; forfeited: number; contributionsKobo: Kobo; interestKobo: Kobo;
@@ -130,6 +132,7 @@ export interface InterestCalcRow {
 export interface InterestWorkflow extends InterestYearSummary {
   closed: boolean; stage: number; done: number;
   start: string; end: string; close: string; rounding: string;
+  scope: InterestScope; selectedMemberIds: string[];
   calc: boolean; note: string; rejectReason?: string; notified: boolean;
   history: [string, string, string][]; // [at, event, actor]
 }
