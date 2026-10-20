@@ -7,6 +7,8 @@ import {
   Users,
 } from "lucide-react";
 import { OpenDecisionTag } from "../../../design-system";
+import bennyAmeduImg from "@/assets/founders/benny-amedu.webp";
+import tevinAnyaliImg from "@/assets/founders/tevin-anyali.webp";
 
 const STATS = [
   ["4th", "year running"],
@@ -58,7 +60,7 @@ const ASSURANCES = [
 
 const FOUNDERS = [
   {
-    initials: "BA",
+    image: bennyAmeduImg,
     role: "Co-founder and visionary",
     name: "Pastor Mrs. Benny Amedu",
     body: [
@@ -67,7 +69,7 @@ const FOUNDERS = [
     ],
   },
   {
-    initials: "CT",
+    image: tevinAnyaliImg,
     role: "Co-founder and wealth manager",
     name: "Mrs. Chizoba Tevin-Anyali",
     body: [
@@ -238,26 +240,24 @@ export function AboutPage() {
             financially free, wealth-oriented women.
           </p>
         </div>
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-2">
           {FOUNDERS.map((f) => (
             <article
               key={f.name}
-              className="overflow-hidden rounded-[26px] border border-line bg-white transition duration-300 hover:-translate-y-1.5 hover:shadow-lift"
+              className="flex flex-col overflow-hidden rounded-[26px] border border-line bg-white transition duration-300 hover:-translate-y-1.5 hover:shadow-lift sm:flex-row"
             >
-              <div
-                role="img"
-                aria-label={`Portrait of ${f.name}`}
-                className="flex h-56 items-center justify-center bg-linear-to-br from-brand-tint via-soft to-gold-tint"
-              >
-                <span className="flex size-24 items-center justify-center rounded-full bg-night font-display text-4xl text-gold">
-                  {f.initials}
-                </span>
-              </div>
-              <div className="flex flex-col gap-2.5 px-7 py-6.5 pb-7.5">
+              <img
+                src={f.image}
+                alt={`Portrait of ${f.name}`}
+                className="h-56 w-full shrink-0 object-cover object-[0_-60px] sm:object-top sm:h-auto sm:w-44"
+              />
+              <div className="flex min-w-0 flex-1 flex-col gap-2.5 px-7 py-6.5 pb-7.5">
                 <span className="w-max rounded-pill bg-gold-tint px-3 py-1 text-[11px] font-extrabold tracking-wider text-pending uppercase">
                   {f.role}
                 </span>
-                <h3 className="font-display text-2xl sm:text-[30px]">{f.name}</h3>
+                <h3 className="font-display text-2xl sm:text-[30px]">
+                  {f.name}
+                </h3>
                 {f.body.map((p) => (
                   <p
                     key={p.slice(0, 24)}

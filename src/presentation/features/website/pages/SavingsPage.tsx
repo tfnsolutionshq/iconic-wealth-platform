@@ -67,7 +67,7 @@ export function SavingsPage() {
 
       <section className="mx-auto grid max-w-360 gap-10 px-5 py-14 lg:grid-cols-2 lg:gap-16 lg:px-16">
         {/* Explainers */}
-        <div className="flex flex-col gap-6">
+        <div className="flex min-w-0 flex-col gap-6">
           {EXPLAINERS.map((s) => (
             <div key={s.title} className="flex flex-col gap-2">
               <h2 className="text-[28px] font-extrabold tracking-tight">
@@ -79,7 +79,7 @@ export function SavingsPage() {
         </div>
 
         {/* Charges + interest */}
-        <div className="flex flex-col gap-6">
+        <div className="flex min-w-0 flex-col gap-6">
           <div className="flex flex-col gap-3">
             <h2 className="text-[28px] font-extrabold tracking-tight">
               Charges
@@ -89,7 +89,7 @@ export function SavingsPage() {
               payment. It’s included in the total you see before you pay.
             </p>
             <div className="max-w-full overflow-x-auto rounded-2xl border border-line bg-white">
-              <table className="w-full min-w-[520px] text-sm">
+              <table className="w-full min-w-130 text-sm">
                 <thead>
                   <tr className="bg-soft text-left text-xs font-bold text-mute">
                     <th className="px-3.5 py-2.5 font-bold">You save</th>
