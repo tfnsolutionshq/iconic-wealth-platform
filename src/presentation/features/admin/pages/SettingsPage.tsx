@@ -300,11 +300,11 @@ function PlatformTab({
   };
 
   const requestRule = async () => {
-    if (!proposal.trim() || !why.trim()) return;
+    if (!proposal.trim() || (!sup && !why.trim())) return;
     await audit(
       "Requested rule change",
       rule,
-      `${proposal.trim()} · ${why.trim()}`,
+      sup ? proposal.trim() : `${proposal.trim()} · ${why.trim()}`,
     );
     setRuleOpen(false);
     setProposal("");
@@ -404,7 +404,7 @@ function PlatformTab({
               Cancel
             </Button>
             <Button
-              disabled={!proposal.trim() || !why.trim()}
+              disabled={!proposal.trim() || (!sup && !why.trim())}
               onClick={requestRule}
             >
               Submit request
@@ -428,16 +428,18 @@ function PlatformTab({
             className="w-full rounded-input border-[1.5px] border-line bg-white p-3.5 text-[15px] font-semibold outline-none focus:border-brand"
           />
         </label>
-        <label className="flex flex-col gap-1.5 text-sm font-bold">
-          Why
-          <textarea
-            rows={3}
-            value={why}
-            onChange={(e) => setWhy(e.target.value)}
-            placeholder="Required"
-            className="w-full rounded-input border-[1.5px] border-line bg-white p-3.5 text-[15px] font-semibold outline-none focus:border-brand"
-          />
-        </label>
+        {!sup && (
+          <label className="flex flex-col gap-1.5 text-sm font-bold">
+            Why
+            <textarea
+              rows={3}
+              value={why}
+              onChange={(e) => setWhy(e.target.value)}
+              placeholder="Required"
+              className="w-full rounded-input border-[1.5px] border-line bg-white p-3.5 text-[15px] font-semibold outline-none focus:border-brand"
+            />
+          </label>
+        )}
       </Modal>
     </div>
   );
