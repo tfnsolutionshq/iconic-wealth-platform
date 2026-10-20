@@ -145,7 +145,8 @@ export function PayoutBatchPage() {
 
   const failed = b.rows.filter((r) => r.status === "Failed").length;
   const isMaker = b.maker === adminName;
-  const canCheck = isSuper && !isMaker;
+  /** ADM-19/20: a Super Admin checks — including their own batch; only non-Super Admins are blocked from approving. */
+  const canCheck = isSuper;
   const count = (t: Tab) =>
     t === "All"
       ? b.rows.length
@@ -270,8 +271,14 @@ export function PayoutBatchPage() {
           <Banner tone="neutral">
             Prepared by {b.maker}.{" "}
             {isMaker
-              ? "You can’t approve your own work — waiting for a Super Admin."
-              : "Switch to a Super Admin to approve."}
+              ? "You prepared this batch — a Super Admin must approve it."
+              : "Only a Super Admin can approve. Switch role from the header in demo mode."}
+          </Banner>
+        )}
+        {b.status === "Awaiting approval" && canCheck && isMaker && (
+          <Banner tone="info">
+            You prepared this batch — as a Super Admin you can approve it
+            yourself.
           </Banner>
         )}
         {b.status === "Returned to maker" && (
@@ -298,7 +305,7 @@ export function PayoutBatchPage() {
           <Kpi
             label="Members in batch"
             value={b.count.toLocaleString()}
-            note={`Sample of ${b.rows.length} shown`}
+            note={`${b.rows.length.toLocaleString()} of ${b.count.toLocaleString()}`}
           />
           <Kpi label="Savings" value={formatNaira(b.savingsKobo)} />
           <Kpi label="Interest" value={formatNaira(b.interestKobo)} />
@@ -488,7 +495,10 @@ export function PayoutBatchPage() {
                 act(
                   () =>
                     repos.admin
-                      .decideBatch(b.id, "Approved", { by: adminName })
+                      .decideBatch(b.id, "Approved", {
+                        by: adminName,
+                        role: admin?.role,
+                      })
                       .then((nb) => {
                         audit(
                           "Approved payout batch",
@@ -532,7 +542,11 @@ export function PayoutBatchPage() {
                 act(
                   () =>
                     repos.admin
-                      .decideBatch(b.id, "Returned", { by: adminName, reason })
+                      .decideBatch(b.id, "Returned", {
+                        by: adminName,
+                        role: admin?.role,
+                        reason,
+                      })
                       .then((nb) => {
                         audit("Returned payout batch", b.id, reason);
                         return nb;

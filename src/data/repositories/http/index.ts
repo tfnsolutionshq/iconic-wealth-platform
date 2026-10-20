@@ -73,7 +73,7 @@ export class HttpAdminRepository implements AdminRepository {
   notifyInterest(year: number, by: string) { return this.http.post<InterestWorkflow>(`/admin/interest/${year}/notify`, { by }); }
   listPayoutBatches() { return this.http.get<PayoutBatch[]>('/admin/payouts'); }
   getPayoutBatch(id: string) { return this.http.get<PayoutBatch>(`/admin/payouts/${id}`); }
-  decideBatch(id: string, decision: 'Approved' | 'Returned', opts: { by: string; reason?: string }) { return this.http.post<PayoutBatch>(`/admin/payouts/${id}/decision`, { decision, ...opts }); }
+  decideBatch(id: string, decision: 'Approved' | 'Returned', opts: { by: string; role?: AdminRole; reason?: string }) { return this.http.post<PayoutBatch>(`/admin/payouts/${id}/decision`, { decision, ...opts }); }
   resubmitBatch(id: string, by: string) { return this.http.post<PayoutBatch>(`/admin/payouts/${id}/resubmit`, { by }); }
   startDisbursement(id: string, by: string) { return this.http.post<PayoutBatch>(`/admin/payouts/${id}/disburse`, { by }); }
   retryPayout(id: string, _memberId: string, by: string) { return this.http.post<PayoutBatch>(`/admin/payouts/${id}/retry`, { memberId: _memberId, by }); }

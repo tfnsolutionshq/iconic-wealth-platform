@@ -87,6 +87,13 @@ describe('MockAdminRepository interest → payout flow', () => {
     expect(approved.status).toBe('Approved');
     expect(approved.checker).toBe('Olumide Bakare');
   });
+  it('lets a Super Admin decide on their own payout batch, but not other roles', async () => {
+    const batch = await admin.createPayoutBatch(2026, 'Adaeze Okafor'); // the batch created above
+    await expect(admin.decideBatch(batch.id, 'Approved', { by: 'Adaeze Okafor' })).rejects.toThrow('approve your own work');
+    await expect(admin.decideBatch(batch.id, 'Approved', { by: 'Olumide Bakare', role: 'Administrator' })).rejects.toThrow('Only a Super Admin');
+    const approved = await admin.decideBatch(batch.id, 'Approved', { by: 'Adaeze Okafor', role: 'SuperAdmin' });
+    expect(approved.checker).toBe('Adaeze Okafor');
+  });
 });
 
 describe('MockTestimonialRepository admin', () => {

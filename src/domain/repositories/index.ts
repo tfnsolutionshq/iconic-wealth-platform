@@ -102,7 +102,7 @@ export interface AdminRepository {
   /** ADM-18 to ADM-20: year-end payout batches. */
   listPayoutBatches(): Promise<PayoutBatch[]>;
   getPayoutBatch(id: string): Promise<PayoutBatch>;
-  decideBatch(id: string, decision: 'Approved' | 'Returned', opts: { by: string; reason?: string }): Promise<PayoutBatch>;
+  decideBatch(id: string, decision: 'Approved' | 'Returned', opts: { by: string; role?: AdminRole; reason?: string }): Promise<PayoutBatch>;
   resubmitBatch(id: string, by: string): Promise<PayoutBatch>;
   startDisbursement(id: string, by: string): Promise<PayoutBatch>;
   retryPayout(id: string, memberId: string, by: string): Promise<PayoutBatch>;

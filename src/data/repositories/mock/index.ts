@@ -287,9 +287,10 @@ export class MockAdminRepository implements AdminRepository {
   }
   async listPayoutBatches() { return delay(payoutBatches, 120); }
   async getPayoutBatch(id: string) { return delay(batchOf(id), 120); }
-  async decideBatch(id: string, decision: 'Approved' | 'Returned', opts: { by: string; reason?: string }) {
+  async decideBatch(id: string, decision: 'Approved' | 'Returned', opts: { by: string; role?: AdminRole; reason?: string }) {
     const b = batchOf(id);
-    if (opts.by === b.maker) throw new Error('You can’t approve your own work. A Super Admin must approve it.');
+    if (opts.role && opts.role !== 'SuperAdmin') throw new Error('Only a Super Admin can approve a payout batch.');
+    if (opts.by === b.maker && opts.role !== 'SuperAdmin') throw new Error('You can’t approve your own work. A Super Admin must approve it.');
     if (decision === 'Approved') {
       b.status = 'Approved'; b.checker = opts.by;
       b.history.push([new Date().toISOString(), 'Approved batch', opts.by]);

@@ -63,6 +63,21 @@ const GROUPS = [
   ],
 ] as const;
 
+type AdminNotice = {
+  id: string;
+  icon: ReactNode;
+  title: string;
+  body: string;
+  to: string;
+  tone: "brand" | "gold" | "fail";
+};
+
+const NOTICE_TILE: Record<AdminNotice["tone"], string> = {
+  brand: "bg-brand-tint text-brand-dark",
+  gold: "bg-gold-tint text-[#7a4a00]",
+  fail: "bg-fail-tint text-fail",
+};
+
 export function AdminLayout() {
   const { session, logout } = useAuth();
   const [open, setOpen] = useState(false);
@@ -206,6 +221,9 @@ export function AdminPageHeader({
   const { repos } = useServices();
   const toast = useToast();
   const [menu, setMenu] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notices, setNotices] = useState<AdminNotice[] | null>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
   const [people, setPeople] = useState<Partial<Record<AdminRole, string>>>({});
   const wrapRef = useRef<HTMLDivElement>(null);
   const admin = session?.kind === "admin" ? session.admin : null;
@@ -240,6 +258,80 @@ export function AdminPageHeader({
     };
   }, [menu, people.Administrator, repos.admin]);
 
+  useEffect(() => {
+    if (!notifOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!notifRef.current?.contains(e.target as Node)) setNotifOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setNotifOpen(false);
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [notifOpen]);
+
+  useEffect(() => {
+    if (!notifOpen || notices) return;
+    let live = true;
+    Promise.all([
+      repos.admin.listRegistrations(),
+      repos.admin.listInterest(),
+      repos.admin.listPayoutBatches(),
+    ])
+      .then(([registrations, years, batches]) => {
+        if (!live) return;
+        const items: AdminNotice[] = [];
+        registrations
+          .filter((r) => r.status === "New")
+          .slice(0, 3)
+          .forEach((r) =>
+            items.push({
+              id: `reg-${r.id}`,
+              icon: <Users size={18} />,
+              title: "New registration",
+              body: `${r.firstName} ${r.lastName} is awaiting review.`,
+              to: paths.admin.registrations,
+              tone: "gold",
+            }),
+          );
+        years
+          .filter((y) => y.status === "Pending approval" || y.status === "Returned")
+          .slice(0, 3)
+          .forEach((y) =>
+            items.push({
+              id: `interest-${y.year}`,
+              icon: <Percent size={18} />,
+              title: y.status === "Returned" ? `Interest ${y.year} returned` : `Interest ${y.year} needs approval`,
+              body: y.rate != null ? `${y.rate}% · ${y.eligible.toLocaleString()} eligible members` : "Awaiting review.",
+              to: paths.admin.interestYear(y.year),
+              tone: y.status === "Returned" ? "fail" : "brand",
+            }),
+          );
+        batches
+          .filter((b) => b.status === "Awaiting approval" || b.status === "Returned to maker" || b.status === "Partial")
+          .slice(0, 3)
+          .forEach((b) =>
+            items.push({
+              id: `payout-${b.id}`,
+              icon: <Banknote size={18} />,
+              title: b.status === "Partial" ? `Payout ${b.id} has failures` : `Payout ${b.id} needs attention`,
+              body: `${b.month} ${b.year} · ${b.count.toLocaleString()} members`,
+              to: paths.admin.payoutBatch(b.id),
+              tone: b.status === "Partial" ? "fail" : b.status === "Returned to maker" ? "gold" : "brand",
+            }),
+          );
+        setNotices(items.slice(0, 8));
+      })
+      .catch(() => {
+        if (live) setNotices([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [notifOpen, notices, repos.admin]);
+
   const switchTo = async (r: AdminRole) => {
     try {
       await switchAdminRole(r);
@@ -269,13 +361,57 @@ export function AdminPageHeader({
       {actions && (
         <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div>
       )}
-      <button
-        aria-label="Notifications"
-        className="relative flex size-11 shrink-0 items-center justify-center rounded-full border-[1.5px] border-line"
-      >
-        <Bell size={20} />
-        <span className="absolute top-2 right-2.5 size-2.5 rounded-full border-2 border-white bg-gold" />
-      </button>
+      <div ref={notifRef} className="relative shrink-0">
+        <button
+          aria-label="Notifications"
+          aria-haspopup="menu"
+          aria-expanded={notifOpen}
+          onClick={() => setNotifOpen((v) => !v)}
+          className="relative flex size-11 shrink-0 items-center justify-center rounded-full border-[1.5px] border-line hover:border-brand"
+        >
+          <Bell size={20} />
+          <span className="absolute top-2 right-2.5 size-2.5 rounded-full border-2 border-white bg-gold" />
+        </button>
+        {notifOpen && (
+          <div
+            role="menu"
+            className="absolute top-12 right-0 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-line bg-white shadow-xl"
+          >
+            <div className="px-3.5 pt-3 pb-2 text-xs font-semibold text-mute">
+              Notifications
+            </div>
+            <div className="max-h-80 overflow-y-auto">
+              {notices === null ? (
+                <p className="border-t border-line px-3.5 py-3 text-sm font-semibold text-mute">
+                  Loading notifications…
+                </p>
+              ) : notices.length === 0 ? (
+                <p className="border-t border-line px-3.5 py-3 text-sm font-semibold text-mute">
+                  You’re all caught up.
+                </p>
+              ) : (
+                notices.map((n) => (
+                  <Link
+                    key={n.id}
+                    to={n.to}
+                    role="menuitem"
+                    onClick={() => setNotifOpen(false)}
+                    className="flex items-start gap-2.5 border-t border-line px-3.5 py-3 no-underline hover:bg-soft"
+                  >
+                    <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-full", NOTICE_TILE[n.tone])}>
+                      {n.icon}
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <b className="truncate text-[13px] text-ink">{n.title}</b>
+                      <span className="text-xs font-semibold leading-snug text-mute">{n.body}</span>
+                    </span>
+                  </Link>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </div>
       {admin && (
         <div ref={wrapRef} className="relative shrink-0">
           <button

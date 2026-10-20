@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Check, Lock, Search } from "lucide-react";
+import { Check, ChevronDown, Lock, Search } from "lucide-react";
 import type { AuditCategory, InterestCalcRow, InterestScope, InterestWorkflow, MemberSummary } from "@/domain/entities";
 import { formatNaira } from "@/domain/rules";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
 import { useAuth } from "../../../contexts/AuthContext";
-import { Banner, Button, Card, Checkbox, Chips, DataTable, Kpi, Modal, OpenDecisionTag, Pill, SelectField, TextField } from "../../../design-system";
+import { Banner, Button, Card, Checkbox, Chips, cn, DataTable, Kpi, Modal, OpenDecisionTag, Pill, SelectField, TextField } from "../../../design-system";
 import { AdminPageHeader } from "../../../layouts/AdminLayout";
 import { paths } from "../../../routes/paths";
 import { INTEREST_STAGES } from "./InterestPage";
@@ -39,7 +39,7 @@ export function InterestWorkflowPage() {
   const [reason, setReason] = useState("");
   const [approveOpen, setApproveOpen] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
-  const [channels, setChannels] = useState({ InApp: true, Email: true, SMS: true, WhatsApp: true });
+  const [channels, setChannels] = useState({ InApp: true, Email: true, WhatsApp: true });
   const [q, setQ] = useState("");
   const [scope, setScope] = useState<InterestScope>("All members");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -48,6 +48,9 @@ export function InterestWorkflowPage() {
   const [pickerMembers, setPickerMembers] = useState<MemberSummary[]>([]);
   const [draftIds, setDraftIds] = useState<string[]>([]);
   const [pickerBusy, setPickerBusy] = useState(false);
+  const [members, setMembers] = useState<MemberSummary[]>([]);
+  const [membersBusy, setMembersBusy] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const reload = async (keepStage?: number) => {
     const d = await repos.admin.getInterest(y);
@@ -95,6 +98,24 @@ export function InterestWorkflowPage() {
     const s = pickerQuery.trim().toLowerCase();
     return pickerMembers.filter((m) => !s || `${m.name} ${m.id}`.toLowerCase().includes(s));
   }, [pickerMembers, pickerQuery]);
+
+  const selectedMembers = useMemo(
+    () => (scope === "All members" ? members : members.filter((m) => selectedIds.includes(m.id))),
+    [scope, members, selectedIds],
+  );
+  const selectedCount = scope === "All members" ? members.length : selectedIds.length;
+
+  useEffect(() => {
+    if (stage !== 2 || members.length > 0) return;
+    let live = true;
+    setMembersBusy(true);
+    repos.admin
+      .listMembers({ tab: "All", search: "" })
+      .then((list) => { if (live) setMembers(list); })
+      .catch(() => {})
+      .finally(() => { if (live) setMembersBusy(false); });
+    return () => { live = false; };
+  }, [stage, members.length, repos.admin]);
 
   const openPicker = async () => {
     setPickerOpen(true);
@@ -247,14 +268,57 @@ export function InterestWorkflowPage() {
                   : "Interest is calculated only for the members you pick. Everyone else is marked as not selected."}
               </p>
             </div>
-            {scope === "Selected members" && (
-              <div className="flex flex-wrap items-center gap-3 rounded-2xl border-[1.5px] border-line bg-soft px-3.5 py-3">
+            <div className="flex flex-col gap-3 rounded-2xl border-[1.5px] border-line bg-soft px-3.5 py-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <span className="text-sm font-bold">
-                  {selectedIds.length === 0 ? "No members selected yet." : `${selectedIds.length} member${selectedIds.length === 1 ? "" : "s"} selected.`}
+                  {scope === "All members" && membersBusy
+                    ? "Loading members…"
+                    : selectedCount === 0
+                      ? "No members selected yet."
+                      : `${selectedCount.toLocaleString()} member${selectedCount === 1 ? "" : "s"} selected.`}
                 </span>
-                <Button variant="outline" size="sm" disabled={locked} onClick={openPicker}>{selectedIds.length === 0 ? "Choose members" : "Edit selection"}</Button>
+                {scope === "Selected members" && (
+                  <Button variant="outline" size="sm" disabled={locked} onClick={openPicker}>{selectedIds.length === 0 ? "Choose members" : "Edit selection"}</Button>
+                )}
+                <button
+                  onClick={() => setPreviewOpen((v) => !v)}
+                  aria-expanded={previewOpen}
+                  className="ml-auto inline-flex items-center gap-1 text-sm font-bold text-brand"
+                >
+                  {previewOpen ? "Hide preview" : "Preview"}
+                  <ChevronDown size={16} className={cn("transition", previewOpen && "rotate-180")} />
+                </button>
               </div>
-            )}
+              {previewOpen && (
+                <div className="overflow-hidden rounded-xl border border-line bg-white">
+                  {membersBusy ? (
+                    <p className="px-3.5 py-3 text-sm font-semibold text-mute">Loading members…</p>
+                  ) : selectedMembers.length === 0 ? (
+                    <p className="px-3.5 py-3 text-sm font-semibold text-mute">
+                      {scope === "Selected members" ? "No members selected yet." : "No members available."}
+                    </p>
+                  ) : (
+                    <div className="max-h-64 overflow-y-auto">
+                      {selectedMembers.map((m) => (
+                        <div key={m.id} className="flex items-center gap-3 border-b border-line px-3.5 py-2.5 text-sm last:border-b-0">
+                          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#f1dfb9] text-[11px] font-extrabold text-[#6e4a0c]">
+                            {m.name
+                              .split(" ")
+                              .map((n) => n[0])
+                              .join("")}
+                          </span>
+                          <span className="flex min-w-0 flex-1 flex-col">
+                            <b className="truncate text-[13px]">{m.name}</b>
+                            <span className="text-[11px] font-semibold text-mute">{m.id}</span>
+                          </span>
+                          <Pill tone={m.eligibility === "Eligible" ? "ok" : "fail"}>{m.eligibility}</Pill>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <TextField label="Basis" value="Proportional to savings" readOnly />
             <p className="text-sm font-semibold leading-relaxed text-mute">A month that closes with nothing saved forfeits interest unless a Super Admin approves an exception.</p>
             <div className="flex flex-wrap gap-2">
