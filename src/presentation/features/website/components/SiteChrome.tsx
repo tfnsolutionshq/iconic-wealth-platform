@@ -212,6 +212,18 @@ export function SiteFooter() {
           ))}
         </div>
       </div>
+      <div className="mx-auto mt-10 max-w-360 border-t border-white/15 pt-6 text-sm font-semibold">
+        Designed with love ❤️ by{" "}
+        <a
+          href="https://tfnsolutions.us"
+          target="_blank"
+          rel="noreferrer noopener"
+          className="font-bold text-white underline underline-offset-2 hover:text-brand-tint"
+        >
+          TFN Solutions
+        </a>
+        .
+      </div>
     </footer>
   );
 }

@@ -1,6 +1,27 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowDownLeft, ArrowUpRight, Clock, Download, Info, Landmark, Plus, TriangleAlert, Wallet, X } from "lucide-react";
-import type { WalletEntry, WalletSnapshot } from "@/domain/entities";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Clock,
+  Download,
+  Info,
+  Landmark,
+  Plus,
+  TriangleAlert,
+  Wallet,
+  X,
+} from "lucide-react";
+import type {
+  WalletEntry,
+  WalletEntryKind,
+  WalletSnapshot,
+} from "@/domain/entities";
 import { formatNaira, parseNairaInput } from "@/domain/rules";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useServices } from "../../../contexts/ServicesContext";
@@ -15,6 +36,8 @@ import {
   KeyValue,
   Modal,
   Pill,
+  SelectField,
+  TextField,
   cn,
 } from "../../../design-system";
 import { downloadCsv } from "../../../utils/csv";
@@ -22,6 +45,15 @@ import { paths } from "../../../routes/paths";
 import { fmtDateTime } from "../components/TransactionParts";
 
 type Tab = "All" | "Money in" | "Money out" | "Pending" | "Failed";
+
+type StatementType = "All" | WalletEntryKind;
+
+const STATEMENT_TYPES: { value: StatementType; label: string }[] = [
+  { value: "All", label: "All transactions" },
+  { value: "TopUp", label: "Top-ups" },
+  { value: "Withdrawal", label: "Withdrawals" },
+  { value: "Contribution", label: "Contributions" },
+];
 
 const ENTRY_STATUS_TONE = {
   Successful: "ok",
@@ -35,7 +67,9 @@ const describeEntry = (e: WalletEntry) =>
     ? "Wallet top-up"
     : e.kind === "Withdrawal"
       ? "Wallet withdrawal"
-      : "Wallet adjustment";
+      : e.kind === "Contribution"
+        ? "Contribution to savings"
+        : "Wallet adjustment";
 
 function tileFor(e: WalletEntry): { cls: string; icon: ReactNode } {
   if (e.status === "Failed")
@@ -57,10 +91,10 @@ function WalletRow({ e }: { e: WalletEntry }) {
         {tile.icon}
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <b className="text-[15px] break-words text-ink">
+        <b className="text-[15px] wrap-break-word text-ink">
           {describeEntry(e)}
         </b>
-        <span className="text-[13px] font-semibold break-words text-mute">
+        <span className="text-[13px] font-semibold wrap-break-word text-mute">
           {fmtDateTime(e.createdAt)} · {e.reference}
           {e.note ? ` · ${e.note}` : ""}
           {e.failureReason ? ` · ${e.failureReason}` : ""}
@@ -135,6 +169,10 @@ export function WalletPage() {
   const [busy, setBusy] = useState(false);
   const [fundOpen, setFundOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [statementOpen, setStatementOpen] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [statementType, setStatementType] = useState<StatementType>("All");
 
   const reload = useCallback(async () => {
     if (member) setSnap(await repos.wallet.getSnapshot(member.id));
@@ -159,12 +197,27 @@ export function WalletPage() {
         tab === "All" ||
         (tab === "Money in" && e.direction === "Credit") ||
         (tab === "Money out" && e.direction === "Debit") ||
-        (tab === "Pending" && (e.status === "Pending" || e.status === "Processing")) ||
+        (tab === "Pending" &&
+          (e.status === "Pending" || e.status === "Processing")) ||
         e.status === tab,
     );
   }, [snap, tab]);
 
+  const statementEntries = useMemo(() => {
+    const entries = snap?.entries ?? [];
+    return entries.filter((e) => {
+      if (statementType !== "All" && e.kind !== statementType) return false;
+      const day = e.createdAt.slice(0, 10);
+      return (!dateFrom || day >= dateFrom) && (!dateTo || day <= dateTo);
+    });
+  }, [snap, statementType, dateFrom, dateTo]);
+
   if (!member || !snap) return <p className="text-mute">Loading…</p>;
+
+  const dateError =
+    dateFrom && dateTo && dateFrom > dateTo
+      ? "The start date must be on or before the end date."
+      : undefined;
 
   const amount = amountText ? parseNairaInput(amountText) : 0;
   const openFund = () => {
@@ -223,19 +276,35 @@ export function WalletPage() {
   };
 
   const statement = () => {
+    if (dateError || !statementEntries.length) return;
     downloadCsv(
       `IWH-wallet-statement-${member.id}.csv`,
-      ["Date", "Description", "Reference", "Direction", "Amount", "Status"],
-      list.map((e) => [
+      [
+        "Date",
+        "Description",
+        "Reference",
+        "Direction",
+        "Amount (Naira)",
+        "Status",
+      ],
+      statementEntries.map((e) => [
         e.createdAt.slice(0, 10),
         describeEntry(e),
         e.reference,
         e.direction === "Credit" ? "Money in" : "Money out",
-        formatNaira(e.amountKobo),
+        Math.round(e.amountKobo / 100),
         e.status,
       ]),
     );
+    setStatementOpen(false);
     toast("Statement downloaded.");
+  };
+
+  const openStatement = () => {
+    setDateFrom("");
+    setDateTo("");
+    setStatementType("All");
+    setStatementOpen(true);
   };
 
   return (
@@ -246,28 +315,47 @@ export function WalletPage() {
           variant="outline"
           size="md"
           icon={<Download size={18} />}
-          onClick={statement}
+          onClick={openStatement}
         >
           Statement
         </Button>
       </div>
 
-      <Card tone="night" className="flex flex-col gap-1">
-        <span className="text-xs font-bold text-white/70">
-          Available balance
-        </span>
-        <b className="text-3xl break-words tabular-nums">
-          {formatNaira(snap.availableKobo)}
-        </b>
-        <span className="text-[13px] font-semibold text-white/70">
-          Confirmed money you can spend or withdraw.
-        </span>
+      <Card
+        tone="night"
+        className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-bold text-white/70">
+            Available balance
+          </span>
+          <b className="text-3xl wrap-break-word tabular-nums">
+            {formatNaira(snap.availableKobo)}
+          </b>
+          <span className="text-[13px] font-semibold text-white/70">
+            Confirmed money you can spend or withdraw.
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-2.5">
+          <Button size="md" icon={<Plus size={18} />} onClick={openFund}>
+            Fund wallet
+          </Button>
+          <Button
+            variant="outline"
+            size="md"
+            icon={<ArrowUpRight size={18} />}
+            disabled={snap.availableKobo <= 0}
+            onClick={openWithdraw}
+          >
+            Withdraw
+          </Button>
+        </div>
       </Card>
 
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         <Card className="flex flex-col gap-1 bg-soft">
           <span className="text-xs font-bold text-mute">Pending deposits</span>
-          <b className="text-xl break-words tabular-nums">
+          <b className="text-xl wrap-break-word tabular-nums">
             {formatNaira(snap.pendingDepositKobo)}
           </b>
           <span className="text-[13px] font-semibold text-mute">
@@ -278,34 +366,13 @@ export function WalletPage() {
           <span className="text-xs font-bold text-mute">
             Pending withdrawals
           </span>
-          <b className="text-xl break-words tabular-nums">
+          <b className="text-xl wrap-break-word tabular-nums">
             {formatNaira(snap.pendingWithdrawalKobo)}
           </b>
           <span className="text-[13px] font-semibold text-mute">
             On the way to your bank account.
           </span>
         </Card>
-      </div>
-
-      <div className="flex flex-wrap gap-2.5">
-        <Button
-          size="md"
-          icon={<Plus size={18} />}
-          className="min-w-40 flex-1"
-          onClick={openFund}
-        >
-          Fund wallet
-        </Button>
-        <Button
-          variant="outline"
-          size="md"
-          icon={<ArrowUpRight size={18} />}
-          className="min-w-40 flex-1"
-          disabled={snap.availableKobo <= 0}
-          onClick={openWithdraw}
-        >
-          Withdraw
-        </Button>
       </div>
 
       <div className="overflow-x-auto">
@@ -323,7 +390,9 @@ export function WalletPage() {
         ) : (
           <EmptyState
             icon={<Wallet size={28} />}
-            title={snap.entries.length ? "Nothing here" : "No wallet activity yet"}
+            title={
+              snap.entries.length ? "Nothing here" : "No wallet activity yet"
+            }
           >
             {snap.entries.length
               ? "Try another filter."
@@ -331,6 +400,63 @@ export function WalletPage() {
           </EmptyState>
         )}
       </Card>
+
+      <Modal
+        open={statementOpen}
+        title="Export statement"
+        onClose={() => setStatementOpen(false)}
+        footer={
+          <>
+            <Button
+              variant="outline"
+              size="md"
+              onClick={() => setStatementOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="md"
+              icon={<Download size={18} />}
+              disabled={!!dateError || !statementEntries.length}
+              onClick={statement}
+            >
+              Download CSV
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm font-semibold text-mute">
+          Choose a date range and transaction type for your wallet statement.
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <TextField
+            label="Start date"
+            type="date"
+            value={dateFrom}
+            max={dateTo || undefined}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+          <TextField
+            label="End date"
+            type="date"
+            value={dateTo}
+            min={dateFrom || undefined}
+            error={dateError}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
+        </div>
+        <SelectField
+          label="Transaction type"
+          options={STATEMENT_TYPES}
+          value={statementType}
+          onChange={(e) => setStatementType(e.target.value as StatementType)}
+        />
+        <p className="text-[13px] font-semibold text-mute">
+          {statementEntries.length
+            ? `${statementEntries.length} transaction${statementEntries.length === 1 ? "" : "s"} will be exported.`
+            : "No transactions match these filters."}
+        </p>
+      </Modal>
 
       <Modal
         open={fundOpen}
@@ -345,7 +471,11 @@ export function WalletPage() {
             >
               Cancel
             </Button>
-            <Button size="md" disabled={!!fundError || !amount || busy} onClick={fund}>
+            <Button
+              size="md"
+              disabled={!!fundError || !amount || busy}
+              onClick={fund}
+            >
               {amount > 0 ? `Fund ${formatNaira(amount)}` : "Fund wallet"}
             </Button>
           </>
@@ -359,7 +489,10 @@ export function WalletPage() {
         />
         {amount > 0 && !fundError && (
           <Card tone="soft" className="flex flex-col">
-            <KeyValue label="Available balance" value={formatNaira(snap.availableKobo)} />
+            <KeyValue
+              label="Available balance"
+              value={formatNaira(snap.availableKobo)}
+            />
             <KeyValue
               label="After this top-up"
               value={formatNaira(snap.availableKobo + amount)}
@@ -423,6 +556,7 @@ export function WalletPage() {
                 label="Account name"
                 value={member.payoutAccount.accountName}
               />
+              <KeyValue label="Withdrawal charges" value={formatNaira(0)} />
               {amount > 0 && !withdrawError && (
                 <KeyValue
                   label="Balance after withdrawal"
@@ -431,8 +565,8 @@ export function WalletPage() {
               )}
             </Card>
             <Banner tone="info" icon={<Info size={20} />}>
-              Withdrawals are sent to your bank account by the Iconic Wealth
-              Hub team. You will see it here as pending until it is completed.
+              Withdrawals are sent to your bank account by the Iconic Wealth Hub
+              team. You will see it here as pending until it is completed.
             </Banner>
           </>
         )}

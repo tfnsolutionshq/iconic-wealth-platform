@@ -3,9 +3,9 @@
  * agree them in Sprint 0 and keep this file as the single place that knows URLs and payload shapes.
  * Money is exchanged in kobo (integers).
  */
-import type { AdminListItem, AdminRole, AdminUser, AuditEntry, InterestCalcRow, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, NotificationSettings, PayoutAccount, PayoutBatch, ReferralGroup, Registration, ReportKind, ReportResult, SavingsYear, Session, Testimonial, Transaction } from '@/domain/entities';
+import type { AdminListItem, AdminRole, AdminUser, AuditEntry, InterestCalcRow, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, NotificationSettings, PayoutAccount, PayoutBatch, ReferralGroup, Registration, ReportKind, ReportResult, SavingsYear, Session, Testimonial, Transaction } from '@/domain/entities';
 import type { PlatformSettings } from '@/domain/rules';
-import type { AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, MemberQuery, MemberRepository, NewRegistration, RegistrationRepository, SettingsRepository, TestimonialRepository, VerifiedContribution } from '@/domain/repositories';
+import type { AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, InterestRulesInput, MemberQuery, MemberRepository, NewRegistration, RegistrationRepository, SettingsRepository, TestimonialRepository, VerifiedContribution } from '@/domain/repositories';
 import type { HttpClient } from '@/data/api/httpClient';
 
 export class HttpAuthRepository implements AuthRepository {
@@ -38,6 +38,7 @@ export class HttpContributionRepository implements ContributionRepository {
   constructor(private readonly http: HttpClient) {}
   initiate(memberId: string, year: number, amountKobo: Kobo) { return this.http.post<ContributionIntent>('/contributions', { memberId, year, amountKobo }); }
   verify(reference: string) { return this.http.post<VerifiedContribution>(`/contributions/${reference}/verify`); }
+  payFromWallet(memberId: string, year: number, amountKobo: Kobo) { return this.http.post<VerifiedContribution>('/contributions/wallet', { memberId, year, amountKobo }); }
 }
 export class HttpSettingsRepository implements SettingsRepository {
   constructor(private readonly http: HttpClient) {}
@@ -65,7 +66,8 @@ export class HttpAdminRepository implements AdminRepository {
   listInterest() { return this.http.get<InterestYearSummary[]>('/admin/interest'); }
   getInterest(year: number) { return this.http.get<{ workflow: InterestWorkflow; preview: InterestCalcRow[] }>(`/admin/interest/${year}`); }
   saveInterestPeriod(year: number, period: { start: string; end: string; close: string }) { return this.http.put<InterestWorkflow>(`/admin/interest/${year}/period`, period); }
-  saveInterestRules(year: number, rules: { rate: number; rounding: string; scope: InterestScope; selectedMemberIds: string[] }) { return this.http.put<InterestWorkflow>(`/admin/interest/${year}/rules`, rules); }
+  saveInterestRules(year: number, rules: InterestRulesInput) { return this.http.put<InterestWorkflow>(`/admin/interest/${year}/rules`, rules); }
+  setInterestExclusions(year: number, memberIds: string[]) { return this.http.put<InterestWorkflow>(`/admin/interest/${year}/exclusions`, { memberIds }); }
   runInterestCalculation(year: number) { return this.http.post<InterestWorkflow>(`/admin/interest/${year}/calculate`); }
   submitInterest(year: number, note: string, by: string) { return this.http.post<InterestWorkflow>(`/admin/interest/${year}/submit`, { note, by }); }
   decideInterest(year: number, decision: 'Approved' | 'Returned', opts: { by: string; role?: AdminRole; reason?: string }) { return this.http.post<InterestWorkflow>(`/admin/interest/${year}/decision`, { decision, ...opts }); }

@@ -61,7 +61,7 @@ export function InterestPage() {
             ))}
           </ol>
           <p className="text-[13px] font-semibold leading-relaxed text-mute">
-            The maker (Administrator) sets the period and rate, runs the calculation and submits. A different person (Super Admin) approves or returns it; approval creates the payout batch.
+            The maker (Administrator) sets the period and interest rules, runs the calculation and submits. A different person (Super Admin) approves or returns it; approval creates the payout batch.
           </p>
         </Card>
         <DataTable<InterestYearSummary>
@@ -72,7 +72,7 @@ export function InterestPage() {
             { header: "Year", render: (y) => <b>Savings year {y.year}</b> },
             { header: "Status", render: (y) => <Pill tone={STATUS_TONE[y.status]}>{y.status}</Pill> },
             { header: "Progress", render: (y) => <span className="text-mute">{progress(y)}</span> },
-            { header: "Rate", align: "right", render: (y) => (y.rate != null ? `${y.rate}%` : "Not set") },
+            { header: "Rate", align: "right", render: (y) => (y.rateMode === "Contribution ranges" ? "By range" : y.rate != null ? `${y.rate}%` : "Not set") },
             { header: "Eligible members", align: "right", render: (y) => y.eligible.toLocaleString() },
             { header: "Total interest", align: "right", render: (y) => (y.interestKobo ? <b>{formatNaira(y.interestKobo)}</b> : "—") },
             { header: "Approved by", render: (y) => <span className="text-mute">{y.checker ? `${y.checker} · ${y.approvedAt}` : "—"}</span> },

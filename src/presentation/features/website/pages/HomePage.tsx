@@ -15,6 +15,7 @@ import {
   type Step,
 } from "../components/HomePageComponents/HowItWorksSteps";
 import { paths } from "../../../routes/paths";
+import heroImage from "@/assets/hero/three-casual-african-american-girls-with-colored-shopping-bags-walking-outdoor-stylish-black-womans-shopping.jpg";
 
 const STEPS: Step[] = [
   {
@@ -71,41 +72,56 @@ const TRUST = [
 export function HomePage() {
   return (
     <>
-      <section className="mx-auto flex max-w-360 flex-col items-center gap-16 px-5 pt-16 pb-24 lg:flex-row lg:px-16 lg:pt-20">
-        <div className="flex flex-1 flex-col gap-6">
-          <span className="w-max rounded-pill bg-gold-tint px-3 py-1 text-[13px] font-bold text-[#7a5410]">
-            Members-only savings community
-          </span>
-          <h1 className="max-w-[11ch] font-display text-4xl leading-[1.04] tracking-tight sm:text-5xl lg:text-[76px]">
-            Save every month. Collect it all at year-end.
-          </h1>
-          <p className="max-w-[46ch] text-lg leading-relaxed text-[#474252]">
-            Save from ₦10,000 at a time, follow every payment online, and
-            receive your savings with your share of annual interest on payout
-            day.
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <ButtonLink to={paths.register}>Become a member</ButtonLink>
-            <ButtonLink to={paths.howItWorks} variant="outline">
-              See how it works
-            </ButtonLink>
-          </div>
-          <div className="flex flex-wrap gap-6 text-[13px] font-semibold text-mute">
-            <span className="flex items-center gap-1.5">
-              <ShieldCheck size={18} />
-              Payments by Paystack
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Lock size={18} />
-              Your balance is private
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Check size={18} />
-              Verified before credited
-            </span>
-          </div>
+      <section className="relative isolate overflow-hidden">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 -z-10"
+        >
+          <img
+            src={heroImage}
+            alt=""
+            className="h-full w-full object-cover object-[65%_center]"
+          />
+          <div className="absolute inset-0 bg-brand-dark/70 lg:bg-linear-to-r lg:from-brand-dark/80 lg:via-brand-dark/60 lg:to-brand-dark/40" />
         </div>
-        <YearCard />
+        <div className="mx-auto flex max-w-360 flex-col items-center gap-16 px-5 pt-16 pb-24 lg:flex-row lg:px-16 lg:pt-20">
+          <div className="flex flex-1 flex-col gap-6">
+            <span className="w-max rounded-pill bg-gold-tint px-3 py-1 text-[13px] font-bold text-[#7a5410]">
+              Members-only savings community
+            </span>
+            <h1 className="max-w-[11ch] font-display text-4xl leading-[1.04] tracking-tight text-white sm:text-5xl lg:text-[76px]">
+              Save every month. Collect it all at year-end.
+            </h1>
+            <p className="max-w-[46ch] text-lg leading-relaxed text-white/90">
+              Save from ₦10,000 at a time, follow every payment online, and
+              receive your savings with your share of annual interest on payout
+              day.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <ButtonLink to={paths.register} variant="gold">
+                Become a member
+              </ButtonLink>
+              <ButtonLink to={paths.howItWorks} variant="outline">
+                See how it works
+              </ButtonLink>
+            </div>
+            <div className="flex flex-wrap gap-6 text-[13px] font-semibold text-white/90">
+              <span className="flex items-center gap-1.5">
+                <ShieldCheck size={18} />
+                Payments by Paystack
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Lock size={18} />
+                Your balance is private
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Check size={18} />
+                Verified before credited
+              </span>
+            </div>
+          </div>
+          <YearCard />
+        </div>
       </section>
       <section className="bg-soft px-5 py-20 lg:px-16">
         <div className="mx-auto max-w-360">
@@ -126,7 +142,9 @@ export function HomePage() {
       <section className="bg-night px-5 py-20 text-white lg:px-16">
         <div className="mx-auto flex max-w-360 flex-col gap-10 lg:flex-row">
           <div className="flex flex-col gap-4 lg:w-95">
-            <h2 className="font-display text-4xl sm:text-5xl">The rules, up front</h2>
+            <h2 className="font-display text-4xl sm:text-5xl">
+              The rules, up front
+            </h2>
             <p className="leading-relaxed text-white/70">
               These come from Iconic Wealth Hub’s operational guidelines. You’ll
               see them again before every payment.

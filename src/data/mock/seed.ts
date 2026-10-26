@@ -116,16 +116,16 @@ export const memberSummaries: MemberSummary[] = [
 
 /** Interest configurations, one per savings year (ADM-15). 2024/2025 are closed and read-only; 2026 runs the 8-stage workflow. */
 export const interestYears: InterestWorkflow[] = [
-  { year: 2024, status: 'Paid out', rate: 9, eligible: 812, forfeited: 61, contributionsKobo: naira(168_200_000), interestKobo: naira(15_138_000),
+  { year: 2024, status: 'Paid out', rate: 9, rateMode: 'Fixed rate', eligible: 812, forfeited: 61, contributionsKobo: naira(168_200_000), interestKobo: naira(15_138_000),
     maker: 'Adaeze Okafor', checker: 'Olumide Bakare', approvedAt: '2024-12-12', batchId: 'PB-2024-12',
-    closed: true, stage: 8, done: 8, start: '2024-01-01', end: '2024-11-30', close: '2025-01-05', rounding: 'Nearest naira', scope: 'All members', selectedMemberIds: [], calc: true, note: '', notified: true,
+    closed: true, stage: 8, done: 8, start: '2024-01-01', end: '2024-11-30', close: '2025-01-05', rounding: 'Nearest naira', bands: [], scope: 'All members', selectedMemberIds: [], excludedMemberIds: [], calc: true, note: '', notified: true,
     history: [['2024-12-10T09:00', 'Submitted for approval', 'Adaeze Okafor'], ['2024-12-12T14:20', 'Approved configuration', 'Olumide Bakare'], ['2024-12-17T15:30', '845 paid · batch completed', 'System']] },
-  { year: 2025, status: 'Paid out', rate: 10, eligible: 961, forfeited: 71, contributionsKobo: naira(216_400_000), interestKobo: naira(21_640_000),
+  { year: 2025, status: 'Paid out', rate: 10, rateMode: 'Fixed rate', eligible: 961, forfeited: 71, contributionsKobo: naira(216_400_000), interestKobo: naira(21_640_000),
     maker: 'Adaeze Okafor', checker: 'Olumide Bakare', approvedAt: '2025-12-13', batchId: 'PB-2025-12',
-    closed: true, stage: 8, done: 8, start: '2025-01-01', end: '2025-11-30', close: '2026-01-05', rounding: 'Nearest naira', scope: 'All members', selectedMemberIds: [], calc: true, note: '', notified: true,
+    closed: true, stage: 8, done: 8, start: '2025-01-01', end: '2025-11-30', close: '2026-01-05', rounding: 'Nearest naira', bands: [], scope: 'All members', selectedMemberIds: [], excludedMemberIds: [], calc: true, note: '', notified: true,
     history: [['2025-12-11T10:00', 'Submitted for approval', 'Adaeze Okafor'], ['2025-12-13T11:45', 'Approved configuration', 'Olumide Bakare'], ['2025-12-18T11:40', '1,029 paid · 3 failed', 'System']] },
-  { year: 2026, status: 'Not started', rate: null, eligible: 0, forfeited: 0, contributionsKobo: 0, interestKobo: 0,
-    closed: false, stage: 1, done: 0, start: '2026-01-01', end: '2026-11-30', close: '2027-01-05', rounding: 'Nearest naira', scope: 'All members', selectedMemberIds: [], calc: false, note: '', notified: false, history: [] },
+  { year: 2026, status: 'Not started', rate: null, rateMode: 'Fixed rate', eligible: 0, forfeited: 0, contributionsKobo: 0, interestKobo: 0,
+    closed: false, stage: 1, done: 0, start: '2026-01-01', end: '2026-11-30', close: '2027-01-05', rounding: 'Nearest naira', bands: [], scope: 'All members', selectedMemberIds: [], excludedMemberIds: [], calc: false, note: '', notified: false, history: [] },
 ];
 
 const prow = (memberId: string, memberName: string, saved: number, ratePct: number, account: string, status: PayoutRow['status'], reference: string, reason?: string): PayoutRow => {

@@ -1,5 +1,5 @@
-import type { AdminListItem, AdminRole, AdminUser, Allocation, AuditEntry, InterestCalcRow, InterestScope, InterestWorkflow, Kobo, MonthIndex, NotificationSettings, PayoutBatch, Registration, ReportKind, ReportResult, Session, Testimonial, Transaction, WalletEntry, WalletWithdrawal } from '@/domain/entities';
-import type { AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, MemberQuery, MemberRepository, NewRegistration, RegistrationRepository, SettingsRepository, TestimonialRepository, VerifiedContribution, WalletRepository } from '@/domain/repositories';
+import type { AdminListItem, AdminRole, AdminUser, Allocation, AuditEntry, InterestBand, InterestCalcRow, InterestWorkflow, Kobo, MonthIndex, NotificationSettings, PayoutBatch, Registration, ReportKind, ReportResult, Session, Testimonial, Transaction, WalletEntry, WalletWithdrawal } from '@/domain/entities';
+import type { AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, MemberQuery, MemberRepository, NewRegistration, InterestRulesInput, RegistrationRepository, SettingsRepository, TestimonialRepository, VerifiedContribution, WalletRepository } from '@/domain/repositories';
 import { DEFAULT_SETTINGS, MONTHS_SHORT, autoLocksAfter, canLock, chargeBreakdown, formatNaira, minimumFor, naira, planAllocation, walletBalances, type PlatformSettings } from '@/domain/rules';
 import type { Clock } from '@/domain/services/clock';
 import { adminUsers, auditEntries, interestYears, memberSummaries, members, payoutBatches, registrations, savingsYears, testimonials, transactions, walletEntries, walletWithdrawals } from '@/data/mock/seed';
@@ -108,9 +108,8 @@ export class MockContributionRepository implements ContributionRepository {
     const reference = ref('IWH-C'); this.intents.set(reference, { memberId, year, allocations: plan.allocations, amount });
     return delay({ reference, amountKobo: amount, platformChargeKobo: chargeBreakdown(amount, settings.platformCharge).platformCharge, allocations: plan.allocations, email: m.email });
   }
-  async verify(reference: string): Promise<VerifiedContribution> {
-    const i = this.intents.get(reference); if (!i) throw notFound('Payment');
-    const status = this.outcomeFor(reference); const m = memberOf(i.memberId); const now = this.clock.now();
+  private record(reference: string, i: { memberId: string; year: number; allocations: Allocation[]; amount: Kobo }, status: 'Successful' | 'Failed' | 'Pending'): VerifiedContribution {
+    const m = memberOf(i.memberId); const now = this.clock.now();
     const tx: Transaction = { id: ref('TX'), reference, gatewayReference: status === 'Pending' ? undefined : ref('T'), memberId: i.memberId, memberName: `${m.firstName} ${m.lastName}`,
       kind: 'Contribution', year: i.year, allocations: i.allocations, amountKobo: i.amount, platformChargeKobo: chargeBreakdown(i.amount, settings.platformCharge).platformCharge,
       status, late: false, failureReason: status === 'Failed' ? 'Declined by your bank: insufficient funds' : undefined, createdAt: now.toISOString() };
@@ -121,7 +120,24 @@ export class MockContributionRepository implements ContributionRepository {
       y.locks = autoLocksAfter(y, transactions.filter(t => t.memberId === i.memberId), settings, now.toISOString());
       if (m.community === 'Locked' && i.amount >= minimumFor(settings, i.year)) { m.community = 'Eligible'; communityUnlocked = true; }
     }
-    return delay({ transaction: tx, communityUnlocked });
+    return { transaction: tx, communityUnlocked };
+  }
+  async verify(reference: string): Promise<VerifiedContribution> {
+    const i = this.intents.get(reference); if (!i) throw notFound('Payment');
+    return delay(this.record(reference, i, this.outcomeFor(reference)));
+  }
+  async payFromWallet(memberId: string, year: number, amount: Kobo): Promise<VerifiedContribution> {
+    const y = yearOf(memberId, year);
+    const plan = planAllocation(amount, y, transactions.filter(t => t.memberId === memberId), this.clock.now(), settings);
+    if (!plan.ok) throw new Error(plan.error);
+    const total = amount + chargeBreakdown(amount, settings.platformCharge).platformCharge;
+    const availableKobo = walletBalances(walletEntries.filter(e => e.memberId === memberId)).availableKobo;
+    if (total > availableKobo) throw new Error(`Your wallet balance is too low. Top up ${formatNaira(total - availableKobo)} to continue.`);
+    const reference = ref('IWH-C');
+    const i = { memberId, year, allocations: plan.allocations, amount };
+    walletEntries.unshift({ id: ref('WE'), reference, memberId, kind: 'Contribution', direction: 'Debit', amountKobo: total, status: 'Successful',
+      note: `Savings · ${plan.allocations.map(a => MONTHS_SHORT[a.month]).join(', ')} ${year}`, createdAt: this.clock.now().toISOString() });
+    return delay(this.record(reference, i, 'Successful'));
   }
 }
 
@@ -144,16 +160,30 @@ const notifications: NotificationSettings = {
 };
 
 const interestOf = (year: number) => { const w = interestYears.find(x => x.year === year); if (!w) throw notFound('Interest configuration'); return w; };
-const calcPreview = (rate: number, w?: InterestWorkflow): InterestCalcRow[] => {
+const rateForContribution = (amountKobo: Kobo, w: InterestWorkflow): number | null =>
+  w.rateMode === 'Contribution ranges'
+    ? (w.bands.find(b => amountKobo >= b.minKobo && (b.maxKobo == null || amountKobo <= b.maxKobo))?.rate ?? null)
+    : w.rate;
+const hasRateConfig = (w: InterestWorkflow) => w.rateMode === 'Contribution ranges' ? w.bands.length > 0 : w.rate != null;
+const calcPreview = (w: InterestWorkflow): InterestCalcRow[] => {
   const total = memberSummaries.reduce((s, m) => s + m.savedKobo, 0) || 1;
-  const inScope = (id: string) => !w || w.scope !== 'Selected members' || w.selectedMemberIds.includes(id);
-  return memberSummaries.map(m => {
-    const eligible = m.eligibility === 'Eligible' && inScope(m.id);
+  const inScope = (id: string) => w.scope !== 'Selected members' || w.selectedMemberIds.includes(id);
+  const excluded = new Set(w.excludedMemberIds ?? []);
+  return memberSummaries.filter(m => !excluded.has(m.id)).map(m => {
+    const rate = rateForContribution(m.savedKobo, w);
+    const eligible = m.eligibility === 'Eligible' && inScope(m.id) && rate != null;
+    const rawKobo = rate != null ? m.savedKobo * rate / 100 : 0;
     return { memberId: m.id, memberName: m.name, contributionsKobo: m.savedKobo,
       sharePct: Math.round(m.savedKobo / total * 1000) / 10,
-      interestKobo: eligible ? Math.round(m.savedKobo * rate / 100 / 100) * 100 : 0,
-      eligible, reason: inScope(m.id) ? m.forfeitReason : 'Not selected for interest' };
+      interestKobo: eligible ? (w.rounding === 'Nearest kobo' ? Math.round(rawKobo) : Math.round(rawKobo / 100) * 100) : 0,
+      eligible, rate, reason: !inScope(m.id) ? 'Not selected for interest' : rate == null ? 'No contribution range matches' : m.forfeitReason };
   });
+};
+const applyPreviewTotals = (w: InterestWorkflow, preview: InterestCalcRow[]) => {
+  w.eligible = preview.filter(p => p.eligible).length;
+  w.forfeited = preview.filter(p => !p.eligible).length;
+  w.contributionsKobo = preview.reduce((s, p) => s + p.contributionsKobo, 0);
+  w.interestKobo = preview.reduce((s, p) => s + p.interestKobo, 0);
 };
 const batchOf = (id: string) => { const b = payoutBatches.find(x => x.id === id); if (!b) throw notFound('Payout batch'); return b; };
 const completeBatchIfDone = (b: PayoutBatch) => {
@@ -198,12 +228,12 @@ export class MockAdminRepository implements AdminRepository {
     return delay([...transactions].sort((a, b) => b.createdAt.localeCompare(a.createdAt)), 120);
   }
   async listInterest() {
-    return delay(interestYears.map(({ year, status, rate, eligible, forfeited, contributionsKobo, interestKobo, maker, checker, approvedAt, batchId }) =>
-      ({ year, status, rate, eligible, forfeited, contributionsKobo, interestKobo, maker, checker, approvedAt, batchId })), 120);
+    return delay(interestYears.map(({ year, status, rate, rateMode, eligible, forfeited, contributionsKobo, interestKobo, maker, checker, approvedAt, batchId }) =>
+      ({ year, status, rate, rateMode, eligible, forfeited, contributionsKobo, interestKobo, maker, checker, approvedAt, batchId })), 120);
   }
   async getInterest(year: number) {
     const w = interestOf(year);
-    return delay({ workflow: w, preview: w.rate ? calcPreview(w.rate, w) : [] }, 120);
+    return delay({ workflow: w, preview: hasRateConfig(w) ? calcPreview(w) : [] }, 120);
   }
   async saveInterestPeriod(year: number, period: { start: string; end: string; close: string }) {
     const w = interestOf(year); if (w.closed) throw new Error('Closed years are read-only.');
@@ -213,27 +243,66 @@ export class MockAdminRepository implements AdminRepository {
     w.history.push([new Date().toISOString(), 'Saved period setup', 'You']);
     return delay(w);
   }
-  async saveInterestRules(year: number, rules: { rate: number; rounding: string; scope: InterestScope; selectedMemberIds: string[] }) {
+  async saveInterestRules(year: number, rules: InterestRulesInput) {
     const w = interestOf(year); if (w.closed) throw new Error('Closed years are read-only.');
-    if (rules.rate < 0.1 || rules.rate > 30) throw new Error('Rate must be between 0.1% and 30%.');
     if (rules.scope === 'Selected members' && rules.selectedMemberIds.length === 0) throw new Error('Select at least one member to apply interest to.');
+    const rateMode = rules.rateMode ?? 'Fixed rate';
+    let rate: number | null = null;
+    let bands: InterestBand[] = [];
+    if (rateMode === 'Fixed rate') {
+      if (rules.rate == null || rules.rate < 0.1 || rules.rate > 30) throw new Error('Rate must be between 0.1% and 30%.');
+      rate = rules.rate;
+    } else {
+      bands = [...(rules.bands ?? [])].sort((a, b) => a.minKobo - b.minKobo);
+      if (!bands.length) throw new Error('Add at least one contribution range.');
+      if (bands.some(b => b.minKobo <= 0)) throw new Error('Enter a starting amount for every range.');
+      if (bands[0].minKobo !== naira(10_000)) throw new Error('The lowest contribution range must start at ₦10,000.');
+      bands.forEach((b, i) => {
+        if (!Number.isFinite(b.rate) || b.rate < 0.1 || b.rate > 30) throw new Error('Each range rate must be between 0.1% and 30%.');
+        if (b.maxKobo != null && b.maxKobo <= b.minKobo) throw new Error('Each range must end above where it starts.');
+        const prev = bands[i - 1];
+        if (prev) {
+          if (prev.maxKobo == null) throw new Error('Only the last range can have no upper limit.');
+          if (b.minKobo <= prev.maxKobo) throw new Error('Contribution ranges must not overlap.');
+        }
+      });
+    }
     const scopeChanged = w.scope !== rules.scope || w.selectedMemberIds.join(',') !== rules.selectedMemberIds.join(',');
-    if (w.rate !== rules.rate || scopeChanged) w.calc = false;
-    w.rate = rules.rate; w.rounding = rules.rounding; w.scope = rules.scope; w.selectedMemberIds = rules.selectedMemberIds;
+    const rulesChanged = w.rateMode !== rateMode || w.rate !== rate || JSON.stringify(w.bands ?? []) !== JSON.stringify(bands) || w.rounding !== rules.rounding || scopeChanged;
+    if (rulesChanged) w.calc = false;
+    w.rateMode = rateMode; w.rate = rate; w.bands = bands;
+    w.rounding = rules.rounding; w.scope = rules.scope; w.selectedMemberIds = rules.selectedMemberIds;
     if (w.status === 'Not started' || w.status === 'Returned') w.status = 'Draft';
     w.done = Math.max(w.done, 2); w.stage = 3;
+    const rateLabel = rateMode === 'Fixed rate'
+      ? `Set a fixed rate of ${rate}%`
+      : `Set ${bands.length} contribution range${bands.length === 1 ? '' : 's'}`;
     w.history.push([new Date().toISOString(), rules.scope === 'Selected members'
-      ? `Set rate to ${rules.rate}% · interest for ${rules.selectedMemberIds.length} selected members`
-      : `Set rate to ${rules.rate}% for all members`, 'You']);
+      ? `${rateLabel} · interest for ${rules.selectedMemberIds.length} selected members`
+      : `${rateLabel} for all members`, 'You']);
+    return delay(w);
+  }
+  async setInterestExclusions(year: number, memberIds: string[]) {
+    const w = interestOf(year); if (w.closed) throw new Error('Closed years are read-only.');
+    if (w.status === 'Pending approval' || w.status === 'Approved' || w.status === 'Paid out') throw new Error('Interest is locked once submitted for approval.');
+    const known = new Set(memberSummaries.map(m => m.id));
+    const next = [...new Set(memberIds)].filter(id => known.has(id));
+    const current = w.excludedMemberIds ?? [];
+    const unchanged = next.length === current.length && next.every(id => current.includes(id));
+    if (unchanged) return delay(w);
+    const removed = next.length - current.length;
+    w.excludedMemberIds = next;
+    if (w.calc) applyPreviewTotals(w, calcPreview(w));
+    w.history.push([new Date().toISOString(), removed > 0
+      ? `Removed ${removed} member${removed === 1 ? '' : 's'} from payout`
+      : 'Restored removed members', 'You']);
     return delay(w);
   }
   async runInterestCalculation(year: number) {
     const w = interestOf(year); if (w.closed) throw new Error('Closed years are read-only.');
-    if (!w.rate) throw new Error('Set a rate first.');
-    const preview = calcPreview(w.rate, w);
-    w.eligible = preview.filter(p => p.eligible).length; w.forfeited = preview.filter(p => !p.eligible).length;
-    w.contributionsKobo = preview.reduce((s, p) => s + p.contributionsKobo, 0);
-    w.interestKobo = preview.reduce((s, p) => s + p.interestKobo, 0);
+    if (!hasRateConfig(w)) throw new Error('Set interest rules first.');
+    const preview = calcPreview(w);
+    applyPreviewTotals(w, preview);
     w.calc = true; w.done = Math.max(w.done, 3); w.stage = 4;
     w.history.push([new Date().toISOString(), 'Ran calculation', 'You']);
     return delay(w);
@@ -269,7 +338,7 @@ export class MockAdminRepository implements AdminRepository {
     const banks = ['GTBank', 'Access Bank', 'First Bank', 'UBA', 'Zenith Bank'];
     const batch: PayoutBatch = { id: `PB-${year}-12`, year, month: 'December', status: 'Awaiting approval', count: w.eligible,
       savingsKobo: w.contributionsKobo, interestKobo: w.interestKobo, maker: by, createdAt: new Date().toISOString(),
-      rows: calcPreview(w.rate ?? 0, w).filter(p => p.eligible).map((p, i) => ({ memberId: p.memberId, memberName: p.memberName,
+      rows: calcPreview(w).filter(p => p.eligible).map((p, i) => ({ memberId: p.memberId, memberName: p.memberName,
         savingsKobo: p.contributionsKobo, interestKobo: p.interestKobo, totalKobo: p.contributionsKobo + p.interestKobo,
         account: `${banks[i % banks.length]} •••• ${(1000 + i * 137).toString().slice(-4)}`, status: 'Pending',
         reference: `IWH-P-${String(year).slice(2)}1218-${(2000 + i * 53).toString(36).toUpperCase().padStart(4, '0')}` })),

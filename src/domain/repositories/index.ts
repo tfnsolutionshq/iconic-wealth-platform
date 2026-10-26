@@ -4,7 +4,7 @@
  *  - http: calls the backend API — see data/repositories/http
  * The presentation layer never imports data-layer classes directly; it receives these via ServicesContext.
  */
-import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, InterestCalcRow, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsYear, Session, Testimonial, Transaction, WalletEntry, WalletSnapshot, WalletWithdrawal } from '../entities';
+import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, InterestBand, InterestCalcRow, InterestRateMode, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsYear, Session, Testimonial, Transaction, WalletEntry, WalletSnapshot, WalletWithdrawal } from '../entities';
 import type { RegistrationDetails } from '../rules/registration';
 import type { PlatformSettings } from '../rules/savings';
 
@@ -52,6 +52,8 @@ export interface ContributionRepository {
   initiate(memberId: string, year: number, amountKobo: Kobo): Promise<ContributionIntent>;
   /** Server-side verification with Paystack; applies catch-up auto-locks and community unlock. */
   verify(reference: string): Promise<VerifiedContribution>;
+  /** Debits the member's wallet and records the contribution atomically; applies the same auto-locks and unlock. */
+  payFromWallet(memberId: string, year: number, amountKobo: Kobo): Promise<VerifiedContribution>;
 }
 
 export type GatewayOutcome = 'success' | 'failed' | 'closed';
@@ -76,6 +78,16 @@ export interface TestimonialRepository {
   remove(id: string): Promise<void>;
 }
 
+/** Rule configuration input: either one fixed rate, or contribution bands with their own rates. */
+export interface InterestRulesInput {
+  rateMode?: InterestRateMode;
+  rate: number | null;
+  bands?: InterestBand[];
+  rounding: string;
+  scope: InterestScope;
+  selectedMemberIds: string[];
+}
+
 export interface MemberQuery { tab: 'All' | 'Active' | 'Suspended' | 'NotPaid' | 'Forfeited'; search: string; eligibility?: 'Eligible' | 'Forfeited'; referred?: boolean; joinedYear?: string }
 export interface AdminRepository {
   dashboard(year: number): Promise<{ members: number; activeSavers: number; totalSavingsKobo: Kobo; pendingPayments: number; monthlyPaid: { month: string; paid: number; due: number }[]; eligible: number; forfeited: number }>;
@@ -92,7 +104,9 @@ export interface AdminRepository {
   listInterest(): Promise<InterestYearSummary[]>;
   getInterest(year: number): Promise<{ workflow: InterestWorkflow; preview: InterestCalcRow[] }>;
   saveInterestPeriod(year: number, period: { start: string; end: string; close: string }): Promise<InterestWorkflow>;
-  saveInterestRules(year: number, rules: { rate: number; rounding: string; scope: InterestScope; selectedMemberIds: string[] }): Promise<InterestWorkflow>;
+  saveInterestRules(year: number, rules: InterestRulesInput): Promise<InterestWorkflow>;
+  /** Removes members from the payout preview/batch (pass `[]` to restore everyone). */
+  setInterestExclusions(year: number, memberIds: string[]): Promise<InterestWorkflow>;
   runInterestCalculation(year: number): Promise<InterestWorkflow>;
   submitInterest(year: number, note: string, by: string): Promise<InterestWorkflow>;
   /** `role` identifies the checker: only a Super Admin may approve — including their own maker request. */

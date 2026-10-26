@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Check, ChevronDown, Lock, Search } from "lucide-react";
-import type { AuditCategory, InterestCalcRow, InterestScope, InterestWorkflow, MemberSummary } from "@/domain/entities";
-import { formatNaira } from "@/domain/rules";
+import { Check, ChevronDown, Lock, Search, X } from "lucide-react";
+import type { AuditCategory, Eligibility, InterestBand, InterestCalcRow, InterestRateMode, InterestScope, InterestWorkflow, MemberSummary } from "@/domain/entities";
+import { formatNaira, parseNairaInput } from "@/domain/rules";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
 import { useAuth } from "../../../contexts/AuthContext";
@@ -14,6 +14,37 @@ import { downloadCsv } from "../../../utils/csv";
 
 const STATUS_TONE = { "Not started": "mute", Draft: "info", "Pending approval": "pending", Returned: "fail", Approved: "ok", "Paid out": "ok" } as const;
 const LOCKED = ["Pending approval", "Approved", "Paid out"];
+const MIN_BAND_KOBO = parseNairaInput("10000");
+
+type BandDraft = { min: string; max: string; rate: string };
+type PickerEligibility = "All" | Eligibility;
+const bandToDraft = (b: InterestBand): BandDraft => ({
+  min: String(Math.round(b.minKobo / 100)),
+  max: b.maxKobo == null ? "" : String(Math.round(b.maxKobo / 100)),
+  rate: String(b.rate),
+});
+const rateLabel = (w: InterestWorkflow) =>
+  w.rateMode === "Contribution ranges"
+    ? `${(w.bands ?? []).length} contribution band${(w.bands ?? []).length === 1 ? "" : "s"}`
+    : w.rate != null
+      ? `${w.rate}%`
+      : "Not set";
+
+function BandSummary({ bands }: { bands: InterestBand[] }) {
+  if (!bands.length) return null;
+  return (
+    <div className="flex flex-col gap-1.5 rounded-xl border-[1.5px] border-line bg-soft p-3 text-sm">
+      {bands.map((b, i) => (
+        <div key={i} className="flex justify-between gap-3">
+          <span className="font-semibold text-mute">
+            {formatNaira(b.minKobo)} – {b.maxKobo == null ? "No limit" : formatNaira(b.maxKobo)}
+          </span>
+          <b>{b.rate}%</b>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /** ADM-16, ADM-17: 8-stage maker-checker interest workflow. Past years are read-only. */
 export function InterestWorkflowPage() {
@@ -34,6 +65,8 @@ export function InterestWorkflowPage() {
   const [missing, setMissing] = useState(false);
   const [period, setPeriod] = useState({ start: "", end: "", close: "" });
   const [rate, setRate] = useState("");
+  const [rateMode, setRateMode] = useState<InterestRateMode>("Fixed rate");
+  const [bands, setBands] = useState<BandDraft[]>([{ min: "10000", max: "", rate: "" }]);
   const [rounding, setRounding] = useState("Nearest naira");
   const [note, setNote] = useState("");
   const [reason, setReason] = useState("");
@@ -45,6 +78,7 @@ export function InterestWorkflowPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
+  const [pickerEligibility, setPickerEligibility] = useState<PickerEligibility>("All");
   const [pickerMembers, setPickerMembers] = useState<MemberSummary[]>([]);
   const [draftIds, setDraftIds] = useState<string[]>([]);
   const [pickerBusy, setPickerBusy] = useState(false);
@@ -59,6 +93,8 @@ export function InterestWorkflowPage() {
     setStage(keepStage ?? d.workflow.stage);
     setPeriod({ start: d.workflow.start, end: d.workflow.end, close: d.workflow.close });
     setRate(d.workflow.rate != null ? String(d.workflow.rate) : "");
+    setRateMode(d.workflow.rateMode ?? "Fixed rate");
+    setBands(d.workflow.bands?.length ? d.workflow.bands.map(bandToDraft) : [{ min: "10000", max: "", rate: "" }]);
     setRounding(d.workflow.rounding);
     setNote(d.workflow.note);
     setScope(d.workflow.scope);
@@ -94,16 +130,25 @@ export function InterestWorkflowPage() {
     return preview.filter((p) => !s || `${p.memberName} ${p.memberId}`.toLowerCase().includes(s));
   }, [preview, q]);
 
+  const pickerCounts = useMemo(() => ({
+    All: pickerMembers.length,
+    Eligible: pickerMembers.filter((m) => m.eligibility === "Eligible").length,
+    Forfeited: pickerMembers.filter((m) => m.eligibility === "Forfeited").length,
+  }), [pickerMembers]);
+
   const pickerFiltered = useMemo(() => {
     const s = pickerQuery.trim().toLowerCase();
-    return pickerMembers.filter((m) => !s || `${m.name} ${m.id}`.toLowerCase().includes(s));
-  }, [pickerMembers, pickerQuery]);
+    return pickerMembers
+      .filter((m) => pickerEligibility === "All" || m.eligibility === pickerEligibility)
+      .filter((m) => !s || `${m.name} ${m.id}`.toLowerCase().includes(s));
+  }, [pickerMembers, pickerQuery, pickerEligibility]);
 
   const selectedMembers = useMemo(
-    () => (scope === "All members" ? members : members.filter((m) => selectedIds.includes(m.id))),
-    [scope, members, selectedIds],
+    () => (scope === "All members" ? members : members.filter((m) => selectedIds.includes(m.id)))
+      .filter((m) => !(w?.excludedMemberIds ?? []).includes(m.id)),
+    [scope, members, selectedIds, w?.excludedMemberIds],
   );
-  const selectedCount = scope === "All members" ? members.length : selectedIds.length;
+  const selectedCount = selectedMembers.length;
 
   useEffect(() => {
     if (stage !== 2 || members.length > 0) return;
@@ -120,6 +165,7 @@ export function InterestWorkflowPage() {
   const openPicker = async () => {
     setPickerOpen(true);
     setPickerQuery("");
+    setPickerEligibility("All");
     setDraftIds(selectedIds);
     if (pickerMembers.length === 0) {
       setPickerBusy(true);
@@ -142,7 +188,7 @@ export function InterestWorkflowPage() {
         <div className="flex flex-col gap-5 px-4 py-5 sm:px-8 sm:py-6">
           <Banner tone="neutral" icon={<Lock size={20} />}>This period is closed. Figures below are the approved record.</Banner>
           <div className="grid gap-3.5 md:grid-cols-4">
-            <Kpi label="Rate applied" value={`${w.rate}%`} />
+            <Kpi label="Rate applied" value={rateLabel(w)} />
             <Kpi label="Eligible members" value={w.eligible.toLocaleString()} note={`${w.forfeited} forfeited`} />
             <Kpi label="Eligible contributions" value={formatNaira(w.contributionsKobo)} />
             <Kpi label="Total interest" value={formatNaira(w.interestKobo)} note="Paid out" tone="good" />
@@ -169,6 +215,7 @@ export function InterestWorkflowPage() {
               columns={[
                 { header: "Member", render: (r) => <b>{r.memberName}</b> },
                 { header: "Savings", align: "right", render: (r) => formatNaira(r.contributionsKobo) },
+                { header: "Rate", align: "right", render: (r) => (r.rate != null ? `${r.rate}%` : "—") },
                 { header: "Interest", align: "right", render: (r) => <b>{formatNaira(r.interestKobo)}</b> },
                 { header: "Total paid", align: "right", render: (r) => <b>{formatNaira(r.contributionsKobo + r.interestKobo)}</b> },
                 { header: "Payout status", render: () => <Pill tone="ok">Paid</Pill> },
@@ -182,20 +229,75 @@ export function InterestWorkflowPage() {
 
   /* ---------- current year: wizard ---------- */
   const locked = LOCKED.includes(w.status);
+  const hasRates = w.rateMode === "Contribution ranges" ? (w.bands ?? []).length > 0 : w.rate != null;
   const isMaker = w.maker === adminName;
   /** ADM-16/17: a Super Admin checks — including their own maker request; only non-Super Admins are blocked from approving. */
   const canCheck = isSuper;
 
   const savePeriod = () => run(() => repos.admin.saveInterestPeriod(y, period), () => setStage(2), "Period saved.");
   const saveRules = () => {
-    const r = Number(rate);
-    if (!Number.isFinite(r) || r < 0.1 || r > 30) { toast("Rate must be between 0.1% and 30%."); return; }
     if (scope === "Selected members" && selectedIds.length === 0) { toast("Select at least one member, or apply interest to all members."); return; }
-    run(() => repos.admin.saveInterestRules(y, { rate: r, rounding, scope, selectedMemberIds: scope === "Selected members" ? selectedIds : [] }), () => setStage(3), "Rules saved.");
+    let fixedRate: number | null = null;
+    let parsedBands: InterestBand[] = [];
+    if (rateMode === "Fixed rate") {
+      fixedRate = Number(rate);
+      if (!Number.isFinite(fixedRate) || fixedRate < 0.1 || fixedRate > 30) { toast("Rate must be between 0.1% and 30%."); return; }
+    } else {
+      parsedBands = bands
+        .map((b) => ({
+          minKobo: parseNairaInput(b.min),
+          maxKobo: b.max.trim() === "" ? null : parseNairaInput(b.max),
+          rate: Number(b.rate),
+        }))
+        .sort((a, b) => a.minKobo - b.minKobo);
+      if (!parsedBands.length) { toast("Add at least one contribution range."); return; }
+      if (parsedBands.some((b) => b.minKobo <= 0)) { toast("Enter a starting amount for every range."); return; }
+      if (parsedBands[0].minKobo !== MIN_BAND_KOBO) { toast("The lowest contribution range must start at ₦10,000."); return; }
+      for (let i = 0; i < parsedBands.length; i++) {
+        const b = parsedBands[i];
+        if (!Number.isFinite(b.rate) || b.rate < 0.1 || b.rate > 30) { toast("Each range rate must be between 0.1% and 30%."); return; }
+        if (b.maxKobo != null && b.maxKobo <= b.minKobo) { toast("Each range must end above where it starts."); return; }
+        const prev = parsedBands[i - 1];
+        if (prev) {
+          if (prev.maxKobo == null) { toast("Only the last range can have no upper limit."); return; }
+          if (b.minKobo <= prev.maxKobo) { toast("Contribution ranges must not overlap."); return; }
+        }
+      }
+    }
+    run(
+      () => repos.admin.saveInterestRules(y, {
+        rateMode,
+        rate: fixedRate,
+        bands: parsedBands,
+        rounding,
+        scope,
+        selectedMemberIds: scope === "Selected members" ? selectedIds : [],
+      }),
+      () => setStage(3),
+      "Rules saved.",
+    );
   };
   const calculate = () => run(() => repos.admin.runInterestCalculation(y), () => setStage(4), "Calculation complete.");
-  const submit = () => run(() => repos.admin.submitInterest(y, note, adminName).then((wf) => audit("Submitted interest for approval", `Interest ${y}`, `${wf.eligible} eligible · ${wf.rate}%`, "Financial")), () => {}, "Sent for approval.");
-  const approve = () => run(() => repos.admin.decideInterest(y, "Approved", { by: adminName, role: admin?.role }).then((wf) => audit("Approved interest configuration", `Interest ${y}`, `${wf.rate}% · ${formatNaira(wf.interestKobo)}`, "Financial")), () => setApproveOpen(false), "Configuration approved.");
+  const removeFromPayout = (row: InterestCalcRow) => run(
+    () => repos.admin.setInterestExclusions(y, [...(w.excludedMemberIds ?? []), row.memberId])
+      .then((wf) => audit("Removed member from payout", row.memberId, `${row.memberName} · ${wf.eligible} eligible`, "Financial")),
+    () => {},
+    `${row.memberName} removed from payout.`,
+  );
+  const removeMemberFromPreview = (m: MemberSummary) => run(
+    () => repos.admin.setInterestExclusions(y, [...(w.excludedMemberIds ?? []), m.id])
+      .then((wf) => audit("Removed member from payout", m.id, `${m.name} · ${wf.eligible} eligible`, "Financial")),
+    () => {},
+    `${m.name} removed from payout.`,
+  );
+  const restorePayoutMembers = () => run(
+    () => repos.admin.setInterestExclusions(y, [])
+      .then((wf) => audit("Restored payout members", `Interest ${y}`, `${(w.excludedMemberIds ?? []).length} restored · ${wf.eligible} eligible`, "Financial")),
+    () => {},
+    "Removed members restored.",
+  );
+  const submit = () => run(() => repos.admin.submitInterest(y, note, adminName).then((wf) => audit("Submitted interest for approval", `Interest ${y}`, `${wf.eligible} eligible · ${rateLabel(wf)}`, "Financial")), () => {}, "Sent for approval.");
+  const approve = () => run(() => repos.admin.decideInterest(y, "Approved", { by: adminName, role: admin?.role }).then((wf) => audit("Approved interest configuration", `Interest ${y}`, `${rateLabel(wf)} · ${formatNaira(wf.interestKobo)}`, "Financial")), () => setApproveOpen(false), "Configuration approved.");
   const returnToMaker = () => run(() => repos.admin.decideInterest(y, "Returned", { by: adminName, role: admin?.role, reason }).then(() => audit("Returned interest to maker", `Interest ${y}`, reason, "Financial")), () => { setReturnOpen(false); setReason(""); }, "Returned to maker.");
   const createBatch = () => run(() => repos.admin.createPayoutBatch(y, adminName).then((b) => audit("Created payout batch", b.id, `${b.count} members`, "Financial")), () => {}, "Batch created.");
   const notify = () => run(() => repos.admin.notifyInterest(y, adminName).then(() => audit("Notified members of interest", `Interest ${y}`, `${w.eligible} eligible`, "Financial")), () => {}, `Sent to ${w.eligible.toLocaleString()} members.`);
@@ -248,10 +350,82 @@ export function InterestWorkflowPage() {
         {stage === 2 && (
           <Card className="flex max-w-2xl flex-col gap-4">
             <h2 className="text-base font-extrabold">Rule configuration</h2>
-            <div className="grid gap-4 md:grid-cols-2">
-              <TextField label="Interest rate (%)" inputMode="decimal" placeholder="e.g. 10" hint="2025 · 10%, 2024 · 9%" value={rate} disabled={locked} onChange={(e) => setRate(e.target.value)} />
-              <SelectField label="Rounding" options={["Nearest naira", "Nearest kobo"]} value={rounding} disabled={locked} onChange={(e) => setRounding(e.target.value)} />
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-bold">Interest rate structure</span>
+              <Chips<InterestRateMode>
+                value={rateMode}
+                options={[
+                  { value: "Fixed rate", label: "Fixed rate for all members" },
+                  { value: "Contribution ranges", label: "Rates by contribution range" },
+                ]}
+                onChange={(v) => { if (!locked) setRateMode(v); }}
+              />
+              <p className="text-sm font-semibold leading-relaxed text-mute">
+                {rateMode === "Fixed rate"
+                  ? "One rate applies to every eligible member, whatever they saved."
+                  : "Choose a rate for each band of total contributions. A member gets the rate for the band their savings fall into."}
+              </p>
             </div>
+            {rateMode === "Fixed rate" ? (
+              <TextField label="Interest rate (%)" inputMode="decimal" placeholder="e.g. 10" hint="2025 · 10%, 2024 · 9%" value={rate} disabled={locked} onChange={(e) => setRate(e.target.value)} />
+            ) : (
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-bold">Contribution ranges</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={locked}
+                    onClick={() => setBands((prev) => [...prev, { min: "", max: "", rate: "" }])}
+                  >
+                    Add range
+                  </Button>
+                </div>
+                {bands.map((b, i) => (
+                  <div
+                    key={i}
+                    className="grid gap-3 rounded-2xl border-[1.5px] border-line bg-soft p-3 sm:grid-cols-[1fr_1fr_0.85fr_auto] sm:items-end"
+                  >
+                    <TextField
+                      label="From (₦)"
+                      inputMode="numeric"
+                      value={i === 0 ? "10,000" : b.min}
+                      hint={i === 0 ? "Lowest amount" : undefined}
+                      disabled={locked || i === 0}
+                      onChange={(e) => setBands((prev) => prev.map((x, k) => k === i ? { ...x, min: e.target.value.replace(/\D/g, "") } : x))}
+                    />
+                    <TextField
+                      label="To (₦)"
+                      inputMode="numeric"
+                      placeholder={i === bands.length - 1 ? "No limit" : "e.g. 100,000"}
+                      value={b.max}
+                      disabled={locked}
+                      onChange={(e) => setBands((prev) => prev.map((x, k) => k === i ? { ...x, max: e.target.value.replace(/\D/g, "") } : x))}
+                    />
+                    <TextField
+                      label="Rate (%)"
+                      inputMode="decimal"
+                      placeholder="e.g. 10"
+                      value={b.rate}
+                      disabled={locked}
+                      onChange={(e) => setBands((prev) => prev.map((x, k) => k === i ? { ...x, rate: e.target.value } : x))}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={locked || bands.length === 1}
+                      onClick={() => setBands((prev) => prev.filter((_, k) => k !== i).map((x, k) => k === 0 ? { ...x, min: "10000" } : x))}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+                <p className="text-[13px] font-semibold leading-relaxed text-mute">
+                  The first range always starts at ₦10,000. Leave the last “To” blank for no upper limit.
+                </p>
+              </div>
+            )}
+            <SelectField label="Rounding" options={["Nearest naira", "Nearest kobo"]} value={rounding} disabled={locked} onChange={(e) => setRounding(e.target.value)} />
             <div className="flex flex-col gap-2">
               <span className="text-sm font-bold">Apply interest to</span>
               <Chips<InterestScope>
@@ -312,8 +486,32 @@ export function InterestWorkflowPage() {
                             <span className="text-[11px] font-semibold text-mute">{m.id}</span>
                           </span>
                           <Pill tone={m.eligibility === "Eligible" ? "ok" : "fail"}>{m.eligibility}</Pill>
+                          {m.eligibility === "Eligible" && (
+                            <button
+                              type="button"
+                              title="Remove from payout"
+                              aria-label={`Remove ${m.name} from payout`}
+                              disabled={busy || locked}
+                              onClick={() => removeMemberFromPreview(m)}
+                              className="inline-flex size-7 shrink-0 items-center justify-center rounded-full text-mute transition hover:bg-fail-tint hover:text-fail focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50"
+                            >
+                              <X size={14} />
+                            </button>
+                          )}
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {(w.excludedMemberIds ?? []).length > 0 && (
+                    <div className="border-t border-line bg-soft px-3.5 py-2">
+                      <button
+                        type="button"
+                        disabled={busy || locked}
+                        onClick={restorePayoutMembers}
+                        className="text-sm font-bold text-brand underline underline-offset-2 disabled:opacity-50"
+                      >
+                        Restore removed members ({(w.excludedMemberIds ?? []).length})
+                      </button>
                     </div>
                   )}
                 </div>
@@ -334,8 +532,8 @@ export function InterestWorkflowPage() {
             {!w.calc ? (
               <Card className="flex max-w-2xl flex-col items-start gap-3">
                 <h2 className="text-base font-extrabold">Calculation</h2>
-                <p className="text-sm font-semibold text-mute">Ready to calculate{w.rate ? ` at ${w.rate}%` : ""}.</p>
-                {!locked && <Button size="md" disabled={busy || w.rate == null} onClick={calculate}>{busy ? "Calculating…" : "Run calculation"}</Button>}
+                <p className="text-sm font-semibold text-mute">Ready to calculate{w.rateMode === "Fixed rate" && w.rate != null ? ` at ${w.rate}%` : " using contribution ranges"}.</p>
+                {!locked && <Button size="md" disabled={busy || !hasRates} onClick={calculate}>{busy ? "Calculating…" : "Run calculation"}</Button>}
               </Card>
             ) : (
               <>
@@ -350,7 +548,12 @@ export function InterestWorkflowPage() {
                     <h2 className="text-base font-extrabold">Calculation preview · sample of {preview.length}</h2>
                     <div className="ml-auto flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                       {!locked && <Button variant="outline" size="sm" onClick={calculate} disabled={busy}>Recalculate</Button>}
-                      <Button variant="outline" size="sm" onClick={() => { downloadCsv(`iwh-interest-${y}-preview.csv`, ["Member", "Contributions", "Share %", "Interest", "Status"], preview.map((p) => [p.memberName, formatNaira(p.contributionsKobo), `${p.sharePct}%`, formatNaira(p.interestKobo), p.eligible ? "Eligible" : "Forfeited"])); toast("Preview exported."); }}>Export</Button>
+                      {(w.excludedMemberIds ?? []).length > 0 && (
+                        <Button variant="outline" size="sm" onClick={restorePayoutMembers} disabled={busy || locked}>
+                          Restore removed ({w.excludedMemberIds.length})
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => { downloadCsv(`iwh-interest-${y}-preview.csv`, ["Member", "Contributions", "Rate", "Share %", "Interest", "Status"], preview.map((p) => [p.memberName, formatNaira(p.contributionsKobo), p.rate != null ? `${p.rate}%` : "—", `${p.sharePct}%`, formatNaira(p.interestKobo), p.eligible ? "Eligible" : "Forfeited"])); toast("Preview exported."); }}>Export</Button>
                       <label className="flex h-9 w-full sm:w-56 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute">
                         <Search size={16} />
                         <input className="w-full bg-transparent text-sm font-semibold text-ink outline-none" placeholder="Search member" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -363,11 +566,29 @@ export function InterestWorkflowPage() {
                     columns={[
                       { header: "Member", render: (r) => <b>{r.memberName}</b> },
                       { header: "Contributions", align: "right", render: (r) => formatNaira(r.contributionsKobo) },
+                      { header: "Rate", align: "right", render: (r) => (r.rate != null ? `${r.rate}%` : "—") },
                       { header: "Share", align: "right", render: (r) => `${r.sharePct}%` },
                       { header: "Interest", align: "right", render: (r) => <b>{formatNaira(r.interestKobo)}</b> },
                       { header: "Status", render: (r) => (r.eligible ? <Pill tone="ok">Eligible</Pill> : <Pill tone="fail">{r.reason ?? "Forfeited"}</Pill>) },
+                      {
+                        header: "Action",
+                        align: "right",
+                        render: (r) => (r.eligible ? (
+                          <button
+                            type="button"
+                            title="Remove from payout"
+                            aria-label={`Remove ${r.memberName} from payout`}
+                            disabled={busy || locked}
+                            onClick={() => removeFromPayout(r)}
+                            className="inline-flex size-8 items-center justify-center rounded-full text-mute transition hover:bg-fail-tint hover:text-fail focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50"
+                          >
+                            <X size={16} />
+                          </button>
+                        ) : null),
+                      },
                     ]}
                   />
+                  {!locked && <p className="text-[13px] font-semibold text-mute">Use the remove icon to exclude an eligible member from the payout batch.</p>}
                   {!locked && <div><Button size="md" onClick={() => setStage(4)}>Save and continue</Button></div>}
                 </Card>
               </>
@@ -378,13 +599,14 @@ export function InterestWorkflowPage() {
         {stage === 4 && (
           <Card className="flex max-w-2xl flex-col gap-4">
             <h2 className="text-base font-extrabold">Review and submit</h2>
-            {[["Period", `${w.start} – ${w.end}`], ["Rate", w.rate != null ? `${w.rate}%` : "—"],
+            {[["Period", `${w.start} – ${w.end}`], ["Rate", rateLabel(w)],
               ["Applies to", w.scope === "Selected members" ? `${w.selectedMemberIds.length} selected members` : "All members"],
               ["Eligible", w.eligible.toLocaleString()], ["Forfeited", String(w.forfeited)], ["Total interest", formatNaira(w.interestKobo)]].map(([k, v]) => (
               <div key={k} className="flex justify-between gap-3 border-b border-line py-2 text-sm last:border-b-0">
                 <span className="font-semibold text-mute">{k}</span><b>{v}</b>
               </div>
             ))}
+            {w.rateMode === "Contribution ranges" && <BandSummary bands={w.bands ?? []} />}
             <label className="flex flex-col gap-1.5 text-sm font-bold">Note for the checker (optional)
               <textarea rows={3} value={note} disabled={locked} onChange={(e) => setNote(e.target.value)} placeholder="Anything the checker should know"
                 className="w-full rounded-input border-[1.5px] border-line bg-white p-3.5 text-[15px] font-semibold outline-none focus:border-brand" />
@@ -402,7 +624,8 @@ export function InterestWorkflowPage() {
               <p className="text-sm font-semibold text-mute">Submit the configuration for approval first (stage 4).</p>
             ) : canCheck ? (
               <>
-                <p className="text-sm font-semibold">Rate {w.rate}% · total interest {formatNaira(w.interestKobo)} · {w.eligible.toLocaleString()} eligible.</p>
+                <p className="text-sm font-semibold">Rate {rateLabel(w)} · total interest {formatNaira(w.interestKobo)} · {w.eligible.toLocaleString()} eligible.</p>
+                {w.rateMode === "Contribution ranges" && <BandSummary bands={w.bands ?? []} />}
                 {isMaker && <p className="text-sm text-mute">You prepared this request — as a Super Admin you can approve it yourself.</p>}
                 {w.note && <p className="text-sm text-mute">Maker’s note: {w.note}</p>}
                 <div className="flex flex-wrap gap-2.5">
@@ -439,7 +662,7 @@ export function InterestWorkflowPage() {
         {stage === 7 && (
           <Card className="flex max-w-2xl flex-col gap-3">
             <h2 className="text-base font-extrabold">Notify members</h2>
-            <Card tone="soft"><p className="text-sm font-semibold leading-relaxed">Good news: your {y} interest of {w.rate}% has been approved. Eligible savers will receive interest with the December payout.</p></Card>
+            <Card tone="soft"><p className="text-sm font-semibold leading-relaxed">Good news: your {y} interest has been approved. Eligible savers will receive interest with the December payout.</p></Card>
             <div className="grid gap-2 md:grid-cols-2">
               {(Object.keys(channels) as (keyof typeof channels)[]).map((c) => (
                 <Checkbox key={c} checked={channels[c]} onChange={(v) => setChannels({ ...channels, [c]: v })}>{c === "InApp" ? "In-app" : c}</Checkbox>
@@ -469,7 +692,10 @@ export function InterestWorkflowPage() {
 
       <Modal open={approveOpen} title="Approve configuration" onClose={() => setApproveOpen(false)}
         footer={<><Button variant="outline" onClick={() => setApproveOpen(false)}>Cancel</Button><Button disabled={busy} onClick={approve}>Approve</Button></>}>
-        <p className="leading-relaxed text-[#474252]">This locks the rate at {w.rate}% for {w.eligible.toLocaleString()} eligible members ({formatNaira(w.interestKobo)} total interest).</p>
+        <div className="flex flex-col gap-3">
+          <p className="leading-relaxed text-[#474252]">This locks the interest rules ({rateLabel(w)}) for {w.eligible.toLocaleString()} eligible members ({formatNaira(w.interestKobo)} total interest).</p>
+          {w.rateMode === "Contribution ranges" && <BandSummary bands={w.bands ?? []} />}
+        </div>
       </Modal>
 
       <Modal open={returnOpen} title="Return to maker" onClose={() => setReturnOpen(false)}
@@ -485,20 +711,37 @@ export function InterestWorkflowPage() {
           <Button variant="outline" onClick={() => setPickerOpen(false)}>Cancel</Button>
           <Button disabled={draftIds.length === 0} onClick={() => { setSelectedIds(draftIds); setPickerOpen(false); }}>Apply selection ({draftIds.length})</Button>
         </>}>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="flex h-10 w-full items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute sm:w-64">
-            <Search size={16} />
-            <input className="w-full bg-transparent text-sm font-semibold text-ink outline-none" placeholder="Search member" value={pickerQuery} onChange={(e) => setPickerQuery(e.target.value)} />
-          </label>
-          <div className="ml-auto flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setDraftIds(pickerFiltered.map((m) => m.id))}>Select all shown</Button>
-            <Button variant="outline" size="sm" onClick={() => setDraftIds([])}>Clear</Button>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex h-10 w-full items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute sm:w-64">
+              <Search size={16} />
+              <input className="w-full bg-transparent text-sm font-semibold text-ink outline-none" placeholder="Search member" value={pickerQuery} onChange={(e) => setPickerQuery(e.target.value)} />
+            </label>
+            <div className="ml-auto flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setDraftIds((d) => Array.from(new Set([...d, ...pickerFiltered.map((m) => m.id)])))}>Select all shown</Button>
+              <Button variant="outline" size="sm" onClick={() => setDraftIds([])}>Clear</Button>
+            </div>
           </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-bold">Interest eligibility</span>
+            <Chips<PickerEligibility>
+              value={pickerEligibility}
+              options={[
+                { value: "All", label: `All members (${pickerCounts.All})` },
+                { value: "Eligible", label: `Eligible (${pickerCounts.Eligible})` },
+                { value: "Forfeited", label: `Forfeited (${pickerCounts.Forfeited})` },
+              ]}
+              onChange={setPickerEligibility}
+            />
+          </div>
+          <p className="text-[13px] font-semibold text-mute">
+            Showing {pickerFiltered.length.toLocaleString()} of {pickerMembers.length.toLocaleString()} members · {draftIds.length.toLocaleString()} selected
+          </p>
         </div>
         {pickerBusy ? (
           <p className="text-sm font-semibold text-mute">Loading members…</p>
         ) : pickerFiltered.length === 0 ? (
-          <p className="text-sm font-semibold text-mute">No members match your search.</p>
+          <p className="text-sm font-semibold text-mute">No members match your search or eligibility filter.</p>
         ) : (
           <div className="flex flex-col">
             {pickerFiltered.map((m) => (

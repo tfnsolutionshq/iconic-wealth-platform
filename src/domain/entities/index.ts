@@ -11,6 +11,8 @@ export type Eligibility = 'Eligible' | 'Forfeited';
 export type MonthStatus = 'Paid' | 'Open' | 'Locked' | 'Due' | 'Late' | 'Missed' | 'NotDue' | 'BeforeJoining';
 export type TransactionStatus = 'Successful' | 'Pending' | 'Failed' | 'Processing';
 export type TransactionKind = 'Contribution' | 'Payout';
+/** How a member pays a contribution: through the gateway from their bank, or from their wallet balance. */
+export type ContributionPaymentMethod = 'Bank Account' | 'Wallet';
 export type RegistrationStatus = 'New' | 'Approved' | 'Rejected' | 'ChangesRequested';
 export type AdminRole = 'Administrator' | 'SuperAdmin';
 export type OnboardingState = 'PayoutAccount' | 'Target' | 'NewYearTarget' | 'Complete';
@@ -110,7 +112,7 @@ export type Session =
 
 /* ---------------- Member wallet ---------------- */
 
-export type WalletEntryKind = 'TopUp' | 'Withdrawal' | 'Adjustment';
+export type WalletEntryKind = 'TopUp' | 'Withdrawal' | 'Contribution' | 'Adjustment';
 export type WalletEntryStatus = 'Pending' | 'Processing' | 'Successful' | 'Failed';
 
 /** One money movement in or out of the member's wallet. Statuses mirror Transaction; Pending/Failed never count. */
@@ -162,20 +164,29 @@ export interface AuditEntry {
 export type InterestStatus = 'Not started' | 'Draft' | 'Pending approval' | 'Returned' | 'Approved' | 'Paid out';
 /** Whether interest applies to every eligible member or only to members picked manually (Rule configuration). */
 export type InterestScope = 'All members' | 'Selected members';
+/** One fixed rate for everyone, or different rates for bands of total contributions. */
+export type InterestRateMode = 'Fixed rate' | 'Contribution ranges';
+/** A contribution band and the rate applied to members whose total savings fall inside it. `maxKobo: null` = no upper limit. */
+export interface InterestBand { minKobo: Kobo; maxKobo: Kobo | null; rate: number }
 export interface InterestYearSummary {
-  year: number; status: InterestStatus; rate: number | null;
+  year: number; status: InterestStatus; rate: number | null; rateMode?: InterestRateMode;
   eligible: number; forfeited: number; contributionsKobo: Kobo; interestKobo: Kobo;
   maker?: string; checker?: string; approvedAt?: string; batchId?: string;
 }
 export interface InterestCalcRow {
   memberId: string; memberName: string; contributionsKobo: Kobo;
   sharePct: number; interestKobo: Kobo; eligible: boolean; reason?: string;
+  /** The rate applied to this member (fixed or the matching contribution band). */
+  rate?: number | null;
 }
 /** 8-stage maker-checker workflow (ADM-16, ADM-17). `closed` years are read-only. */
 export interface InterestWorkflow extends InterestYearSummary {
   closed: boolean; stage: number; done: number;
   start: string; end: string; close: string; rounding: string;
+  rateMode: InterestRateMode; bands: InterestBand[];
   scope: InterestScope; selectedMemberIds: string[];
+  /** Members removed from the payout preview; they are excluded from the batch and interest totals. */
+  excludedMemberIds: string[];
   calc: boolean; note: string; rejectReason?: string; notified: boolean;
   history: [string, string, string][]; // [at, event, actor]
 }

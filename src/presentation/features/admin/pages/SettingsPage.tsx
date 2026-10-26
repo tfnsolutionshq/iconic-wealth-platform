@@ -162,29 +162,29 @@ export function SettingsPage() {
               <Card key={group} className="flex flex-col gap-1">
                 <h2 className="mb-1 text-base font-extrabold">{group}</h2>
                 <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
-                  <div className="grid min-w-[560px] grid-cols-[1fr_repeat(3,minmax(110px,140px))] items-center gap-2 text-sm">
-                  <span />
-                  {["Member", "Administrator", "Super Admin"].map((h) => (
-                    <b key={h} className="text-xs font-extrabold text-mute">
-                      {h}
-                    </b>
-                  ))}
-                  {rows.map(([perm, m, a, s]) => (
-                    <Fragment key={perm}>
-                      <span className="font-semibold">{perm}</span>
-                      {([m, a, s] as Level[]).map((lv, i) => (
-                        <Pill
-                          key={i}
-                          tone={LEVEL_TONE[lv]}
-                          icon={
-                            lv === "No access" ? <Ban size={12} /> : undefined
-                          }
-                        >
-                          {lv}
-                        </Pill>
-                      ))}
-                    </Fragment>
-                  ))}
+                  <div className="grid min-w-140 grid-cols-[1fr_repeat(3,minmax(110px,140px))] items-center gap-2 text-sm">
+                    <span />
+                    {["Member", "Administrator", "Super Admin"].map((h) => (
+                      <b key={h} className="text-xs font-extrabold text-mute">
+                        {h}
+                      </b>
+                    ))}
+                    {rows.map(([perm, m, a, s]) => (
+                      <Fragment key={perm}>
+                        <span className="font-semibold">{perm}</span>
+                        {([m, a, s] as Level[]).map((lv, i) => (
+                          <Pill
+                            key={i}
+                            tone={LEVEL_TONE[lv]}
+                            icon={
+                              lv === "No access" ? <Ban size={12} /> : undefined
+                            }
+                          >
+                            {lv}
+                          </Pill>
+                        ))}
+                      </Fragment>
+                    ))}
                   </div>
                 </div>
               </Card>
