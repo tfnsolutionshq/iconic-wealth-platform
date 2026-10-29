@@ -353,7 +353,7 @@ function PlatformTab({
           onChange={(e) => setPayout(e.target.value)}
         />
         <TextField
-          label="Platform charge per payment"
+          label="Platform charge (online payments)"
           value={charge}
           readOnly
           hint="Fixed by policy; request a rule change to revisit it"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chargeBreakdown, naira, validateDetails, isStrongPassword, deadlineFor, DEFAULT_SETTINGS as S, planAllocation, openMonth, monthState, canLock, autoLocksAfter, targetStreak, savingsStartFor, interestOnTrack } from './index';
+import { chargeBreakdown, naira, validateDetails, isStrongPassword, deadlineFor, DEFAULT_SETTINGS as S, planAllocation, openMonth, monthState, canLock, autoLocksAfter, targetStreak, savingsStartFor, interestOnTrack, payoutProjection } from './index';
 import type { SavingsYear, Transaction } from '../entities';
 
 const tx = (month: number, amount: number, i = 0): Transaction => ({ id: 'T' + month + i, reference: 'R' + month + i, memberId: 'M', memberName: 'M', kind: 'Contribution', year: 2026,
@@ -9,7 +9,11 @@ const oct2 = new Date(2026, 9, 2, 9);
 const funmi = [tx(0, 20_000), tx(1, 25_000), tx(2, 20_000), tx(2, 10_000, 1), tx(3, 25_000), tx(4, 30_000), tx(5, 35_000), tx(6, 25_000), tx(7, 30_000), tx(8, 15_000)];
 
 describe('charges', () => {
-  it('flat ₦100 platform charge on every payment', () => expect(chargeBreakdown(naira(25_000))).toEqual({ amount: naira(25_000), platformCharge: naira(100), total: naira(25_100) }));
+  it('flat ₦100 platform charge on online payments', () => expect(chargeBreakdown(naira(25_000), undefined, 'Online')).toEqual({ amount: naira(25_000), platformCharge: naira(100), total: naira(25_100) }));
+  it('no platform charge for bank transfers or wallet payments', () => {
+    expect(chargeBreakdown(naira(25_000), undefined, 'Bank Account')).toEqual({ amount: naira(25_000), platformCharge: 0, total: naira(25_000) });
+    expect(chargeBreakdown(naira(25_000), undefined, 'Wallet')).toEqual({ amount: naira(25_000), platformCharge: 0, total: naira(25_000) });
+  });
 });
 
 describe('savings months and allocation', () => {
@@ -37,6 +41,22 @@ describe('mid-year joiners', () => {
 
 describe('monthly target', () => {
   it('7-month streak (Feb–Aug met, Jan missed target)', () => expect(targetStreak(year(), funmi, oct2, S)).toBe(7));
+});
+
+describe('year-end payout projection', () => {
+  it('adds 10% interest, rounded to the nearest ₦100, when interest is on track', () => {
+    expect(payoutProjection(year(), funmi, oct2, S)).toEqual({
+      savingsKobo: naira(235_000), interestKobo: naira(23_500),
+      totalKobo: naira(258_500), months: 9, interestIncluded: true,
+    });
+  });
+  it('omits interest when a month closed with nothing saved', () => {
+    const t = funmi.filter(x => x.allocations[0].month !== 6);
+    const p = payoutProjection(year(), t, oct2, S);
+    expect(p.interestIncluded).toBe(false);
+    expect(p.interestKobo).toBe(0);
+    expect(p.totalKobo).toBe(p.savingsKobo);
+  });
 });
 
 describe('deadlines and registration', () => {

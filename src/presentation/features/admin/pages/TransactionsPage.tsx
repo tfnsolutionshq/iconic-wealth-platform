@@ -138,7 +138,7 @@ export function AdminTransactionsPage() {
         />
         <p className="text-[13px] font-semibold text-mute">Showing {list.length} of {all.length}</p>
         <Banner tone="neutral">
-          Status comes from server-side verification with Paystack. Each payment must be at least the platform minimum (₦10,000) and carries a ₦100 platform charge.
+          Status comes from server-side verification with Paystack. Each payment must be at least the platform minimum (₦10,000); online payments carry a ₦100 platform charge.
         </Banner>
       </div>
 

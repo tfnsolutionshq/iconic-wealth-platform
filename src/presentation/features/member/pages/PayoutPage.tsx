@@ -10,15 +10,16 @@ import {
 } from "@/domain/rules";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useSavings } from "../../../hooks/useSavings";
-import { Banner, Card, KeyValue, Pill } from "../../../design-system";
+import { Banner, ButtonLink, Card, KeyValue, Pill } from "../../../design-system";
 import { TxRow } from "../components/TransactionParts";
+import { PayoutStatusView } from "../components/PayoutStatus";
 import { paths } from "../../../routes/paths";
 
 /** MEM-17: where the payout is, eligibility, payout account and date. Withdrawals open on payout day only. */
 export function PayoutPage() {
   const { session } = useAuth();
   const member = session?.kind === "member" ? session.member : null;
-  const { data } = useSavings(member);
+  const { data, reload } = useSavings(member);
 
   if (!member || !data) return <p className="text-mute">Loading…</p>;
   const { year, txs, now, settings } = data;
@@ -30,6 +31,13 @@ export function PayoutPage() {
   const past = [...txs]
     .filter((t) => t.kind === "Payout")
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const thisYearPayout = past.find(
+    (t) => t.year === year.year && t.status !== "Failed",
+  );
+
+  if (thisYearPayout) {
+    return <PayoutStatusView payout={thisYearPayout} onUpdated={reload} />;
+  }
 
   const steps: [string, string, boolean][] = [
     [
@@ -143,6 +151,21 @@ export function PayoutPage() {
           ))}
         </Card>
       )}
+
+      <Card
+        tone="soft"
+        className="flex flex-col gap-2.5 border-2 border-dashed border-gold bg-[#fffaf0]"
+      >
+        <b className="text-sm">Demo · jump ahead to payout day</b>
+        <ButtonLink
+          to={paths.member.payoutDay}
+          variant="gold"
+          size="md"
+          full
+        >
+          Preview payout day
+        </ButtonLink>
+      </Card>
 
       {member.payoutAccount ? (
         <Card className="flex items-center gap-3">

@@ -81,10 +81,10 @@ function Marquee({ items }: { items: Testimonial[] }) {
   return (
     <div
       aria-label="Member testimonials"
-      className="group overflow-hidden py-2.5 mask-[linear-gradient(90deg,transparent,#000_5%,#000_95%,transparent)]"
+      className="testimonial-marquee overflow-hidden py-2.5 mask-[linear-gradient(90deg,transparent,#000_5%,#000_95%,transparent)]"
     >
       <div
-        className="testimonial-track flex w-max gap-3.5 pr-3.5 group-hover:[animation-play-state:paused] group-focus-within:[animation-play-state:paused]"
+        className="testimonial-track flex w-max gap-3.5 pr-3.5"
         style={{ animationDuration: `${items.length * 8}s` }}
       >
         {[...items, ...items].map((t, k) => (

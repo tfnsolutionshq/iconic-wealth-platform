@@ -3,7 +3,7 @@
  * agree them in Sprint 0 and keep this file as the single place that knows URLs and payload shapes.
  * Money is exchanged in kobo (integers).
  */
-import type { AdminListItem, AdminRole, AdminUser, AuditEntry, InterestCalcRow, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, NotificationSettings, PayoutAccount, PayoutBatch, ReferralGroup, Registration, ReportKind, ReportResult, SavingsYear, Session, Testimonial, Transaction } from '@/domain/entities';
+import type { AdminListItem, AdminRole, AdminUser, AuditEntry, ContributionPaymentMethod, InterestCalcRow, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, NotificationSettings, PayoutAccount, PayoutBatch, PayoutDestination, ReferralGroup, Registration, ReportKind, ReportResult, SavingsYear, Session, Testimonial, Transaction } from '@/domain/entities';
 import type { PlatformSettings } from '@/domain/rules';
 import type { AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, InterestRulesInput, MemberQuery, MemberRepository, NewRegistration, RegistrationRepository, SettingsRepository, TestimonialRepository, VerifiedContribution } from '@/domain/repositories';
 import type { HttpClient } from '@/data/api/httpClient';
@@ -33,12 +33,15 @@ export class HttpMemberRepository implements MemberRepository {
   async completeOnboarding(id: string) { await this.http.post(`/members/${id}/onboarding/complete`); }
   listTransactions(id: string) { return this.http.get<Transaction[]>(`/members/${id}/transactions`); }
   listNotifications(id: string) { return this.http.get<MemberNotification[]>(`/members/${id}/notifications`); }
+  requestPayout(id: string, year: number, destination: PayoutDestination) { return this.http.post<Transaction>(`/members/${id}/payouts`, { year, destination }); }
+  markPayoutReceived(id: string, transactionId: string) { return this.http.post<Transaction>(`/members/${id}/payouts/${transactionId}/received`); }
 }
 export class HttpContributionRepository implements ContributionRepository {
   constructor(private readonly http: HttpClient) {}
-  initiate(memberId: string, year: number, amountKobo: Kobo) { return this.http.post<ContributionIntent>('/contributions', { memberId, year, amountKobo }); }
+  initiate(memberId: string, year: number, amountKobo: Kobo, method: ContributionPaymentMethod = 'Online') { return this.http.post<ContributionIntent>('/contributions', { memberId, year, amountKobo, method }); }
   verify(reference: string) { return this.http.post<VerifiedContribution>(`/contributions/${reference}/verify`); }
   payFromWallet(memberId: string, year: number, amountKobo: Kobo) { return this.http.post<VerifiedContribution>('/contributions/wallet', { memberId, year, amountKobo }); }
+  confirmBankTransfer(memberId: string, year: number, amountKobo: Kobo) { return this.http.post<VerifiedContribution>('/contributions/bank-transfer', { memberId, year, amountKobo }); }
 }
 export class HttpSettingsRepository implements SettingsRepository {
   constructor(private readonly http: HttpClient) {}

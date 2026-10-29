@@ -43,6 +43,10 @@
 /* testimonials strip (more than three published) */
 @keyframes testimonial-scroll { to { transform: translateX(-50%); } }
 .testimonial-track { animation: testimonial-scroll 40s linear infinite; }
+/* Pause the testimonial carousel on hover/focus. Keep this unlayered so it wins over the
+   animation shorthand above (Tailwind utilities live in a cascade layer). */
+.testimonial-marquee:hover .testimonial-track,
+.testimonial-marquee:focus-within .testimonial-track { animation-play-state: paused; }
 
 /* how-it-works year strip: payout month pulse (prototype paypulse) */
 @keyframes paypulse { from { box-shadow: 0 0 0 0 rgb(242 169 59 / 0.55); } to { box-shadow: 0 0 0 10px rgb(242 169 59 / 0); } }

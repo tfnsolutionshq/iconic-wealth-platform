@@ -25,6 +25,7 @@ export const paths = {
     profile: "/member/profile",
     support: "/member/support",
     payout: "/member/payout",
+    payoutDay: "/member/payout/payout-day",
   },
   admin: {
     home: "/admin",

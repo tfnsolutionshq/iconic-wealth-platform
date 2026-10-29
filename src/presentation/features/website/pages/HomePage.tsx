@@ -45,7 +45,7 @@ const RULES = [
     "Minimum per payment. Save as much as you can, as often as you like.",
   ],
   ["5th", "Each month closes at the end of the 5th of the next month."],
-  ["₦100", "Platform charge per payment, shown in the total before you pay."],
+  ["₦100", "Platform charge on online payments, shown in the total before you pay."],
   [
     "14 Dec",
     "Savings months run January to November. Payout is on or before 14 December.",

@@ -26,8 +26,14 @@ export function PaymentResultPage() {
     pending: {
       icon: <Clock size={40} />,
       tile: "bg-pending-tint text-pending",
-      title: "Confirming your payment",
-      body: "We’re waiting for Paystack to confirm. This usually takes under a minute. Please don’t pay again.",
+      title:
+        result.method === "Bank Account"
+          ? "Transfer confirmation pending"
+          : "Confirming your payment",
+      body:
+        result.method === "Bank Account"
+          ? `We’re checking your transfer${t ? ` of ${formatNaira(t.amountKobo)}` : ""}. This usually takes a few minutes. Please don’t transfer again.`
+          : "We’re waiting for Paystack to confirm. This usually takes under a minute. Please don’t pay again.",
     },
     failed: {
       icon: <X size={40} />,
@@ -95,9 +101,18 @@ export function PaymentResultPage() {
       )}
       {t && (
         <Card className="w-full text-left">
+          <KeyValue label="Amount saved" value={formatNaira(t.amountKobo)} />
           <KeyValue
-            label="Amount paid"
+            label="Platform charge"
+            value={formatNaira(t.platformChargeKobo)}
+          />
+          <KeyValue
+            label="Total paid"
             value={formatNaira(t.amountKobo + t.platformChargeKobo)}
+          />
+          <KeyValue
+            label="Paid with"
+            value={t.paymentMethod ?? result.method}
           />
           <KeyValue
             label="Applied to"

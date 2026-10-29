@@ -61,6 +61,14 @@ export function ReceiptPage() {
     tx.kind === "Payout"
       ? `Year ${tx.year}`
       : `${tx.allocations.map((a) => MONTHS[a.month]).join(", ")} ${tx.year}`;
+  const payoutTo =
+    tx.payoutDestination === "Wallet"
+      ? "Iconic Wealth Hub wallet"
+      : tx.payoutDestination === "Bank account"
+        ? member.payoutAccount
+          ? `${member.payoutAccount.bankName} •••• ${member.payoutAccount.accountNumber.slice(-4)}`
+          : "Bank account"
+        : null;
 
   const download = () => {
     downloadFile(
@@ -106,11 +114,19 @@ export function ReceiptPage() {
           value={`${member.firstName} ${member.lastName} · ${member.id}`}
         />
         <KeyValue label="Applied to" value={applied} />
+        {payoutTo && <KeyValue label="Paid to" value={payoutTo} />}
+        <KeyValue
+          label={tx.kind === "Payout" ? "Amount paid out" : "Amount saved"}
+          value={formatNaira(tx.amountKobo)}
+        />
         <KeyValue
           label="Platform charge"
           value={formatNaira(tx.platformChargeKobo)}
         />
         <KeyValue label="Total paid" value={formatNaira(totalPaid(tx))} />
+        {tx.paymentMethod && (
+          <KeyValue label="Paid with" value={tx.paymentMethod} />
+        )}
         <KeyValue
           label="Date"
           value={`${fmtDateTime(tx.createdAt)} ${new Date(tx.createdAt).getFullYear()}`}
@@ -120,7 +136,7 @@ export function ReceiptPage() {
           value={<span className="font-mono text-sm">{tx.reference}</span>}
         />
         <KeyValue
-          label="Paystack reference"
+          label="Gateway reference"
           value={
             <span className="font-mono text-sm">
               {tx.gatewayReference ?? "—"}

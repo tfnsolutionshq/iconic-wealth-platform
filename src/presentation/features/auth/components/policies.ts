@@ -8,7 +8,7 @@ export const POLICIES = {
     ['How months close', 'A month opens on the 1st and closes at the end of the 5th of the next month. With at least ₦10,000 saved you may lock it early; later payments then count toward the next month.'],
     ['Missed months', 'If a month closes with nothing saved, it is recorded as missed and may affect your interest for that year. Your savings are never affected.'],
     ['Joining mid-year', 'Members approved by the end of September clear the earlier months as catch-up (₦10,000 each). Members approved after September start the next January.'],
-    ['Charges', 'A ₦100 platform charge applies to each payment and is shown in the total before you pay.'],
+    ['Charges', 'A ₦100 platform charge applies to online payments and is shown in the total before you pay. Bank transfers and wallet payments are free.'],
     ['Community access', 'The members’ WhatsApp community is available after your first confirmed payment of at least ₦10,000.'],
     ['Payout', 'Savings, with any interest due, are paid out in full on or before 14 December. Early or partial withdrawals are not available.'],
   ] },

@@ -4,7 +4,7 @@
  *  - http: calls the backend API — see data/repositories/http
  * The presentation layer never imports data-layer classes directly; it receives these via ServicesContext.
  */
-import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, InterestBand, InterestCalcRow, InterestRateMode, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsYear, Session, Testimonial, Transaction, WalletEntry, WalletSnapshot, WalletWithdrawal } from '../entities';
+import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, ContributionPaymentMethod, InterestBand, InterestCalcRow, InterestRateMode, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, PayoutDestination, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsYear, Session, Testimonial, Transaction, WalletEntry, WalletSnapshot, WalletWithdrawal } from '../entities';
 import type { RegistrationDetails } from '../rules/registration';
 import type { PlatformSettings } from '../rules/savings';
 
@@ -37,6 +37,10 @@ export interface MemberRepository {
   completeOnboarding(id: string): Promise<void>;
   listTransactions(id: string): Promise<Transaction[]>;
   listNotifications(id: string): Promise<MemberNotification[]>;
+  /** MEM-18/19: full year-end payout to the verified bank account or the platform wallet (once per member/year). */
+  requestPayout(id: string, year: number, destination: PayoutDestination): Promise<Transaction>;
+  /** Demo helper: mark a bank payout as received so the status page can show the completed state. */
+  markPayoutReceived(id: string, transactionId: string): Promise<Transaction>;
 }
 
 export interface SettingsRepository {
@@ -49,11 +53,16 @@ export interface ContributionIntent { reference: string; amountKobo: Kobo; platf
 export interface VerifiedContribution { transaction: Transaction; communityUnlocked: boolean }
 export interface ContributionRepository {
   /** Server re-plans the allocation (oldest open month) and creates our unique reference BEFORE the gateway opens. */
-  initiate(memberId: string, year: number, amountKobo: Kobo): Promise<ContributionIntent>;
+  initiate(memberId: string, year: number, amountKobo: Kobo, method?: ContributionPaymentMethod): Promise<ContributionIntent>;
   /** Server-side verification with Paystack; applies catch-up auto-locks and community unlock. */
   verify(reference: string): Promise<VerifiedContribution>;
   /** Debits the member's wallet and records the contribution atomically; applies the same auto-locks and unlock. */
   payFromWallet(memberId: string, year: number, amountKobo: Kobo): Promise<VerifiedContribution>;
+  /**
+   * Records a manual bank transfer the member says they have made. The transaction stays Pending (and does not
+   * count towards savings) until the team confirms the money arrived.
+   */
+  confirmBankTransfer(memberId: string, year: number, amountKobo: Kobo): Promise<VerifiedContribution>;
 }
 
 export type GatewayOutcome = 'success' | 'failed' | 'closed';

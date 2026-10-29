@@ -2,6 +2,9 @@ import type { Allocation, Kobo, MonthIndex, SavingsYear, Transaction } from '../
 import { naira, formatNaira } from './money';
 import { deadlineFor } from './calendar';
 
+/** The platform account members transfer contributions to when they pay by bank transfer. */
+export interface BankTransferAccount { bankName: string; accountNumber: string; accountName: string }
+
 /** Admin-configured platform settings (Settings › Platform settings). */
 export interface PlatformSettings {
   minimumByYear: Record<number, Kobo>;   // minimum PER PAYMENT
@@ -9,11 +12,20 @@ export interface PlatformSettings {
   lastSavingsMonth: MonthIndex;          // November; December is payout month
   payoutDates: Record<number, string>;   // on or before 14 December
   platformCharge: Kobo;
+  /** Collection account shown for the Bank Account method. */
+  bankTransfer: BankTransferAccount;
 }
 export const DEFAULT_SETTINGS: PlatformSettings = {
   minimumByYear: { 2026: naira(10_000), 2027: naira(10_000) }, cutoffMonth: 8, lastSavingsMonth: 10,
   payoutDates: { 2026: '2026-12-12', 2027: '2027-12-14' }, platformCharge: naira(100),
+  bankTransfer: { bankName: 'GTBank', accountNumber: '0123456789', accountName: 'ICONIC WEALTH HUB LTD' },
 };
+/** Bank details are platform configuration; fall back to the approved defaults if the API omits them. */
+export function bankTransferFor(s: PlatformSettings): BankTransferAccount {
+  return s.bankTransfer ?? DEFAULT_SETTINGS.bankTransfer;
+}
+/** How long a member has to complete a bank transfer before the instructions expire. */
+export const BANK_TRANSFER_WINDOW_MS = 30 * 60 * 1000;
 export function minimumFor(s: PlatformSettings, year: number): Kobo {
   return s.minimumByYear[year] ?? s.minimumByYear[Math.max(...Object.keys(s.minimumByYear).map(Number))];
 }
@@ -101,3 +113,19 @@ export function interestOnTrack(y: SavingsYear, txs: Transaction[], now: Date, s
 export const monthsSaved = (y: SavingsYear, txs: Transaction[], s: PlatformSettings) => {
   let n = 0; for (let i = y.startMonth; i <= s.lastSavingsMonth; i++) if (monthTotal(y, txs, i) >= minimumFor(s, y.year)) n++; return n;
 };
+
+/** Year-end payout preview: the year's savings plus 10% interest when eligible, rounded to the nearest ₦100. */
+export interface PayoutProjection {
+  savingsKobo: Kobo;
+  interestKobo: Kobo;
+  totalKobo: Kobo;
+  months: number;
+  interestIncluded: boolean;
+}
+const INTEREST_GRANULARITY_KOBO = 10_000; // ₦100
+export function payoutProjection(y: SavingsYear, txs: Transaction[], now: Date, s: PlatformSettings): PayoutProjection {
+  const savingsKobo = savedThisYear(y, txs);
+  const interestIncluded = interestOnTrack(y, txs, now, s);
+  const interestKobo = interestIncluded ? Math.round(savingsKobo * 0.1 / INTEREST_GRANULARITY_KOBO) * INTEREST_GRANULARITY_KOBO : 0;
+  return { savingsKobo, interestKobo, totalKobo: savingsKobo + interestKobo, months: monthsSaved(y, txs, s), interestIncluded };
+}

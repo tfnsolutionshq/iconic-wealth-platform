@@ -57,7 +57,7 @@ export function SupportPage() {
     },
     {
       q: "Is there a charge on my payments?",
-      a: `Yes, a ${formatNaira(settings.platformCharge)} platform charge on each payment. It’s included in the total before you pay.`,
+      a: `Yes, a ${formatNaira(settings.platformCharge)} platform charge on online payments. Bank transfers and wallet payments are free. It’s included in the total before you pay.`,
     },
     {
       q: "My payment shows pending. What now?",

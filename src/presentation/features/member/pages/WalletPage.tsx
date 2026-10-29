@@ -53,6 +53,7 @@ const STATEMENT_TYPES: { value: StatementType; label: string }[] = [
   { value: "TopUp", label: "Top-ups" },
   { value: "Withdrawal", label: "Withdrawals" },
   { value: "Contribution", label: "Contributions" },
+  { value: "Payout", label: "Year-end payouts" },
 ];
 
 const ENTRY_STATUS_TONE = {
@@ -69,7 +70,9 @@ const describeEntry = (e: WalletEntry) =>
       ? "Wallet withdrawal"
       : e.kind === "Contribution"
         ? "Contribution to savings"
-        : "Wallet adjustment";
+        : e.kind === "Payout"
+          ? "Year-end payout"
+          : "Wallet adjustment";
 
 function tileFor(e: WalletEntry): { cls: string; icon: ReactNode } {
   if (e.status === "Failed")

@@ -1,6 +1,6 @@
-import type { AdminListItem, AdminRole, AdminUser, Allocation, AuditEntry, InterestBand, InterestCalcRow, InterestWorkflow, Kobo, MonthIndex, NotificationSettings, PayoutBatch, Registration, ReportKind, ReportResult, Session, Testimonial, Transaction, WalletEntry, WalletWithdrawal } from '@/domain/entities';
+import type { AdminListItem, AdminRole, AdminUser, Allocation, AuditEntry, ContributionPaymentMethod, InterestBand, InterestCalcRow, InterestWorkflow, Kobo, MonthIndex, NotificationSettings, PayoutBatch, PayoutDestination, Registration, ReportKind, ReportResult, Session, Testimonial, Transaction, WalletEntry, WalletWithdrawal } from '@/domain/entities';
 import type { AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, MemberQuery, MemberRepository, NewRegistration, InterestRulesInput, RegistrationRepository, SettingsRepository, TestimonialRepository, VerifiedContribution, WalletRepository } from '@/domain/repositories';
-import { DEFAULT_SETTINGS, MONTHS_SHORT, autoLocksAfter, canLock, chargeBreakdown, formatNaira, minimumFor, naira, planAllocation, walletBalances, type PlatformSettings } from '@/domain/rules';
+import { DEFAULT_SETTINGS, MONTHS_SHORT, autoLocksAfter, canLock, chargeBreakdown, formatNaira, minimumFor, naira, payoutProjection, planAllocation, walletBalances, type PlatformSettings } from '@/domain/rules';
 import type { Clock } from '@/domain/services/clock';
 import { adminUsers, auditEntries, interestYears, memberSummaries, members, payoutBatches, registrations, savingsYears, testimonials, transactions, walletEntries, walletWithdrawals } from '@/data/mock/seed';
 
@@ -96,23 +96,55 @@ export class MockMemberRepository implements MemberRepository {
   async completeOnboarding(id: string) { memberOf(id).onboarding = 'Complete'; await delay(null, 50); }
   async listTransactions(id: string) { return delay(transactions.filter(t => t.memberId === id)); }
   async listNotifications() { return delay([]); }
+  async requestPayout(id: string, year: number, destination: PayoutDestination): Promise<Transaction> {
+    const m = memberOf(id), y = yearOf(id, year);
+    if (transactions.some(t => t.memberId === id && t.kind === 'Payout' && t.year === year && t.status !== 'Failed'))
+      throw new Error(`A ${year} payout has already been requested for this account.`);
+    if (destination === 'Bank account' && !m.payoutAccount)
+      throw new Error('Set up your payout account in Profile before withdrawing.');
+    const now = this.clock.now();
+    const p = payoutProjection(y, transactions.filter(t => t.memberId === id), now, settings);
+    if (p.totalKobo <= 0) throw new Error('There is nothing to pay out for this year yet.');
+    const reference = `IWH-P-${String(year).slice(-2)}1217-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const walletPayout = destination === 'Wallet';
+    const tx: Transaction = {
+      id: ref('TX'), reference, memberId: id, memberName: `${m.firstName} ${m.lastName}`,
+      kind: 'Payout', year, allocations: [], amountKobo: p.totalKobo, platformChargeKobo: 0,
+      payoutDestination: destination, status: walletPayout ? 'Successful' : 'Processing', late: false,
+      createdAt: now.toISOString(),
+    };
+    transactions.unshift(tx);
+    if (walletPayout) walletEntries.unshift({
+      id: ref('WE'), reference, memberId: id, kind: 'Payout', direction: 'Credit',
+      amountKobo: p.totalKobo, status: 'Successful', note: `${year} year-end payout`,
+      createdAt: now.toISOString(),
+    });
+    return delay(tx);
+  }
+  async markPayoutReceived(id: string, transactionId: string): Promise<Transaction> {
+    memberOf(id);
+    const t = transactions.find(x => x.id === transactionId && x.memberId === id && x.kind === 'Payout');
+    if (!t) throw notFound('Payout');
+    if (t.status === 'Processing') t.status = 'Successful';
+    return delay(t);
+  }
 }
 
 export class MockContributionRepository implements ContributionRepository {
-  private intents = new Map<string, { memberId: string; year: number; allocations: Allocation[]; amount: Kobo }>();
+  private intents = new Map<string, { memberId: string; year: number; allocations: Allocation[]; amount: Kobo; method: ContributionPaymentMethod }>();
   constructor(private readonly clock: Clock, private readonly outcomeFor: (reference: string) => 'Successful' | 'Failed' | 'Pending') {}
-  async initiate(memberId: string, year: number, amount: Kobo): Promise<ContributionIntent> {
+  async initiate(memberId: string, year: number, amount: Kobo, method: ContributionPaymentMethod = 'Online'): Promise<ContributionIntent> {
     const y = yearOf(memberId, year), m = memberOf(memberId);
     const plan = planAllocation(amount, y, transactions.filter(t => t.memberId === memberId), this.clock.now(), settings);
     if (!plan.ok) throw new Error(plan.error);
-    const reference = ref('IWH-C'); this.intents.set(reference, { memberId, year, allocations: plan.allocations, amount });
-    return delay({ reference, amountKobo: amount, platformChargeKobo: chargeBreakdown(amount, settings.platformCharge).platformCharge, allocations: plan.allocations, email: m.email });
+    const reference = ref('IWH-C'); this.intents.set(reference, { memberId, year, allocations: plan.allocations, amount, method });
+    return delay({ reference, amountKobo: amount, platformChargeKobo: chargeBreakdown(amount, settings.platformCharge, method).platformCharge, allocations: plan.allocations, email: m.email });
   }
-  private record(reference: string, i: { memberId: string; year: number; allocations: Allocation[]; amount: Kobo }, status: 'Successful' | 'Failed' | 'Pending'): VerifiedContribution {
+  private record(reference: string, i: { memberId: string; year: number; allocations: Allocation[]; amount: Kobo; method: ContributionPaymentMethod }, status: 'Successful' | 'Failed' | 'Pending'): VerifiedContribution {
     const m = memberOf(i.memberId); const now = this.clock.now();
     const tx: Transaction = { id: ref('TX'), reference, gatewayReference: status === 'Pending' ? undefined : ref('T'), memberId: i.memberId, memberName: `${m.firstName} ${m.lastName}`,
-      kind: 'Contribution', year: i.year, allocations: i.allocations, amountKobo: i.amount, platformChargeKobo: chargeBreakdown(i.amount, settings.platformCharge).platformCharge,
-      status, late: false, failureReason: status === 'Failed' ? 'Declined by your bank: insufficient funds' : undefined, createdAt: now.toISOString() };
+      kind: 'Contribution', year: i.year, allocations: i.allocations, amountKobo: i.amount, platformChargeKobo: chargeBreakdown(i.amount, settings.platformCharge, i.method).platformCharge,
+      paymentMethod: i.method, status, late: false, failureReason: status === 'Failed' ? 'Declined by your bank: insufficient funds' : undefined, createdAt: now.toISOString() };
     transactions.unshift(tx);
     let communityUnlocked = false;
     if (status === 'Successful') {
@@ -130,14 +162,23 @@ export class MockContributionRepository implements ContributionRepository {
     const y = yearOf(memberId, year);
     const plan = planAllocation(amount, y, transactions.filter(t => t.memberId === memberId), this.clock.now(), settings);
     if (!plan.ok) throw new Error(plan.error);
-    const total = amount + chargeBreakdown(amount, settings.platformCharge).platformCharge;
+    // Wallet payments are free: only online (Paystack) payments carry the platform charge.
+    const total = chargeBreakdown(amount, settings.platformCharge, 'Wallet').total;
     const availableKobo = walletBalances(walletEntries.filter(e => e.memberId === memberId)).availableKobo;
     if (total > availableKobo) throw new Error(`Your wallet balance is too low. Top up ${formatNaira(total - availableKobo)} to continue.`);
     const reference = ref('IWH-C');
-    const i = { memberId, year, allocations: plan.allocations, amount };
+    const i = { memberId, year, allocations: plan.allocations, amount, method: 'Wallet' as const };
     walletEntries.unshift({ id: ref('WE'), reference, memberId, kind: 'Contribution', direction: 'Debit', amountKobo: total, status: 'Successful',
       note: `Savings · ${plan.allocations.map(a => MONTHS_SHORT[a.month]).join(', ')} ${year}`, createdAt: this.clock.now().toISOString() });
     return delay(this.record(reference, i, 'Successful'));
+  }
+  async confirmBankTransfer(memberId: string, year: number, amount: Kobo): Promise<VerifiedContribution> {
+    const y = yearOf(memberId, year);
+    const plan = planAllocation(amount, y, transactions.filter(t => t.memberId === memberId), this.clock.now(), settings);
+    if (!plan.ok) throw new Error(plan.error);
+    // Recorded as Pending: nothing counts towards savings until the team confirms the transfer arrived.
+    const reference = ref('IWH-C');
+    return delay(this.record(reference, { memberId, year, allocations: plan.allocations, amount, method: 'Bank Account' }, 'Pending'));
   }
 }
 

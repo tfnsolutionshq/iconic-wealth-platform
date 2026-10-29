@@ -78,12 +78,12 @@ export function OpenMonthCard({
       (_, k) => k,
     ).filter((k) => monthState(year, txs, k, now, settings) !== "saved");
     return (
-    <Card className="flex flex-col gap-3 border-2 border-gold bg-[#fffbf2]">
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="flex size-10.5 shrink-0 items-center justify-center rounded-input bg-gold-tint text-[#7a5410]">
-          <History size={20} />
-        </span>
-        <span className="flex min-w-0 flex-1 basis-40 flex-col">
+      <Card className="flex flex-col gap-3 border-2 border-gold bg-[#fffbf2]">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="flex size-10.5 shrink-0 items-center justify-center rounded-input bg-gold-tint text-[#7a5410]">
+            <History size={20} />
+          </span>
+          <span className="flex min-w-0 flex-1 basis-40 flex-col">
             <b>Catch-up: {MONTHS[i]}</b>
             <span className="text-[13px] font-semibold text-mute">
               You joined in {MONTHS[year.joinMonth!]}. Clear {left.length}{" "}
@@ -124,11 +124,16 @@ export function OpenMonthCard({
         <b>{formatNaira(total)}</b>
       </div>
       <div className="flex flex-wrap gap-2.5">
-        <ButtonLink to={paths.member.contribute} className="min-w-0 flex-1">
+        <ButtonLink
+          to={paths.member.contribute}
+          size="md"
+          className="min-w-0 flex-1"
+        >
           {first ? "Make your first payment" : "Pay now"}
         </ButtonLink>
         {!first && (
           <Button
+            size="md"
             variant="outline"
             icon={<Lock size={18} />}
             disabled={!lockable}
@@ -138,6 +143,7 @@ export function OpenMonthCard({
                 : `Lock once ${MONTHS[i]} has at least ${formatNaira(min)}`
             }
             onClick={() => setAsk(true)}
+            className="flex-1"
           >
             Lock
           </Button>

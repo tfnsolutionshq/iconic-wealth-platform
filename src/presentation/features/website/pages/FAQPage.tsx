@@ -67,7 +67,7 @@ const FAQS: { category: Exclude<Category, "All">; q: string; a: string }[] = [
   {
     category: "Payments",
     q: "Is there a charge on my payments?",
-    a: "Yes, a ₦100 platform charge on each payment. It’s included in the total before you pay.",
+    a: "Yes, a ₦100 platform charge on online card payments. Bank transfers and wallet payments are free. It’s included in the total before you pay.",
   },
   {
     category: "Payments",

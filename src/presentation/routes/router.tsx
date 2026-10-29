@@ -27,6 +27,7 @@ const NotificationsPage = lazy(() => import('../features/member/pages/Notificati
 const ProfilePage = lazy(() => import('../features/member/pages/ProfilePage').then(m => ({ default: m.ProfilePage })));
 const SupportPage = lazy(() => import('../features/member/pages/SupportPage').then(m => ({ default: m.SupportPage })));
 const PayoutPage = lazy(() => import('../features/member/pages/PayoutPage').then(m => ({ default: m.PayoutPage })));
+const PayoutDayPage = lazy(() => import('../features/member/pages/PayoutDayPage').then(m => ({ default: m.PayoutDayPage })));
 const AdminDashboardPage = lazy(() => import('../features/admin/pages/AdminDashboardPage').then(m => ({ default: m.AdminDashboardPage })));
 const MembersPage = lazy(() => import('../features/admin/pages/MembersPage').then(m => ({ default: m.MembersPage })));
 const RegistrationsPage = lazy(() => import('../features/admin/pages/RegistrationsPage').then(m => ({ default: m.RegistrationsPage })));
@@ -48,7 +49,7 @@ const PAGES: Record<string, ReactElement> = {
   '/member': <MemberHomePage />, '/member/savings': <MemberSavingsPage />, '/member/contribute': <ContributePage />, '/member/contribute/review': <ReviewPaymentPage />, '/member/contribute/result': <PaymentResultPage />,
   '/member/wallet': <WalletPage />,
   '/member/activity': <ActivityPage />, '/member/activity/:id': <ReceiptPage />, '/member/notifications': <NotificationsPage />,
-  '/member/profile': <ProfilePage />, '/member/support': <SupportPage />, '/member/payout': <PayoutPage />,
+  '/member/profile': <ProfilePage />, '/member/support': <SupportPage />, '/member/payout': <PayoutPage />, '/member/payout/payout-day': <PayoutDayPage />,
   '/admin': <AdminDashboardPage />, '/admin/members': <MembersPage />, '/admin/registrations': <RegistrationsPage />,
   '/admin/savings': <AdminSavingsPage />, '/admin/transactions': <AdminTransactionsPage />,
   '/admin/interest': <InterestPage />, '/admin/interest/:year': <InterestWorkflowPage />,

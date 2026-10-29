@@ -101,13 +101,17 @@ export function receiptHtml(t: Transaction, memberName: string): string {
   const rows: [string, string][] = [
     ["Member", `${memberName} (${t.memberId})`],
     ["Description", describeTx(t)],
+    ...(t.payoutDestination
+      ? ([["Paid to", t.payoutDestination === "Wallet" ? "Iconic Wealth Hub wallet" : "Bank account"]] as [string, string][])
+      : []),
     ["Amount", formatNaira(t.amountKobo)],
     ["Platform charge", formatNaira(t.platformChargeKobo)],
     ["Total paid", formatNaira(totalPaid(t))],
+    ["Paid with", t.paymentMethod ?? "—"],
     ["Status", t.status],
     ["Date", fmtDateTime(t.createdAt)],
     ["Our reference", t.reference],
-    ["Paystack reference", t.gatewayReference ?? "—"],
+    ["Gateway reference", t.gatewayReference ?? "—"],
   ];
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
   return `<!doctype html><meta charset="utf-8"><title>Receipt ${esc(t.reference)}</title><body style="font-family:Arial,sans-serif;max-width:520px;margin:40px auto;color:#16131D"><h2 style="color:#6C2BD9">Iconic Wealth Hub</h2><h3>${t.kind === "Payout" ? "Payout" : "Contribution"} receipt</h3><table style="width:100%;border-collapse:collapse">${rows.map((r) => `<tr><td style="padding:8px;border-bottom:1px solid #ddd;color:#686273">${r[0]}</td><td style="padding:8px;border-bottom:1px solid #ddd;text-align:right"><b>${esc(r[1])}</b></td></tr>`).join("")}</table></body>`;

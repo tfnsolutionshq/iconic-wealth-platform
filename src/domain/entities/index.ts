@@ -11,8 +11,13 @@ export type Eligibility = 'Eligible' | 'Forfeited';
 export type MonthStatus = 'Paid' | 'Open' | 'Locked' | 'Due' | 'Late' | 'Missed' | 'NotDue' | 'BeforeJoining';
 export type TransactionStatus = 'Successful' | 'Pending' | 'Failed' | 'Processing';
 export type TransactionKind = 'Contribution' | 'Payout';
-/** How a member pays a contribution: through the gateway from their bank, or from their wallet balance. */
-export type ContributionPaymentMethod = 'Bank Account' | 'Wallet';
+/**
+ * How a member pays a contribution: a manual bank transfer to the platform account, from their wallet
+ * balance, or online through Paystack. Only online payments carry the platform charge.
+ */
+export type ContributionPaymentMethod = 'Bank Account' | 'Wallet' | 'Online';
+/** Where a year-end payout is sent: the member's verified bank account or their platform wallet. */
+export type PayoutDestination = 'Bank account' | 'Wallet';
 export type RegistrationStatus = 'New' | 'Approved' | 'Rejected' | 'ChangesRequested';
 export type AdminRole = 'Administrator' | 'SuperAdmin';
 export type OnboardingState = 'PayoutAccount' | 'Target' | 'NewYearTarget' | 'Complete';
@@ -68,7 +73,9 @@ export interface Transaction {
   year: number;
   allocations: Allocation[];    // which month(s) the amount was applied to (oldest open month first)
   amountKobo: Kobo;             // amount saved (or paid out)
-  platformChargeKobo: Kobo;     // flat ₦100 per payment; member pays amount + charge
+  platformChargeKobo: Kobo;     // flat ₦100, online payments only; member pays amount + charge
+  paymentMethod?: ContributionPaymentMethod;  // how a contribution was paid (absent on older records)
+  payoutDestination?: PayoutDestination;      // where a payout was sent (payout records only)
   status: TransactionStatus;
   late: boolean;
   failureReason?: string;
@@ -112,7 +119,7 @@ export type Session =
 
 /* ---------------- Member wallet ---------------- */
 
-export type WalletEntryKind = 'TopUp' | 'Withdrawal' | 'Contribution' | 'Adjustment';
+export type WalletEntryKind = 'TopUp' | 'Withdrawal' | 'Contribution' | 'Payout' | 'Adjustment';
 export type WalletEntryStatus = 'Pending' | 'Processing' | 'Successful' | 'Failed';
 
 /** One money movement in or out of the member's wallet. Statuses mirror Transaction; Pending/Failed never count. */

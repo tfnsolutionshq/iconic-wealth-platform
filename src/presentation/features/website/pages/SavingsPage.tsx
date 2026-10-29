@@ -49,7 +49,9 @@ const EXPLAINERS = [
 ] as const;
 
 export function SavingsPage() {
-  const rows = EXAMPLE_AMOUNTS.map((v) => chargeBreakdown(naira(v)));
+  const rows = EXAMPLE_AMOUNTS.map((v) =>
+    chargeBreakdown(naira(v), undefined, "Online"),
+  );
   return (
     <>
       {/* Hero */}
@@ -85,8 +87,9 @@ export function SavingsPage() {
               Charges
             </h2>
             <p className="leading-relaxed text-mute">
-              A <b className="text-ink">₦100 platform charge</b> applies to each
-              payment. It’s included in the total you see before you pay.
+              A <b className="text-ink">₦100 platform charge</b> applies to
+              online card payments. Bank transfers and wallet payments are free.
+              Any charge is included in the total you see before you pay.
             </p>
             <div className="max-w-full overflow-x-auto rounded-2xl border border-line bg-white">
               <table className="w-full min-w-130 text-sm">
