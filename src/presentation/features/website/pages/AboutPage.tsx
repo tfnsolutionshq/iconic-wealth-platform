@@ -74,7 +74,7 @@ const FOUNDERS = [
     name: "Mrs. Chizoba Tevin-Anyali",
     body: [
       "Mrs. Chizoba Tevin-Anyali is the wealth manager behind Iconic Wealth Hub. She has over a decade of experience in the finance industry, with a strong background in fund management and sales.",
-      "She lectures in Economics with a focus on development economics, is a certified product manager and is well versed in investment opportunities. She brings credibility and a passion for raising wealth-oriented women.",
+      "She lectures in Economics with a focus on development economics. She is a certified product manager and is well versed in investment opportunities. She brings credibility and a passion for raising wealth-oriented women.",
     ],
   },
 ] as const;
@@ -175,10 +175,10 @@ export function AboutPage() {
             A savings-to-investment hub, not a money-doubling scheme
           </h2>
           <p className="leading-relaxed text-mute">
-            Our primary goal is a strong savings culture: consistent monthly
-            saving, with the funds invested jointly. Saving ₦100,000 isn’t about
-            getting ₦100,000 back at year-end. It’s about building the financial
-            discipline that grows wealth.
+            Our goal is to promote consistent saving and investment among women,
+            foster financial discipline and build a supportive women-only
+            community focused on long-term wealth creation rather than
+            get-rich-quick schemes.
           </p>
         </div>
         <div className="grid flex-1 gap-4 sm:grid-cols-2">

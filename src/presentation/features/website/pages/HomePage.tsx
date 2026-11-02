@@ -45,7 +45,10 @@ const RULES = [
     "Minimum per payment. Save as much as you can, as often as you like.",
   ],
   ["5th", "Each month closes at the end of the 5th of the next month."],
-  ["₦100", "Platform charge on online payments, shown in the total before you pay."],
+  [
+    "₦100",
+    "Platform charge on online payments, shown in the total before you pay.",
+  ],
   [
     "14 Dec",
     "Savings months run January to November. Payout is on or before 14 December.",
@@ -87,22 +90,22 @@ export function HomePage() {
         <div className="mx-auto flex max-w-360 flex-col items-center gap-16 px-5 pt-16 pb-24 lg:flex-row lg:px-16 lg:pt-20">
           <div className="flex flex-1 flex-col gap-6">
             <span className="w-max rounded-pill bg-gold-tint px-3 py-1 text-[13px] font-bold text-[#7a5410]">
-              Members-only savings community
+              A Private Savings Community for Women
             </span>
             <h1 className="max-w-[11ch] font-display text-4xl leading-[1.04] tracking-tight text-white sm:text-5xl lg:text-[76px]">
-              Save every month. Collect it all at year-end.
+              Where Women build and Multiply Wealth Together.
             </h1>
             <p className="max-w-[46ch] text-lg leading-relaxed text-white/90">
-              Save from ₦10,000 at a time, follow every payment online, and
-              receive your savings with your share of annual interest on payout
-              day.
+              Your financial future deserves intention. Join a community of
+              women committed to building disciplined savings habits, pursuing
+              financial goals and creating greater possibilities for tomorrow
             </p>
             <div className="flex flex-wrap gap-3">
               <ButtonLink to={paths.register} variant="gold">
                 Become a member
               </ButtonLink>
               <ButtonLink to={paths.howItWorks} variant="outline">
-                See how it works
+                Discover how it works
               </ButtonLink>
             </div>
             <div className="flex flex-wrap gap-6 text-[13px] font-semibold text-white/90">

@@ -61,8 +61,10 @@ export function SavingsPage() {
             Savings
           </h1>
           <p className="mt-4 max-w-[60ch] text-lg leading-relaxed text-[#474252]">
-            Saving is what the community is about: every month from January to
-            November, at your own pace, with one payout in December.
+            Our wealth community focuses on savings first. Interest is simply an
+            added benefit. If your primary goal is to earn interest rather than
+            develop a disciplined savings habit, this community may not be the
+            right fit for you.
           </p>
         </div>
       </section>
