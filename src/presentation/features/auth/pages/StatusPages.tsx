@@ -33,7 +33,9 @@ export function RegistrationDonePage() {
         <span className="flex size-21 items-center justify-center rounded-sheet bg-pending-tint text-pending">
           <Clock size={40} />
         </span>
-        <h1 className="font-display text-4xl sm:text-5xl">Registration received</h1>
+        <h1 className="font-display text-4xl sm:text-5xl">
+          Registration received
+        </h1>
         <p className="max-w-[52ch] text-lg text-[#474252]">
           Thanks, {r.firstName}. An admin reviews every new member. We’ll email{" "}
           {r.email} when your account opens.

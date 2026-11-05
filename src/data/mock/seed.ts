@@ -5,19 +5,19 @@ import { naira } from '@/domain/rules';
 export const DEMO_TODAY = '2026-10-02T09:40:00';
 
 const member = (id: string, first: string, last: string, extra: Partial<Member>): Member => ({ id, firstName: first, lastName: last, gender: 'Female', dateOfBirth: '1990-01-01', email: '', phone: '',
-  stateOfResidence: 'Lagos', address: '', nextOfKin: { name: '', relationship: 'Spouse', phone: '' }, status: 'Active', joinedOn: '2026-01-01', community: 'Granted', onboarding: 'Complete', ...extra });
+  stateOfResidence: 'Lagos', address: '', nextOfKin: { name: '', relationship: 'Spouse', phone: '' }, status: 'Active', joinedOn: '2026-01-01', community: 'Granted', onboarding: 'Complete', isProfileComplete: false, ...extra });
 
 export const members: Member[] = [
   member('IWH-00412', 'Funmilayo', 'Adebayo', { dateOfBirth: '1988-04-14', email: 'funmi.adebayo@mail.com', phone: '+234 803 555 4412', address: '14 Adeola Odeku St, Victoria Island',
     nextOfKin: { name: 'Tunde Adebayo', relationship: 'Spouse', phone: '0803 555 0198' }, joinedOn: '2025-01-14', referredBy: 'Chidi Eze',
-    payoutAccount: { bankCode: '058', bankName: 'GTBank', accountNumber: '0123456789', accountName: 'FUNMILAYO ADEBAYO' } }),
+    payoutAccount: { bankCode: '058', bankName: 'GTBank', accountNumber: '0123456789', accountName: 'FUNMILAYO ADEBAYO' }, isProfileComplete: true }),
   /* approved 2 Oct 2026, after the September cut-off → savings start January 2027 */
   member('IWH-01250', 'Ada', 'Okonkwo', { dateOfBirth: '1995-07-22', email: 'ada.okonkwo@mail.com', phone: '+234 802 117 3390', address: '7 Bode Thomas St, Surulere',
     nextOfKin: { name: 'Chinedu Okonkwo', relationship: 'Brother', phone: '0803 221 9087' }, joinedOn: '2026-10-02', community: 'Locked', onboarding: 'PayoutAccount' }),
   /* approved 28 Sep 2026, within the cut-off → catch-up January–August first */
   member('IWH-01244', 'Chiamaka', 'Obi', { dateOfBirth: '1992-11-03', email: 'chiamaka.obi@mail.com', phone: '+234 809 113 5520', stateOfResidence: 'Enugu', address: '4 Ogui Road',
     nextOfKin: { name: 'Emeka Obi', relationship: 'Spouse', phone: '0809 000 4420' }, joinedOn: '2026-09-28', community: 'Locked',
-    payoutAccount: { bankCode: '044', bankName: 'Access Bank', accountNumber: '0044556677', accountName: 'CHIAMAKA OBI' } }),
+    payoutAccount: { bankCode: '044', bankName: 'Access Bank', accountNumber: '0044556677', accountName: 'CHIAMAKA OBI' }, isProfileComplete: true }),
 ];
 
 export const savingsYears: SavingsYear[] = [

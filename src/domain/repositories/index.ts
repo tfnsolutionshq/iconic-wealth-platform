@@ -4,29 +4,99 @@
  *  - http: calls the backend API — see data/repositories/http
  * The presentation layer never imports data-layer classes directly; it receives these via ServicesContext.
  */
-import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, ContributionPaymentMethod, InterestBand, InterestCalcRow, InterestRateMode, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, PayoutDestination, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsYear, Session, Testimonial, Transaction, WalletEntry, WalletSnapshot, WalletWithdrawal } from '../entities';
+import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, Bank, ContributionPaymentMethod, InterestBand, InterestCalcRow, InterestRateMode, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, PayoutDestination, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsDashboard, SavingsYear, Session, Testimonial, Transaction, WalletEntry, WalletSnapshot, WalletWithdrawal } from '../entities';
 import type { RegistrationDetails } from '../rules/registration';
 import type { PlatformSettings } from '../rules/savings';
 
 export interface AuthRepository {
-  login(identifier: string, password: string): Promise<Session>;
+  login(identifier: string, password: string): Promise<LoginResult>;
   logout(): Promise<void>;
   requestPasswordReset(identifier: string): Promise<void>;
 }
 
+
 export interface NewRegistration extends RegistrationDetails { nextOfKin: { name: string; relationship: string; phone: string }; password: string }
+
+/** The signed-in user returned by POST /auth/login. */
+export interface LoginResult {
+  /** The mapped domain session used by the app. */
+  session: Session;
+  token: string;
+  /**
+   * The raw user object exactly as returned by the auth API (snake_case for the
+   * live API). Persist this as-is; use `session` for app state.
+   */
+  user: unknown;
+}
+
+
+/** The member created by the API when registration starts. */
+export interface RegisteredUser {
+  id: string;
+  memberId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  status: string;
+}
+
+export interface RegistrationStarted {
+  /** True only when the API confirms a verification code was sent. */
+  emailSent: boolean;
+  message: string;
+  user?: RegisteredUser;
+  verification?: {
+    expiresAt: string;
+    resendAvailableInSeconds: number;
+  };
+}
+
 export interface RegistrationRepository {
-  sendEmailCode(email: string): Promise<void>;
+  /** Creates the member and sends the email verification code. */
+  start(details: RegistrationDetails): Promise<RegistrationStarted>;
+  /** Sends a fresh verification code to an existing pending registration. */
+  resendEmailCode(email: string): Promise<RegistrationStarted>;
   verifyEmailCode(email: string, code: string): Promise<boolean>;
+  /** Completes the profile (next of kin + password) after email verification. */
   submit(registration: NewRegistration): Promise<Registration>;
 }
 
 export type ChangeField = 'Phone number' | 'Email' | 'Payout account';
+
+/**
+ * Payout-account setup. Kept separate from MemberRepository so the live payout API can be used
+ * even while the rest of the member data remains on mock repositories.
+ */
+export interface PayoutAccountRepository {
+  /** Banks the member can choose for their payout account (GET /payout-account/banks). */
+  listBanks(): Promise<Bank[]>;
+  /** Saves the signed-in member's payout account (POST /payout-account). */
+  savePayoutAccount(id: string, account: Omit<PayoutAccount, 'accountName' | 'verifiedAt'>): Promise<PayoutAccount>;
+  resolveAccountName(bankCode: string, accountNumber: string): Promise<string>;
+}
+
+/**
+ * Monthly savings target for onboarding. Separate from MemberRepository so the live target
+ * endpoint can be used while the rest of the member data remains on mock repositories.
+ */
+export interface SavingsTargetRepository {
+  /** Sets the member's standing monthly target (POST /savings/target). */
+  setTarget(memberId: string, year: number, amountKobo: Kobo): Promise<void>;
+}
+
+/**
+ * The signed-in member's dashboard summary. Kept separate from MemberRepository so the live
+ * GET /savings endpoint can be used while the rest of the member data remains on mock repositories.
+ */
+export interface SavingsDashboardRepository {
+  /** GET /savings — the dashboard for the signed-in member. */
+  get(memberId?: string): Promise<SavingsDashboard>;
+}
+
 export interface MemberRepository {
   getMember(id: string): Promise<Member>;
   getSavingsYear(id: string, year: number): Promise<SavingsYear>;
-  savePayoutAccount(id: string, account: Omit<PayoutAccount, 'accountName' | 'verifiedAt'>): Promise<PayoutAccount>;
-  resolveAccountName(bankCode: string, accountNumber: string): Promise<string>;
   /** Monthly Savings Target for a month; `applyToFollowing` also makes it the standing target. 0 = clear. */
   setTarget(id: string, year: number, month: MonthIndex | null, amount: Kobo, applyToFollowing: boolean): Promise<SavingsYear>;
   /** Member locks the open month early (server checks it has at least the minimum). */
@@ -98,11 +168,58 @@ export interface InterestRulesInput {
 }
 
 export interface MemberQuery { tab: 'All' | 'Active' | 'Suspended' | 'NotPaid' | 'Forfeited'; search: string; eligibility?: 'Eligible' | 'Forfeited'; referred?: boolean; joinedYear?: string }
+
+/** Raw member record returned by GET /admin/members. */
+export type ApiMemberStatus =
+  | 'pending_email_verification'
+  | 'pending_profile_completion'
+  | 'pending_approval'
+  | 'active'
+  | 'rejected'
+  | 'suspended';
+
+export interface ApiMember {
+  id: string;
+  member_id: string;
+  first_name: string;
+  last_name: string;
+  full_name: string;
+  dob: string | null;
+  gender: string | null;
+  email: string;
+  phone: string | null;
+  state_of_residence: string | null;
+  residential_address: string | null;
+  how_heard_about_us: string | null;
+  referred_by: string | null;
+  next_of_kin: { name: string | null; relationship: string | null; phone: string | null } | null;
+  status: ApiMemberStatus;
+  email_verified_at: string | null;
+  approved_at: string | null;
+  rejected_at: string | null;
+  rejection_reason: string | null;
+  suspended_at: string | null;
+  suspension_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiMemberPage {
+  data: ApiMember[];
+  meta: { current_page: number; per_page: number; last_page: number; total: number };
+}
+
 export interface AdminRepository {
   dashboard(year: number): Promise<{ members: number; activeSavers: number; totalSavingsKobo: Kobo; pendingPayments: number; monthlyPaid: { month: string; paid: number; due: number }[]; eligible: number; forfeited: number }>;
   listMembers(query: MemberQuery): Promise<MemberSummary[]>;
   countMembers(): Promise<Record<MemberQuery['tab'], number>>;
   listRegistrations(): Promise<Registration[]>;
+  /** ADM-12: lists all members from GET /admin/members with server-side search, status filter, and pagination. */
+  listAllMembers(params: { search?: string; status?: ApiMemberStatus; page?: number }): Promise<ApiMemberPage>;
+  /** POST /admin/members/:id/approve */
+  approveMember(id: string): Promise<ApiMember>;
+  /** POST /admin/members/:id/reject */
+  rejectMember(id: string, reason: string): Promise<ApiMember>;
   /** ADM-12: approve (opens the member account) or reject (reason required) a registration. */
   decideRegistration(id: string, decision: 'Approved' | 'Rejected', reason?: string): Promise<Registration>;
   /** ADM-13: per-member savings rows plus members-saving-per-month counts for the chart. */
@@ -148,6 +265,7 @@ export interface AdminRepository {
 }
 
 export interface Repositories {
-  auth: AuthRepository; registration: RegistrationRepository; member: MemberRepository; contribution: ContributionRepository;
+  auth: AuthRepository; registration: RegistrationRepository; member: MemberRepository; payout: PayoutAccountRepository;
+  savingsTarget: SavingsTargetRepository; savingsDashboard: SavingsDashboardRepository; contribution: ContributionRepository;
   settings: SettingsRepository; testimonials: TestimonialRepository; admin: AdminRepository; gateway: PaymentGateway; wallet: WalletRepository;
 }

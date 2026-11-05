@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Info } from "lucide-react";
 import { Button, Checkbox, Modal, TextField } from "../../../design-system";
 import { PASSWORD_RULES, isStrongPassword } from "@/domain/rules";
@@ -52,19 +52,67 @@ export function OtpModal({
   destination,
   title,
   confirmLabel,
+  initialSeconds = 60,
+  requireEmail = false,
   onCancel,
   onConfirm,
+  onResend,
+  customError,
 }: {
   open: boolean;
   destination: string;
   title: string;
   confirmLabel: string;
+  /** Seconds before the resend button becomes available. Defaults to 60. */
+  initialSeconds?: number;
+  /**
+   * When true, shows an email input inside the modal and passes the entered
+   * email to onConfirm instead of `destination`. Use this when the modal is
+   * opened without having called the API first (e.g. "already have a code").
+   */
+  requireEmail?: boolean;
   onCancel: () => void;
-  onConfirm: (code: string) => Promise<boolean>;
+  onConfirm: (code: string, email: string) => Promise<boolean>;
+  /** Called when the user clicks "Resend code". */
+  onResend?: () => Promise<void>;
+  /** Optional error to display beneath the OTP input (e.g. expired code). */
+  customError?: string | null;
 }) {
   const [digits, setDigits] = useState(["", "", "", "", "", ""]);
+  const [emailInput, setEmailInput] = useState("");
   const [error, setError] = useState("");
+  const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
+  const [resending, setResending] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Reset state and start countdown whenever the modal opens.
+  useEffect(() => {
+    if (!open) return;
+    setDigits(["", "", "", "", "", ""]);
+    setEmailInput("");
+    setError("");
+    setSecondsLeft(initialSeconds);
+
+    timerRef.current = setInterval(() => {
+      setSecondsLeft((s) => {
+        if (s <= 1) {
+          clearInterval(timerRef.current!);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [open, initialSeconds, requireEmail]);
+
   const code = digits.join("");
+  // The email used for verification: either the user-entered value (requireEmail)
+  // or the destination passed in as a prop (normal flow).
+  const effectiveEmail = requireEmail ? emailInput.trim() : destination;
+
   const setAt = (i: number, v: string) => {
     const d = [...digits];
     d[i] = v.replace(/\D/g, "").slice(-1);
@@ -72,6 +120,33 @@ export function OtpModal({
     setError("");
     if (d[i] && i < 5) document.getElementById(`otp-${i + 1}`)?.focus();
   };
+
+  const handleResend = async () => {
+    if (!onResend) return;
+    setResending(true);
+    try {
+      await onResend();
+      // Restart the countdown.
+      if (timerRef.current) clearInterval(timerRef.current);
+      setSecondsLeft(initialSeconds);
+      timerRef.current = setInterval(() => {
+        setSecondsLeft((s) => {
+          if (s <= 1) {
+            clearInterval(timerRef.current!);
+            return 0;
+          }
+          return s - 1;
+        });
+      }, 1000);
+      setDigits(["", "", "", "", "", ""]);
+      setError("");
+    } finally {
+      setResending(false);
+    }
+  };
+
+  const canSubmit = code.length === 6 && (!requireEmail || emailInput.trim().length > 0);
+
   return (
     <Modal
       open={open}
@@ -84,10 +159,10 @@ export function OtpModal({
           </Button>
           <Button
             size="md"
-            disabled={code.length !== 6}
+            disabled={!canSubmit}
             onClick={async () => {
-              if (!(await onConfirm(code)))
-                setError("That code isn’t right. Try again.");
+              if (!(await onConfirm(code, effectiveEmail)))
+                setError("That code isn't right. Try again.");
             }}
           >
             {confirmLabel}
@@ -95,10 +170,20 @@ export function OtpModal({
         </>
       }
     >
-      <p className="text-mute">
-        Enter the 6-digit code we sent to{" "}
-        <b className="text-ink">{destination}</b>.
-      </p>
+      {requireEmail ? (
+        <TextField
+          label="Email address"
+          type="email"
+          value={emailInput}
+          onChange={(e) => { setEmailInput(e.target.value); setError(""); }}
+          hint="Enter the email address the code was sent to."
+        />
+      ) : (
+        <p className="text-mute">
+          Enter the 6-digit code we sent to{" "}
+          <b className="text-ink">{destination}</b>.
+        </p>
+      )}
       <div className="flex gap-2">
         {digits.map((d, i) => (
           <input
@@ -119,11 +204,24 @@ export function OtpModal({
           />
         ))}
       </div>
-      {error ? (
-        <p className="text-[13px] font-bold text-fail">{error}</p>
+      {error || customError ? (
+        <p className="text-[13px] font-bold text-fail">{error || customError}</p>
+      ) : secondsLeft > 0 ? (
+        <p className="text-[13px] font-semibold text-mute">
+          Didn't get it? Resend in {secondsLeft}s.
+        </p>
+      ) : onResend ? (
+        <button
+          type="button"
+          disabled={resending}
+          onClick={handleResend}
+          className="text-[13px] font-bold text-brand hover:underline disabled:opacity-50"
+        >
+          {resending ? "Sending…" : "Resend code"}
+        </button>
       ) : (
         <p className="text-[13px] font-semibold text-mute">
-          Didn’t get it? Resend in 60 seconds.
+          Didn't get it? Please try again.
         </p>
       )}
     </Modal>
@@ -133,11 +231,13 @@ export function OtpModal({
 export function CreatePasswordModal({
   open,
   busy,
+  error,
   onBack,
   onSubmit,
 }: {
   open: boolean;
   busy: boolean;
+  error?: string | null;
   onBack: () => void;
   onSubmit: (password: string) => void;
 }) {
@@ -162,7 +262,7 @@ export function CreatePasswordModal({
       }
     >
       <p className="text-mute">
-        Last step. You’ll use this password with your email or phone number to
+        Last step. You'll use this password with your email or phone number to
         log in.
       </p>
       <TextField
@@ -187,8 +287,13 @@ export function CreatePasswordModal({
         type={show ? "text" : "password"}
         value={b}
         onChange={(e) => setB(e.target.value)}
-        error={b && b !== a ? "Passwords don’t match." : undefined}
+        error={b && b !== a ? "Passwords don't match." : undefined}
       />
+      {error && (
+        <p role="alert" className="text-[13px] font-bold text-fail">
+          {error}
+        </p>
+      )}
       <Checkbox checked={show} onChange={setShow}>
         Show password
       </Checkbox>

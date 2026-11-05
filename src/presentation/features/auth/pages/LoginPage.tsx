@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { Eye, EyeOff, TriangleAlert } from "lucide-react";
+import { ValidationError } from "@/domain/errors";
+import { mapLoginErrors, type LoginErrors } from "@/domain/rules";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
-import { Button, Logo, TextField, cn } from "../../../design-system";
+import { Button, Logo, TextField } from "../../../design-system";
 import { YearCard } from "../../website/components/HomePageComponents/YearCard";
 import { DEMO_ACCOUNTS } from "@/data/mock/seed";
 import { env } from "@/app/config/env";
@@ -14,15 +17,23 @@ export function LoginPage() {
   const { repos } = useServices();
   const toast = useToast();
   const navigate = useNavigate();
+  // Demo identities only make sense while sign-in is served by the mock repository.
+  const demoCredentials = env.demoMode && !env.registrationApiBaseUrl;
   const [identifier, setIdentifier] = useState(
-    env.demoMode ? DEMO_ACCOUNTS[0].identifier : "",
+    demoCredentials ? DEMO_ACCOUNTS[0].identifier : "",
   );
-  const [password, setPassword] = useState(env.demoMode ? "demo-password" : "");
+  const [password, setPassword] = useState(
+    demoCredentials ? "demo-password" : "",
+  );
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [errors, setErrors] = useState<LoginErrors>({});
+  const [showPassword, setShowPassword] = useState(false);
+  const errorMessage = [errors.login, errors.password, errors.form]
+    .filter(Boolean)
+    .join(" ");
   const submit = async () => {
     setBusy(true);
-    setError("");
+    setErrors({});
     try {
       const s = await login(identifier, password);
       navigate(
@@ -33,7 +44,17 @@ export function LoginPage() {
             : paths.member.home,
       );
     } catch (e) {
-      setError((e as Error).message);
+      if (e instanceof ValidationError) {
+        const mapped = mapLoginErrors(e.fields);
+        setErrors(Object.keys(mapped).length ? mapped : { form: e.message });
+      } else {
+        setErrors({
+          form:
+            e instanceof Error
+              ? e.message
+              : "We couldn’t log you in. Please try again.",
+        });
+      }
     } finally {
       setBusy(false);
     }
@@ -54,17 +75,55 @@ export function LoginPage() {
           <TextField
             label="Email or phone number"
             value={identifier}
-            onChange={(e) => setIdentifier(e.target.value)}
+            onChange={(e) => {
+              setIdentifier(e.target.value);
+              setErrors((current) => ({
+                ...current,
+                login: undefined,
+                form: undefined,
+              }));
+            }}
             autoComplete="username"
+            aria-invalid={!!errorMessage}
+            aria-describedby={errorMessage ? "login-error" : undefined}
           />
           <TextField
             label="Password"
-            type="password"
+            type={showPassword ? "text" : "password"}
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setErrors((current) => ({
+                ...current,
+                password: undefined,
+                form: undefined,
+              }));
+            }}
             autoComplete="current-password"
-            error={error || undefined}
+            aria-invalid={!!errorMessage}
+            aria-describedby={errorMessage ? "login-error" : undefined}
+            trailing={
+              <button
+                type="button"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+                onClick={() => setShowPassword((current) => !current)}
+                className="flex size-9 items-center justify-center rounded-full text-mute transition hover:bg-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+              >
+                {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
+              </button>
+            }
           />
+          {errorMessage && (
+            <p
+              id="login-error"
+              role="alert"
+              className="flex items-start gap-1.5 text-[13px] font-bold text-fail"
+            >
+              <TriangleAlert size={16} className="mt-0.5 shrink-0" />
+              {errorMessage}
+            </p>
+          )}
           <button
             type="button"
             className="self-end text-sm font-bold text-brand"
@@ -84,31 +143,6 @@ export function LoginPage() {
               Become a member
             </Link>
           </p>
-          {env.demoMode && (
-            <div className="flex flex-col gap-2 rounded-[18px] border-2 border-dashed border-gold bg-[#fffaf0] p-3.5">
-              <b className="text-sm">Demo accounts</b>
-              <div className="flex flex-wrap gap-2">
-                {DEMO_ACCOUNTS.map((a) => (
-                  <button
-                    type="button"
-                    key={a.key}
-                    onClick={() => setIdentifier(a.identifier)}
-                    className={cn(
-                      "h-9.5 rounded-pill border-[1.5px] px-4 text-sm font-bold",
-                      identifier === a.identifier
-                        ? "border-ink bg-ink text-white"
-                        : "border-line bg-white",
-                    )}
-                  >
-                    {a.label}
-                  </button>
-                ))}
-              </div>
-              <span className="text-xs font-semibold text-mute">
-                Demo mode only (VITE_DEMO_MODE). Hidden in production.
-              </span>
-            </div>
-          )}
         </form>
       </div>
       <div className="hidden w-155 flex-col justify-center bg-brand-tint p-14 lg:flex">

@@ -87,7 +87,7 @@ src/
 | `ToastContext` | transient messages | everywhere (`useToast()`) |
 | `ContributionDraftContext` | chosen amount, last transaction | Contribute → Review → Result (scoped inside `MemberLayout`) |
 
-Keep server data in pages/hooks (fetch via repositories, `reload()` after changes); add a context only when state must be shared across routes. Session is kept in `sessionStorage` (token in `sessionStorage` for the HTTP adapter); agree with backend whether to move to an httpOnly cookie.
+Keep server data in pages/hooks (fetch via repositories, `reload()` after changes); add a context only when state must be shared across routes. The token is kept in `localStorage` under `iwh.token` (also mirrored to `sessionStorage`) and sent as `Authorization: Bearer <token>`; the raw login user is stored as-is under `iwh.user` and the mapped session under `iwh.session`. Agree with backend whether to move to an httpOnly cookie.
 
 ## 5. Conventions
 
@@ -187,14 +187,19 @@ All amounts in kobo. Auth: `Authorization: Bearer <token>`. Implemented in `src/
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/auth/login` | `{ identifier, password }` → `{ token, session }` (session kind: member, admin, pending) |
+| POST | `/auth/login` | `{ login, password }` → `{ user, token, token_type }`; subsequent requests use `Authorization: Bearer <token>` |
 | POST | `/auth/logout`, `/auth/password-reset` | Log out; send reset link |
-| POST | `/registrations/email-code`, `/registrations/email-code/verify` | Send / verify 6-digit email code |
-| POST | `/registrations` | Submit registration (details, next of kin, password) |
+| POST | `/auth/member/register` | Start registration (`first_name`, `last_name`, `dob`, `gender`, `email`, `phone`, `state_of_residence`, `residential_address`, `how_heard_about_us`, optional `referred_by`) → user + verification |
+| POST | `/auth/member/register/verify-email` | `{ email, code }` → verified user + Bearer token |
+| POST | `/auth/member/register/resend-code` | `{ email }` → new verification code |
+| POST | `/auth/member/register/complete` | Bearer token; `{ password, password_confirmation, next_of_kin_name, relationship, next_of_kin_phone }` |
 | GET | `/members/{id}` | Member profile |
 | GET | `/members/{id}/savings/{year}` | Savings year (baseline, month statuses, eligibility) |
-| PUT | `/members/{id}/payout-account` | Save payout account (server resolves and stores account name) |
+| GET | `/payout-account/banks` | Banks available for the payout account; use each bank’s `code` as the NUBAN `bank_code` |
+| POST | `/payout-account` | Save payout account (`{ bank_code, account_number }`; server resolves and stores the account name) |
 | GET | `/banks/{bankCode}/resolve?account=` | Resolve account name |
+| POST | `/savings/target` | Set the standing monthly target during onboarding (`{ target_amount }`, in naira) |
+| GET | `/savings` | Member dashboard: `active_month`, `next_period`, `summary`, `payout_journey` and `settings` (money as naira strings, mapped to kobo) |
 | PUT | `/members/{id}/savings/{year}/target` | Monthly target (`{ month, amountKobo, applyToFollowing }`) |
 | POST | `/members/{id}/savings/{year}/months/{month}/lock` | Member locks the open month (server checks minimum) |
 | POST | `/members/{id}/community/joined`, `/members/{id}/onboarding/complete` | Community and onboarding |
@@ -214,6 +219,7 @@ Extend the ports in `domain/repositories` first, then both adapters (mock and ht
 | Variable | Dev / staging | Production |
 | --- | --- | --- |
 | `VITE_API_BASE_URL` | empty = mock data, or staging API | production API |
+| `VITE_REGISTRATION_API_BASE_URL` | optional: live registration and sign-in while the rest stays mock (`/api/v1` in dev, proxied by Vite); falls back to `VITE_API_BASE_URL` | optional override |
 | `VITE_PAYSTACK_PUBLIC_KEY` | `pk_test_…` | `pk_live_…` |
 | `VITE_DEMO_MODE` | `true` (demos) | **`false`** |
 | `VITE_WA_COMMUNITY_URL`, `VITE_WA_SUPPORT_URL` | placeholders | cooperative’s real links |

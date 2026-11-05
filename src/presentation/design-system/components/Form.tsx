@@ -58,22 +58,32 @@ export function TextField({
   hint,
   optional,
   className,
+  trailing,
   ...rest
-}: FieldShell & InputHTMLAttributes<HTMLInputElement>) {
+}: FieldShell &
+  InputHTMLAttributes<HTMLInputElement> & { trailing?: ReactNode }) {
   const id = useId();
   return (
     <Shell id={id} label={label} error={error} hint={hint} optional={optional}>
-      <input
-        id={id}
-        aria-invalid={!!error}
-        aria-describedby={error ? `${id}-err` : undefined}
-        className={cn(
-          control,
-          error ? "border-fail" : "border-line",
-          className,
+      <div className="relative">
+        <input
+          id={id}
+          aria-invalid={!!error}
+          aria-describedby={error ? `${id}-err` : undefined}
+          className={cn(
+            control,
+            error ? "border-fail" : "border-line",
+            trailing ? "pr-12" : undefined,
+            className,
+          )}
+          {...rest}
+        />
+        {trailing && (
+          <span className="absolute inset-y-0 right-1.5 flex items-center">
+            {trailing}
+          </span>
         )}
-        {...rest}
-      />
+      </div>
     </Shell>
   );
 }

@@ -14,6 +14,36 @@ export type FieldErrors<T> = Partial<Record<keyof T, string>>;
 export const isEmail = (v: string) => /^\S+@\S+\.\S+$/.test(v);
 export const isPhone = (v: string) => v.replace(/\D/g, '').length >= 11;
 
+/** API field names → the names used by the registration form. */
+export const REGISTRATION_API_FIELDS: Record<string, keyof RegistrationDetails> = {
+  first_name: 'firstName',
+  last_name: 'lastName',
+  dob: 'dateOfBirth',
+  email: 'email',
+  phone: 'phone',
+  state_of_residence: 'stateOfResidence',
+  residential_address: 'address',
+  how_heard_about_us: 'heardAboutUs',
+  referred_by: 'referredBy',
+};
+
+/** Converts `{ email: ['already taken'] }` from the API into inline form errors. */
+export function mapRegistrationErrors(
+  errors: Record<string, string[]>,
+): FieldErrors<RegistrationDetails> {
+  const out: FieldErrors<RegistrationDetails> = {};
+  for (const [apiField, messages] of Object.entries(errors)) {
+    const field = REGISTRATION_API_FIELDS[apiField];
+    if (!field) continue;
+    const message = (Array.isArray(messages) ? messages : [messages])
+      .filter(Boolean)
+      .join(' ');
+    if (!message) continue;
+    out[field] = out[field] ? `${out[field]} ${message}` : message;
+  }
+  return out;
+}
+
 /** Register step 1 (WEB-09). */
 export function validateDetails(d: RegistrationDetails, today: Date): FieldErrors<RegistrationDetails> {
   const e: FieldErrors<RegistrationDetails> = {};

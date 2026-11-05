@@ -1,6 +1,6 @@
-import type { AdminListItem, AdminRole, AdminUser, Allocation, AuditEntry, ContributionPaymentMethod, InterestBand, InterestCalcRow, InterestWorkflow, Kobo, MonthIndex, NotificationSettings, PayoutBatch, PayoutDestination, Registration, ReportKind, ReportResult, Session, Testimonial, Transaction, WalletEntry, WalletWithdrawal } from '@/domain/entities';
-import type { AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, MemberQuery, MemberRepository, NewRegistration, InterestRulesInput, RegistrationRepository, SettingsRepository, TestimonialRepository, VerifiedContribution, WalletRepository } from '@/domain/repositories';
-import { DEFAULT_SETTINGS, MONTHS_SHORT, autoLocksAfter, canLock, chargeBreakdown, formatNaira, minimumFor, naira, payoutProjection, planAllocation, walletBalances, type PlatformSettings } from '@/domain/rules';
+import type { AdminListItem, AdminRole, AdminUser, Allocation, AuditEntry, Bank, ContributionPaymentMethod, InterestBand, InterestCalcRow, InterestWorkflow, Kobo, MonthIndex, NotificationSettings, PayoutBatch, PayoutDestination, Registration, ReportKind, ReportResult, SavingsDashboard, Session, Testimonial, Transaction, WalletEntry, WalletWithdrawal } from '@/domain/entities';
+import type { AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, MemberQuery, MemberRepository, NewRegistration, InterestRulesInput, PayoutAccountRepository, RegistrationRepository, RegistrationStarted, SavingsDashboardRepository, SavingsTargetRepository, SettingsRepository, TestimonialRepository, VerifiedContribution, WalletRepository, LoginResult } from '@/domain/repositories';
+import { DEFAULT_SETTINGS, MONTHS, autoLocksAfter, canLock, chargeBreakdown, deadlineFor, formatNaira, minimumFor, monthState, monthsSaved, naira, openMonth, payoutProjection, planAllocation, savedThisYear, targetHistory, targetStreak, walletBalances, type PlatformSettings, type RegistrationDetails } from '@/domain/rules';
 import type { Clock } from '@/domain/services/clock';
 import { adminUsers, auditEntries, interestYears, memberSummaries, members, payoutBatches, registrations, savingsYears, testimonials, transactions, walletEntries, walletWithdrawals } from '@/data/mock/seed';
 
@@ -8,26 +8,78 @@ const delay = <T,>(v: T, ms = 250) => new Promise<T>(r => setTimeout(() => r(str
 const notFound = (what: string) => new Error(`${what} not found`);
 const ref = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 const admins: AdminUser[] = adminUsers.map(({ id, name, email, role, status }) => ({ id, name, email, role, status }));
+const banks: Bank[] = [
+  { code: '044', name: 'Access Bank' },
+  { code: '011', name: 'First Bank' },
+  { code: '058', name: 'GTBank' },
+  { code: '50211', name: 'Kuda' },
+  { code: '50515', name: 'Moniepoint' },
+  { code: '999992', name: 'Opay' },
+  { code: '033', name: 'UBA' },
+  { code: '035', name: 'Wema Bank' },
+  { code: '057', name: 'Zenith Bank' },
+];
 
 export class MockAuthRepository implements AuthRepository {
-  async login(identifier: string, _password: string): Promise<Session> {
+  async login(identifier: string, _password: string): Promise<LoginResult> {
     const id = identifier.trim().toLowerCase();
-    const admin = admins.find(a => a.email === id); if (admin) return delay({ kind: 'admin', admin });
-    const reg = registrations.find(r => r.email === id && r.status !== 'Approved'); if (reg) return delay({ kind: 'pending', registration: reg });
+    const admin = admins.find(a => a.email === id);
+    if (admin) {
+      const user = { ...admin, kind: 'admin' as const };
+      const session: Session = { kind: 'admin', admin: user };
+      return { session: await delay(session), token: 'demo-token', user };
+    }
+    const reg = registrations.find(r => r.email === id && r.status !== 'Approved');
+    if (reg) {
+      const user = { ...reg, kind: 'pending' as const };
+      const session: Session = { kind: 'pending', registration: user };
+      return { session: await delay(session), token: 'demo-token', user };
+    }
     const digits = id.replace(/\D/g, '');
     const isPhone = digits.length >= 10 && !id.includes('@');
     const member = members.find(m => m.email === id || (isPhone && m.phone.replace(/\D/g, '').endsWith(digits.slice(-10))));
     if (!member) throw new Error('Email, phone number or password is incorrect.');
     if (member.status === 'Suspended') throw new Error('Your account is suspended. Please contact Iconic Wealth Hub.');
-    return delay({ kind: 'member', member });
+    const user = { ...member, kind: 'member' as const };
+    const session: Session = { kind: 'member', member: user };
+    return { session: await delay(session), token: 'demo-token', user };
   }
+
   async logout() { await delay(null, 50); }
   async requestPasswordReset() { await delay(null); }
 }
 
 export class MockRegistrationRepository implements RegistrationRepository {
   constructor(private readonly clock: Clock) {}
-  async sendEmailCode() { await delay(null); }
+  private started(): RegistrationStarted {
+    return {
+      emailSent: true,
+      message: 'Registration started. A verification code has been sent to your email.',
+      verification: {
+        expiresAt: new Date(this.clock.now().getTime() + 10 * 60 * 1000).toISOString(),
+        resendAvailableInSeconds: 60,
+      },
+    };
+  }
+  async start(details: RegistrationDetails): Promise<RegistrationStarted> {
+    await delay(null);
+    return {
+      ...this.started(),
+      user: {
+        id: ref('U'),
+        memberId: ref('IWH'),
+        firstName: details.firstName,
+        lastName: details.lastName,
+        email: details.email,
+        phone: details.phone,
+        status: 'pending_email_verification',
+      },
+    };
+  }
+  async resendEmailCode(_email: string): Promise<RegistrationStarted> {
+    await delay(null);
+    return this.started();
+  }
   async verifyEmailCode(_email: string, code: string) { return delay(/^\d{6}$/.test(code)); } // demo: any 6 digits
   async submit(r: NewRegistration): Promise<Registration> {
     const reg: Registration = { id: ref('R'), firstName: r.firstName, lastName: r.lastName, gender: 'Female', dateOfBirth: r.dateOfBirth, email: r.email, phone: r.phone,
@@ -71,15 +123,117 @@ export class MockTestimonialRepository implements TestimonialRepository {
   async remove(id: string) { const i = testimonials.findIndex(y => y.id === id); if (i < 0) throw notFound('Testimonial'); testimonials.splice(i, 1); await delay(null, 50); }
 }
 
-export class MockMemberRepository implements MemberRepository {
+export class MockPayoutAccountRepository implements PayoutAccountRepository {
   constructor(private readonly clock: Clock) {}
-  async getMember(id: string) { return delay(memberOf(id)); }
-  async getSavingsYear(id: string, year: number) { return delay(yearOf(id, year)); }
+  async listBanks() { return delay(banks, 80); }
   async resolveAccountName(_bank: string, accountNumber: string) { return delay(accountNumber.length === 10 ? 'ACCOUNT HOLDER NAME' : ''); }
   async savePayoutAccount(id: string, a: { bankCode: string; bankName: string; accountNumber: string }) {
     const m = memberOf(id); m.payoutAccount = { ...a, accountName: `${m.firstName} ${m.lastName}`.toUpperCase(), verifiedAt: this.clock.now().toISOString() }; m.onboarding = 'Target';
     return delay(m.payoutAccount);
   }
+}
+
+export class MockSavingsTargetRepository implements SavingsTargetRepository {
+  async setTarget(id: string, year: number, amountKobo: Kobo) {
+    const y = savingsYears.find(x => x.memberId === id && x.year === year);
+    if (y) y.target = amountKobo;
+    await delay(null, 50);
+  }
+}
+
+export class MockSavingsDashboardRepository implements SavingsDashboardRepository {
+  constructor(private readonly clock: Clock) {}
+  async get(memberId?: string): Promise<SavingsDashboard> {
+    const now = this.clock.now();
+    const member = members.find(m => m.id === memberId) ?? members[0];
+    const year = now.getFullYear();
+    const savingsYear = savingsYears.find(y => y.memberId === member.id && y.year === year) ?? {
+      memberId: member.id,
+      year,
+      startMonth: 0 as MonthIndex,
+      joinMonth: null,
+      target: 0,
+      targets: {},
+      locks: {},
+    };
+    const txs = transactions.filter(t => t.memberId === member.id);
+    const open = openMonth(savingsYear, now, DEFAULT_SETTINGS);
+    const nextMonth = open ?? 0;
+    const nextYear = open === null ? year + 1 : year;
+    const nextPeriod = {
+      year: nextYear,
+      month: nextMonth + 1,
+      period: `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}`,
+      monthName: MONTHS[nextMonth],
+      deadline: deadlineFor(nextYear, nextMonth).toISOString(),
+    };
+    const targetMonths = targetHistory(savingsYear, txs, now, DEFAULT_SETTINGS);
+    const payoutDate = DEFAULT_SETTINGS.payoutDates[year] ?? `${year}-12-14`;
+    let defaultedMonths = 0;
+    for (let i = savingsYear.startMonth; i <= DEFAULT_SETTINGS.lastSavingsMonth; i++) {
+      if (monthState(savingsYear, txs, i, now, DEFAULT_SETTINGS) === 'missed') defaultedMonths++;
+    }
+    await delay(null, 50);
+    return {
+      activeMonth: open === null ? null : nextPeriod,
+      nextPeriod,
+      summary: {
+        year,
+        savedThisYear: savedThisYear(savingsYear, txs),
+        totalSaved: txs
+          .filter(t => t.kind === 'Contribution' && t.status === 'Successful')
+          .reduce((sum, t) => sum + t.amountKobo, 0),
+        totalMonths: monthsSaved(savingsYear, txs, DEFAULT_SETTINGS),
+        monthsTargetMet: targetMonths.filter(Boolean).length,
+        defaultedMonths,
+        streak: targetStreak(savingsYear, txs, now, DEFAULT_SETTINGS),
+      },
+      payoutJourney: {
+        year,
+        payoutDate,
+        steps: [
+          {
+            step: 1,
+            title: 'Saving year',
+            description: `January–November · ${open === null ? 'closed' : `${MONTHS[open]} open`}`,
+            completed: open === null,
+            active: open !== null,
+          },
+          {
+            step: 2,
+            title: 'Interest calculated',
+            description: 'After November closes',
+            completed: false,
+            active: false,
+          },
+          {
+            step: 3,
+            title: 'Approval',
+            description: 'Interest and payout approved by Iconic Wealth Hub',
+            completed: false,
+            active: false,
+          },
+          {
+            step: 4,
+            title: 'Payout day',
+            description: 'You withdraw your savings and interest',
+            completed: false,
+            active: false,
+          },
+        ],
+      },
+      settings: {
+        minimumPerPayment: minimumFor(DEFAULT_SETTINGS, year),
+        platformChargePerPayment: DEFAULT_SETTINGS.platformCharge,
+      },
+    };
+  }
+}
+
+export class MockMemberRepository implements MemberRepository {
+  constructor(private readonly clock: Clock) {}
+  async getMember(id: string) { return delay(memberOf(id)); }
+  async getSavingsYear(id: string, year: number) { return delay(yearOf(id, year)); }
   async setTarget(id: string, year: number, month: MonthIndex | null, amount: Kobo, applyToFollowing: boolean) {
     const y = yearOf(id, year);
     if (applyToFollowing || month === null) { y.target = amount; if (month !== null) for (let k = month + 1; k < 12; k++) delete y.targets[k]; }
@@ -251,6 +405,12 @@ export class MockAdminRepository implements AdminRepository {
     return delay({ All: memberSummaries.length, Active: c(m => m.status === 'Active'), Suspended: c(m => m.status === 'Suspended'), NotPaid: c(m => m.currentMonthStatus !== 'Paid'), Forfeited: c(m => m.eligibility === 'Forfeited') }, 50);
   }
   async listRegistrations() { return delay(registrations); }
+  async listAllMembers(_params: { search?: string; status?: import('@/domain/repositories').ApiMemberStatus; page?: number } = {}) {
+    // Mock returns an empty page — this endpoint is only meaningful against the real API.
+    return delay({ data: [], meta: { current_page: 1, per_page: 15, last_page: 1, total: 0 } });
+  }
+  async approveMember(_id: string): Promise<import('@/domain/repositories').ApiMember> { throw new Error('approveMember is only available on the live API.'); }
+  async rejectMember(_id: string, _reason: string): Promise<import('@/domain/repositories').ApiMember> { throw new Error('rejectMember is only available on the live API.'); }
   async decideRegistration(id: string, decision: 'Approved' | 'Rejected', reason?: string) {
     const r = registrations.find(x => x.id === id); if (!r) throw notFound('Registration');
     if (r.status !== 'New') throw new Error('Only new registrations can be decided.');
