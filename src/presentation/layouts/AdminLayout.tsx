@@ -81,7 +81,8 @@ const NOTICE_TILE: Record<AdminNotice["tone"], string> = {
 export function AdminLayout() {
   const { session, logout } = useAuth();
   const [open, setOpen] = useState(false);
-  if (session?.kind !== "admin") return <Navigate to={paths.login} replace />;
+  if (session?.kind === 'member') return <Navigate to={paths.member.home} replace />;
+  if (session?.kind !== 'admin') return <Navigate to={paths.login} replace />;
   const a = session.admin;
   return (
     <div className="flex min-h-screen items-start bg-[#fbfafd]">

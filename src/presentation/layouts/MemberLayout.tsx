@@ -36,7 +36,8 @@ const SIDE = [
 export function MemberLayout() {
   const { session } = useAuth();
   const [open, setOpen] = useState(false);
-  if (session?.kind !== "member") return <Navigate to={paths.login} replace />;
+  if (session?.kind === 'admin') return <Navigate to={paths.admin.home} replace />;
+  if (session?.kind !== 'member') return <Navigate to={paths.login} replace />;
   const m = session.member;
   return (
     <ContributionDraftProvider>

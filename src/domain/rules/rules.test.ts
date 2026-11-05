@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chargeBreakdown, naira, validateDetails, isStrongPassword, deadlineFor, DEFAULT_SETTINGS as S, planAllocation, openMonth, monthState, canLock, autoLocksAfter, targetStreak, savingsStartFor, interestOnTrack, payoutProjection } from './index';
+import { chargeBreakdown, naira, validateDetails, isStrongPassword, mapRegistrationErrors, mapLoginErrors, deadlineFor, DEFAULT_SETTINGS as S, planAllocation, openMonth, monthState, canLock, autoLocksAfter, targetStreak, savingsStartFor, interestOnTrack, payoutProjection } from './index';
 import type { SavingsYear, Transaction } from '../entities';
 
 const tx = (month: number, amount: number, i = 0): Transaction => ({ id: 'T' + month + i, reference: 'R' + month + i, memberId: 'M', memberName: 'M', kind: 'Contribution', year: 2026,
@@ -65,4 +65,36 @@ describe('deadlines and registration', () => {
   it('accepts valid details', () => expect(validateDetails(ok, oct2)).toEqual({}));
   it('rejects under 18', () => expect(validateDetails({ ...ok, dateOfBirth: '2012-01-01' }, oct2).dateOfBirth).toBeTruthy());
   it('password rules', () => { expect(isStrongPassword('weakpass')).toBe(false); expect(isStrongPassword('Savings2027')).toBe(true); });
+  it('maps API validation errors onto form fields', () => {
+    expect(mapRegistrationErrors({
+      email: ['The email has already been taken.'],
+      phone: ['The phone has already been taken.'],
+      residential_address: ['The residential address field is required.'],
+    })).toEqual({
+      email: 'The email has already been taken.',
+      phone: 'The phone has already been taken.',
+      address: 'The residential address field is required.',
+    });
+  });
+  it('ignores API errors that have no matching form field', () => {
+    expect(mapRegistrationErrors({ gender: ['The gender field is required.'] })).toEqual({});
+  });
+});
+
+describe('login validation', () => {
+  it('maps a login error onto the email/phone field', () => {
+    expect(mapLoginErrors({ login: ['The provided credentials are incorrect.'] })).toEqual({
+      login: 'The provided credentials are incorrect.',
+    });
+  });
+  it('maps a password error onto the password field', () => {
+    expect(mapLoginErrors({ password: ['The password field is required.'] })).toEqual({
+      password: 'The password field is required.',
+    });
+  });
+  it('keeps unknown keys as a form-level message', () => {
+    expect(mapLoginErrors({ account: ['This account is locked.'] })).toEqual({
+      form: 'This account is locked.',
+    });
+  });
 });

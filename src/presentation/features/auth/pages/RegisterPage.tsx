@@ -1,6 +1,7 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Check } from "lucide-react";
+import { Check, TriangleAlert } from "lucide-react";
+import { UnauthorizedError, ValidationError } from "@/domain/errors";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
 import {
@@ -8,7 +9,6 @@ import {
   Button,
   Checkbox,
   Logo,
-  OpenDecisionTag,
   SelectField,
   TextField,
   cn,
@@ -18,6 +18,7 @@ import {
   NG_STATES,
   REFERRAL_OPTION,
   isPhone,
+  mapRegistrationErrors,
   validateDetails,
   type FieldErrors,
   type RegistrationDetails,
@@ -48,7 +49,7 @@ export function RegisterPage() {
   const { repos, clock } = useServices();
   const toast = useToast();
   const navigate = useNavigate();
-  const [step, setStep] = useState<1 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [d, setD] = useState(EMPTY);
   const [errors, setErrors] = useState<FieldErrors<RegistrationDetails>>({});
   const [kin, setKin] = useState({
@@ -63,9 +64,20 @@ export function RegisterPage() {
   }>({});
   const [agree, setAgree] = useState(false);
   const [otpOpen, setOtpOpen] = useState(false);
+  const [otpRequireEmail, setOtpRequireEmail] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpErrorCodes, setOtpErrorCodes] = useState<string[]>([]);
+  const [resendBlocked, setResendBlocked] = useState(false);
+  const [resendBlockedSeconds, setResendBlockedSeconds] = useState(0);
   const [policy, setPolicy] = useState<PolicyKey | null>(null);
   const [busy, setBusy] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [started, setStarted] = useState(false);
+  const [verified, setVerified] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [resendSeconds, setResendSeconds] = useState(60);
   const set = (k: keyof RegistrationDetails) => (v: string) => {
     setD({
       ...d,
@@ -75,14 +87,63 @@ export function RegisterPage() {
         : {}),
     });
     setErrors({ ...errors, [k]: undefined });
+    setFormError(null);
   };
 
   const continueStep1 = async () => {
+    if (verified) {
+      setStep(3);
+      return;
+    }
+    if (started) {
+      // The account already exists; re-submitting would create a duplicate registration.
+      setStep(2);
+      setOtpOpen(true);
+      return;
+    }
+
     const e = validateDetails(d, clock.now());
     setErrors(e);
+    setFormError(null);
     if (Object.keys(e).length) return;
-    await repos.registration.sendEmailCode(d.email);
-    setOtpOpen(true);
+
+    setStarting(true);
+    try {
+      const result = await repos.registration.start(d);
+      if (!result.emailSent) {
+        setFormError(
+          result.message ||
+            "We couldn’t send the verification code. Please try again.",
+        );
+        return;
+      }
+      setStarted(true);
+      setStep(2);
+      setOtpOpen(true);
+      setOtpRequireEmail(false);
+      setOtpError(null);
+      setOtpErrorCodes([]);
+      setResendBlocked(false);
+      setResendBlockedSeconds(0);
+      if (result.verification?.resendAvailableInSeconds) {
+        setResendSeconds(result.verification.resendAvailableInSeconds);
+      }
+    } catch (error) {
+      if (error instanceof ValidationError) {
+        const fieldErrors = mapRegistrationErrors(error.fields);
+        setErrors((current) => ({ ...current, ...fieldErrors }));
+        // Field-level messages are shown inline; only show the banner for anything else.
+        setFormError(Object.keys(fieldErrors).length ? null : error.message);
+      } else {
+        setFormError(
+          error instanceof Error
+            ? error.message
+            : "We couldn’t start your registration. Please try again.",
+        );
+      }
+    } finally {
+      setStarting(false);
+    }
   };
   const continueStep3 = () => {
     const e: typeof kinErr = {};
@@ -91,10 +152,13 @@ export function RegisterPage() {
     if (!agree)
       e.agree = "Please accept the savings guidelines and privacy policy.";
     setKinErr(e);
-    if (!Object.keys(e).length) setPwOpen(true);
+    if (Object.keys(e).length) return;
+    setPwError(null);
+    setPwOpen(true);
   };
   const submit = async (password: string) => {
     setBusy(true);
+    setPwError(null);
     try {
       const r = await repos.registration.submit({
         ...d,
@@ -102,8 +166,40 @@ export function RegisterPage() {
         password,
       });
       navigate(paths.registerDone, { state: { registration: r } });
-    } catch (e) {
-      toast((e as Error).message);
+    } catch (error) {
+      // The verification token has expired (or was never stored): send a fresh code and
+      // take the member back through verification instead of leaving them stuck here.
+      if (error instanceof UnauthorizedError) {
+        setPwOpen(false);
+        setVerified(false);
+        setStep(2);
+        setOtpOpen(true);
+        try {
+          const resent = await repos.registration.resendEmailCode(d.email);
+          const notice = resent.emailSent
+            ? "Your email verification expired. Enter the new code we’ve sent to continue."
+            : resent.message ||
+              "We couldn’t send a new code. Please try again.";
+          setFormError(notice);
+          toast(notice);
+        } catch (resendError) {
+          const notice =
+            resendError instanceof Error
+              ? resendError.message
+              : "We couldn’t send a new code. Please try again.";
+          setFormError(notice);
+          toast(notice);
+        }
+        return;
+      }
+      const message =
+        error instanceof ValidationError
+          ? [error.message, ...Object.values(error.fields).flat()].join(" ")
+          : error instanceof Error
+            ? error.message
+            : "We couldn’t finish your registration. Please try again.";
+      // The modal stays open for the member to correct the password and retry.
+      setPwError(message);
     } finally {
       setBusy(false);
     }
@@ -123,7 +219,7 @@ export function RegisterPage() {
         <ol className="mb-auto hidden flex-col gap-3 lg:flex">
           {STEPS.map((s, i) => {
             const n = i + 1;
-            const done = n < step || (n === 2 && step === 3);
+            const done = n < step;
             const cur = n === step;
             return (
               <li key={s} className="flex items-center gap-3">
@@ -161,13 +257,18 @@ export function RegisterPage() {
               key={n}
               className={cn(
                 "h-1 flex-1 rounded-full",
-                n <= (step === 3 ? 3 : 1) ? "bg-brand" : "bg-line",
+                n <= step ? "bg-brand" : "bg-line",
               )}
             />
           ))}
         </div>
-        {step === 1 ? (
+        {step !== 3 ? (
           <>
+            {formError && (
+              <Banner tone="fail" icon={<TriangleAlert size={18} />}>
+                {formError}
+              </Banner>
+            )}
             <h2 className="text-[28px] font-extrabold">Your details</h2>
             <div className="grid gap-4 sm:grid-cols-2">
               <TextField
@@ -255,9 +356,20 @@ export function RegisterPage() {
                 />
               )}
             </div>
-            <Button className="self-start" onClick={continueStep1}>
-              Continue
+            <Button
+              className="self-start"
+              onClick={continueStep1}
+              disabled={starting}
+            >
+              {starting ? "Sending code…" : "Continue"}
             </Button>
+            <button
+              type="button"
+              className="self-start text-sm font-semibold text-brand hover:underline"
+              onClick={() => { setOtpRequireEmail(true); setOtpOpen(true); }}
+            >
+              Have you received a code already?
+            </button>
           </>
         ) : (
           <>
@@ -328,30 +440,53 @@ export function RegisterPage() {
             </div>
           </>
         )}
-        <OpenDecisionTag code="OD-01">
-          Final registration fields pending
-        </OpenDecisionTag>
       </div>
       <OtpModal
         open={otpOpen}
         destination={d.email}
         title="Verify your email"
         confirmLabel="Verify email"
-        onCancel={() => setOtpOpen(false)}
-        onConfirm={async (code) => {
-          const ok = await repos.registration.verifyEmailCode(d.email, code);
-          if (ok) {
-            setOtpOpen(false);
-            setStep(3);
-            toast("Email verified.");
+        initialSeconds={resendSeconds}
+        requireEmail={otpRequireEmail}
+        onCancel={() => {
+          setOtpOpen(false);
+          setStep(1);
+        }}
+        onResend={async () => {
+          const resent = await repos.registration.resendEmailCode(d.email);
+          if (resent.verification?.resendAvailableInSeconds) {
+            setResendSeconds(resent.verification.resendAvailableInSeconds);
           }
-          return ok;
+        }}
+        onConfirm={async (code, email) => {
+          try {
+            const ok = await repos.registration.verifyEmailCode(email, code);
+            if (ok) {
+              setOtpOpen(false);
+              setOtpRequireEmail(false);
+              setVerified(true);
+              setStep(3);
+              toast("Email verified.");
+            }
+            return ok;
+          } catch (error) {
+            toast(
+              error instanceof Error
+                ? error.message
+                : "We couldn’t verify that code. Please try again.",
+            );
+            return false;
+          }
         }}
       />
       <CreatePasswordModal
         open={pwOpen}
         busy={busy}
-        onBack={() => setPwOpen(false)}
+        error={pwError}
+        onBack={() => {
+          setPwOpen(false);
+          setPwError(null);
+        }}
         onSubmit={submit}
       />
       <PolicyModal policy={policy} onClose={() => setPolicy(null)} />

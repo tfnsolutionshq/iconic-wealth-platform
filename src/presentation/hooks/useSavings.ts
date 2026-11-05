@@ -11,12 +11,17 @@ export function useSavings(member: Member | null) {
   const [error, setError] = useState<string | null>(null);
   const reload = useCallback(async () => {
     if (!member) return;
+    setError(null);
     try {
       const now = clock.now(); const settings = await repos.settings.get();
       const yearNo = member.joinedOn > `${now.getFullYear()}-${String(settings.cutoffMonth + 1).padStart(2, '0')}-31` ? now.getFullYear() + 1 : now.getFullYear();
       const [year, txs] = await Promise.all([repos.member.getSavingsYear(member.id, yearNo), repos.member.listTransactions(member.id)]);
       setData({ year, txs, settings, now });
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) {
+      // Keep the last good data; surface the failure so the page can offer a retry
+      // instead of showing “Loading…” forever.
+      setError((e as Error).message || 'We couldn’t load your savings.');
+    }
   }, [repos, clock, member]);
   useEffect(() => { void reload(); }, [reload]);
   return { data, error, reload };

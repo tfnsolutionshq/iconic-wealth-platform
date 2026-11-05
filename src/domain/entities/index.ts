@@ -26,6 +26,8 @@ export type CommunityAccess = 'Locked' | 'Eligible' | 'Granted' | 'Restricted';
 
 export interface NextOfKin { name: string; relationship: string; phone: string }
 export interface PayoutAccount { bankCode: string; bankName: string; accountNumber: string; accountName: string; verifiedAt?: string }
+/** A bank offered for payout accounts. The code is the NUBAN `bank_code` sent when saving. */
+export interface Bank { name: string; code: string }
 
 export interface Member {
   id: MemberId;
@@ -44,6 +46,7 @@ export interface Member {
   payoutAccount?: PayoutAccount;
   community: CommunityAccess;
   onboarding: OnboardingState;
+  isProfileComplete: boolean;
 }
 
 /**
@@ -60,6 +63,47 @@ export interface SavingsYear {
   targets: Partial<Record<number, Kobo>>;   // per-month overrides
   locks: Partial<Record<number, MonthLock>>;
   interestException?: boolean;         // approved by a Super Admin
+}
+
+/** One savings period returned by the member dashboard endpoint. */
+export interface SavingsPeriod {
+  year: number;
+  month: number;                       // 1-12
+  period: string;                      // e.g. "2027-01"
+  monthName: string;                   // e.g. "January"
+  deadline: string;                    // ISO date-time
+}
+
+export interface PayoutJourneyStep {
+  step: number;
+  title: string;
+  description: string;
+  completed: boolean;
+  active: boolean;
+}
+
+/** The signed-in member's dashboard from GET /savings. */
+export interface SavingsDashboard {
+  activeMonth: SavingsPeriod | null;
+  nextPeriod: SavingsPeriod;
+  summary: {
+    year: number;
+    savedThisYear: Kobo;
+    totalSaved: Kobo;
+    totalMonths: number;
+    monthsTargetMet: number;
+    defaultedMonths: number;
+    streak: number;
+  };
+  payoutJourney: {
+    year: number;
+    payoutDate: string;
+    steps: PayoutJourneyStep[];
+  };
+  settings: {
+    minimumPerPayment: Kobo;
+    platformChargePerPayment: Kobo;
+  };
 }
 
 export interface Allocation { month: MonthIndex; amountKobo: Kobo }
