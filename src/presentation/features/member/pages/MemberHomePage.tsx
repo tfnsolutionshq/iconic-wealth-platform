@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { CalendarClock, Check, List, Lock, Plus, Users, X } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useSavingsDashboard } from "../../../hooks/useSavingsDashboard";
 import { Button, ButtonLink, Card, Pill, cn } from "../../../design-system";
-import { formatNaira, formatShortDate } from "@/domain/rules";
+import { formatNaira, formatShortDate, targetPeriodFor } from "@/domain/rules";
+import { SavingsTargetModal } from "../components/SavingsTargetModal";
 import { TxRow } from "../components/TransactionParts";
 import { paths } from "../../../routes/paths";
 import { env } from "@/app/config/env";
@@ -49,6 +51,7 @@ export function MemberHomePage() {
   const { repos } = useServices();
   const member = session?.kind === "member" ? session.member : null;
   const { data, error, reload } = useSavingsDashboard(member);
+  const [targetOpen, setTargetOpen] = useState(false);
   if (!member) return <Navigate to={paths.login} replace />;
   if (error && !data)
     return (
@@ -61,12 +64,19 @@ export function MemberHomePage() {
   if (!data) return <p className="text-mute">Loading…</p>;
 
   const { dashboard, recent, now, months } = data;
-  const { summary, nextPeriod, activeMonth, payoutJourney, settings } =
-    dashboard;
+  const { summary, activeMonth, payoutJourney, settings } = dashboard;
   const hasStarted = summary.totalMonths > 0 || summary.totalSaved > 0;
-  const period = activeMonth ?? nextPeriod;
-  const periodDate = parseDate(period.deadline);
   const payoutDate = parseDate(payoutJourney.payoutDate);
+  // A target always belongs to the calendar month the member is in now.
+  const targetPeriod = targetPeriodFor(now);
+  const currentMonth = months.find(
+    (m) => m.year === targetPeriod.year && m.month === targetPeriod.month,
+  );
+  const target = currentMonth?.targetAmount ?? null;
+  const targetSaved = currentMonth?.savedAmount ?? 0;
+  const targetPct = target
+    ? Math.min(100, Math.round((targetSaved / target) * 100))
+    : 0;
 
   return (
     <div className="mx-auto flex flex-col gap-4 max-w-245">
@@ -205,7 +215,8 @@ export function MemberHomePage() {
                 <div className="flex-1 flex-col">
                   <b className="text-ink">{activeMonth.monthName} is open</b>
                   <span className="text-[13px] font-semibold text-mute">
-                    Closes {formatShortDate(periodDate)}
+                    Closes{" "}
+                    {formatShortDate(parseDate(activeMonth.deadline))}
                   </span>
                 </div>
               </div>
@@ -252,13 +263,72 @@ export function MemberHomePage() {
       </div>
 
       <div className="grid gap-3 lg:grid-cols-3">
-        <Card
-          tone="soft"
-          className="rounded-card border border-gray-200 bg-white"
+        <button
+          type="button"
+          className="block h-full text-left"
+          aria-haspopup="dialog"
+          aria-label={
+            target
+              ? `Change ${targetPeriod.monthName} savings target`
+              : `Set a savings target for ${targetPeriod.monthName}`
+          }
+          onClick={() => setTargetOpen(true)}
         >
-          <p className="text-[13px] font-semibold text-mute">Monthly target</p>
-          <b className="text-[20px] font-extrabold">Not set</b>
-        </Card>
+          <Card
+            tone="soft"
+            className="h-full rounded-card border border-gray-200 bg-white"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-[13px] font-semibold text-mute">
+                {target ? `${targetPeriod.monthName} target` : "Monthly target"}
+              </p>
+              {target ? (
+                targetSaved >= target ? (
+                  <Pill tone="ok">Met</Pill>
+                ) : (
+                  <Pill tone="gold" icon={false}>
+                    {formatNaira(target - targetSaved)} to go
+                  </Pill>
+                )
+              ) : null}
+            </div>
+            <b className="text-[20px] font-extrabold">
+              {target ? formatNaira(target) : "Not set"}
+            </b>
+            {target ? (
+              <>
+                <div
+                  className="mt-2 h-1.5 overflow-hidden rounded-pill bg-soft"
+                  role="progressbar"
+                  aria-valuenow={targetPct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={`Progress toward ${targetPeriod.monthName} target`}
+                >
+                  <i
+                    className={cn(
+                      "block h-full rounded-pill transition-[width] duration-700",
+                      targetSaved >= target
+                        ? "bg-ok"
+                        : "bg-linear-to-r from-brand to-gold",
+                    )}
+                    style={{ width: `${targetPct}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-[12px] font-semibold text-mute">
+                  {formatNaira(targetSaved)} saved · {targetPct}%
+                </p>
+                <p className="mt-2 text-[12px] font-bold text-brand">
+                  Change {targetPeriod.monthName} target
+                </p>
+              </>
+            ) : (
+              <p className="mt-1 text-[12px] font-bold text-brand">
+                Set a target for {targetPeriod.monthName}
+              </p>
+            )}
+          </Card>
+        </button>
         <Link to={paths.member.savings} className="block">
           <Card
             tone="soft"
@@ -354,6 +424,17 @@ export function MemberHomePage() {
           </div>
         )}
       </Card>
+
+      <SavingsTargetModal
+        open={targetOpen}
+        onClose={() => setTargetOpen(false)}
+        memberId={member.id}
+        year={targetPeriod.year}
+        monthName={targetPeriod.monthName}
+        target={target}
+        minimum={settings.minimumPerPayment}
+        onSaved={() => void reload()}
+      />
     </div>
   );
 }

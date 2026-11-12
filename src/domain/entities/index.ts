@@ -104,7 +104,7 @@ export interface PayoutJourneyStep {
 /** The signed-in member's dashboard from GET /savings. */
 export interface SavingsDashboard {
   activeMonth: SavingsPeriod | null;
-  nextPeriod: SavingsPeriod;
+  nextPeriod: SavingsPeriod | null;
   summary: {
     year: number;
     savedThisYear: Kobo;

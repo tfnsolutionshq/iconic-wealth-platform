@@ -300,7 +300,7 @@ interface ApiSavingsPeriod {
 /** Raw dashboard record returned by GET /savings. */
 interface ApiSavingsDashboard {
   active_month: ApiSavingsPeriod | null;
-  next_period: ApiSavingsPeriod;
+  next_period: ApiSavingsPeriod | null;
   summary: {
     year: number;
     saved_this_year: string;
@@ -358,7 +358,7 @@ function mapSavingsMonth(m: ApiSavingsMonth): SavingsMonth {
 function mapSavingsDashboard(d: ApiSavingsDashboard): SavingsDashboard {
   return {
     activeMonth: d.active_month ? mapSavingsPeriod(d.active_month) : null,
-    nextPeriod: mapSavingsPeriod(d.next_period),
+    nextPeriod: d.next_period ? mapSavingsPeriod(d.next_period) : null,
     summary: {
       year: d.summary.year,
       savedThisYear: koboFromApi(d.summary.saved_this_year),

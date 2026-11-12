@@ -19,7 +19,7 @@ export const SCREENS: Screen[] = [
   { path: '/login/pending', title: 'Awaiting approval', area: 'auth', status: 'implemented', prd: 'WEB-12', ref: '#/login/pending' },
   { path: '/register', title: 'Register', area: 'auth', status: 'implemented', prd: 'WEB-09 to WEB-11, BR-16', ref: '#/register' },
   { path: '/register/done', title: 'Registration received', area: 'auth', status: 'implemented', prd: 'WEB-12', ref: '#/register/done' },
-  { path: '/member', title: 'Member home', area: 'member', status: 'implemented', prd: 'MEM-01 to MEM-05 (v5)', ref: '#/member', notes: 'Open-month card with Pay now + Lock, target card, community gating.' },
+  { path: '/member', title: 'Member home', area: 'member', status: 'implemented', prd: 'MEM-01 to MEM-05 (v5)', ref: '#/member', notes: 'Open-month card with Pay now + Lock, clickable target card that opens the monthly target modal (POST /savings/target), community gating.' },
   { path: '/member/savings', title: 'Savings log', area: 'member', status: 'implemented', prd: 'MEM-06 (v5)', ref: '#/member/savings', notes: 'Live year summary from GET /savings and month rows from GET /savings/months?year=; saved/missed/target-met stats, target progress (POST /savings/target), interest banner, Pay now/catch-up on the open month, December = payout.' },
   { path: '/member/contribute', title: 'Contribute', area: 'member', status: 'implemented', prd: 'MEM-07, MEM-08 (v5)', ref: '#/member/contribute', notes: 'Amount only; minimum per payment; allocation preview for catch-up.' },
   { path: '/member/contribute/review', title: 'Review payment', area: 'member', status: 'implemented', prd: 'MEM-09, MEM-10', ref: '#/member/contribute/review' },

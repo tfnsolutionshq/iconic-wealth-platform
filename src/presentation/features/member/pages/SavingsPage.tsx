@@ -13,8 +13,6 @@ import {
 } from "lucide-react";
 import type { SavingsMonth } from "@/domain/entities";
 import { useAuth } from "../../../contexts/AuthContext";
-import { useServices } from "../../../contexts/ServicesContext";
-import { useToast } from "../../../contexts/ToastContext";
 import { useSavingsDashboard } from "../../../hooks/useSavingsDashboard";
 import {
   Banner,
@@ -23,16 +21,11 @@ import {
   Card,
   Modal,
   Pill,
-  TextField,
   cn,
 } from "../../../design-system";
-import {
-  formatNaira,
-  formatShortDate,
-  naira,
-  parseNairaInput,
-} from "@/domain/rules";
+import { formatNaira, formatShortDate, targetPeriodFor } from "@/domain/rules";
 import { paths } from "../../../routes/paths";
+import { SavingsTargetModal } from "../components/SavingsTargetModal";
 
 /** Parses the date-only payout date and the ISO deadlines returned by GET /savings. */
 function parseDate(value: string): Date {
@@ -72,13 +65,9 @@ const TILE: Record<RowState, { cls: string; icon: React.ReactNode }> = {
  */
 export function SavingsPage() {
   const { session } = useAuth();
-  const { repos } = useServices();
-  const toast = useToast();
   const member = session?.kind === "member" ? session.member : null;
   const { data, error, reload } = useSavingsDashboard(member);
   const [targetOpen, setTargetOpen] = useState(false);
-  const [targetText, setTargetText] = useState("");
-  const [targetBusy, setTargetBusy] = useState(false);
   const [howOpen, setHowOpen] = useState(false);
 
   if (!member) return <Navigate to={paths.login} replace />;
@@ -92,9 +81,8 @@ export function SavingsPage() {
     );
   if (!data) return <p className="text-mute">Loading…</p>;
 
-  const { dashboard, months } = data;
-  const { summary, activeMonth, nextPeriod, payoutJourney, settings } =
-    dashboard;
+  const { dashboard, months, now } = data;
+  const { summary, activeMonth, payoutJourney, settings } = dashboard;
   const year = summary.year;
   const savingsMonths = [...months]
     .filter((m) => m.month <= 11)
@@ -111,9 +99,10 @@ export function SavingsPage() {
     ? summary.monthsTargetMet
     : savingsMonths.filter((m) => m.targetMet).length;
   const onTrack = defaultedMonths === 0;
-  const period = activeMonth ?? nextPeriod;
+  // A target always belongs to the calendar month the member is in now.
+  const targetPeriod = targetPeriodFor(now);
   const currentMonth = months.find(
-    (m) => m.year === period.year && m.month === period.month,
+    (m) => m.year === targetPeriod.year && m.month === targetPeriod.month,
   );
   const target = currentMonth?.targetAmount ?? null;
   const targetSaved = currentMonth?.savedAmount ?? 0;
@@ -122,12 +111,7 @@ export function SavingsPage() {
     : 0;
   const payoutDate = parseDate(payoutJourney.payoutDate);
   const minimum = settings.minimumPerPayment;
-  const targetAmount = parseNairaInput(targetText);
-  const targetError =
-    targetText && targetAmount < minimum
-      ? `Set at least ${formatNaira(minimum)}.`
-      : null;
-  const showTarget = activeMonth !== null || period.year === year;
+  const showTarget = targetPeriod.year === year;
 
   return (
     <div className="mx-auto flex max-w-245 flex-col gap-4">
@@ -164,7 +148,7 @@ export function SavingsPage() {
           <div className="flex items-start justify-between">
             <span className="flex flex-col">
               <span className="text-[13px] font-bold text-mute">
-                {period.monthName} target
+                {targetPeriod.monthName} target
               </span>
               <b className="text-xl">
                 {target ? formatNaira(target) : "Not set"}
@@ -188,7 +172,7 @@ export function SavingsPage() {
                 aria-valuenow={targetPct}
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-label={`Progress toward ${period.monthName} target`}
+                aria-label={`Progress toward ${targetPeriod.monthName} target`}
               >
                 <i
                   className={`block h-full rounded-pill transition-[width] duration-700 ${targetSaved >= target ? "bg-ok" : "bg-linear-to-r from-brand to-gold"}`}
@@ -205,7 +189,7 @@ export function SavingsPage() {
           )}
           {!target && (
             <p className="mt-1 text-[13px] font-semibold text-mute">
-              Set an optional goal for {period.monthName} and we’ll track your
+              Set an optional goal for {targetPeriod.monthName} and we’ll track your
               progress.
             </p>
           )}
@@ -222,12 +206,9 @@ export function SavingsPage() {
           </div>
           <button
             className="mt-2 text-sm font-bold text-brand"
-            onClick={() => {
-              setTargetText(target ? String(target / 100) : "");
-              setTargetOpen(true);
-            }}
+            onClick={() => setTargetOpen(true)}
           >
-            {target ? `Change ${period.monthName} target` : "Set a target"}
+            {target ? `Change ${targetPeriod.monthName} target` : "Set a target"}
           </button>
         </Card>
       )}
@@ -397,71 +378,16 @@ export function SavingsPage() {
         <ChevronRight size={18} className="text-ink" />
       </Link>
 
-      <Modal
+      <SavingsTargetModal
         open={targetOpen}
-        title="Monthly savings target"
         onClose={() => setTargetOpen(false)}
-        footer={
-          <>
-            <Button
-              variant="outline"
-              size="md"
-              onClick={() => setTargetOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="md"
-              disabled={!targetAmount || !!targetError || targetBusy}
-              onClick={async () => {
-                setTargetBusy(true);
-                try {
-                  await repos.savingsTarget.setTarget(
-                    member.id,
-                    period.year,
-                    targetAmount,
-                  );
-                  toast(
-                    `${period.monthName} target set to ${formatNaira(targetAmount)}.`,
-                  );
-                  setTargetOpen(false);
-                  reload();
-                } catch (e) {
-                  toast((e as Error).message);
-                } finally {
-                  setTargetBusy(false);
-                }
-              }}
-            >
-              Save target
-            </Button>
-          </>
-        }
-      >
-        <p className="text-mute">
-          A goal for {period.monthName}. It isn’t enforced: we show your
-          progress, remind you, and celebrate when you reach it.
-        </p>
-        <TextField
-          label={`${period.monthName} target`}
-          inputMode="numeric"
-          value={targetText}
-          onChange={(e) => setTargetText(e.target.value.replace(/\D/g, ""))}
-          error={targetError ?? undefined}
-        />
-        <div className="flex flex-wrap gap-2">
-          {[10_000, 20_000, 30_000, 50_000].map((v) => (
-            <Button
-              key={v}
-              size="sm"
-              variant={targetAmount === naira(v) ? "dark" : "outline"}
-              onClick={() => setTargetText(String(v))}
-            >
-              {formatNaira(naira(v))}
-            </Button>
-          ))}
-        </div>
-      </Modal>
+        memberId={member.id}
+        year={targetPeriod.year}
+        monthName={targetPeriod.monthName}
+        target={target}
+        minimum={minimum}
+        onSaved={() => void reload()}
+      />
 
       <Modal
         open={howOpen}

@@ -92,4 +92,50 @@ describe('HttpSavingsDashboardRepository', () => {
       savedAmount: 0,
     });
   });
+
+  it('accepts a null next period once a target has been set', async () => {
+    stubFetch(200, {
+      success: true,
+      message: 'Savings account retrieved successfully.',
+      data: {
+        active_month: {
+          year: 2027,
+          month: 1,
+          period: '2027-01',
+          month_name: 'January',
+          deadline: '2027-02-05T00:00:00+00:00',
+        },
+        next_period: null,
+        summary: {
+          year: 2026,
+          saved_this_year: '0.00',
+          total_saved: '0.00',
+          total_months: 0,
+          months_target_met: 0,
+          defaulted_months: 0,
+          streak: 0,
+        },
+        payout_journey: {
+          year: 2026,
+          payout_date: '2026-12-14',
+          steps: [],
+        },
+        settings: {
+          minimum_per_payment: '10000.00',
+          platform_charge_per_payment: '100.00',
+        },
+      },
+      errors: null,
+      meta: null,
+    });
+
+    const dashboard = await repo().get();
+
+    expect(dashboard.activeMonth).toMatchObject({
+      year: 2027,
+      month: 1,
+      monthName: 'January',
+    });
+    expect(dashboard.nextPeriod).toBeNull();
+  });
 });
