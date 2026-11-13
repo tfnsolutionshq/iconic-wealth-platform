@@ -17,16 +17,33 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
+
+      # STEP 1: Verify the GitHub secret
+      - name: Verify API environment variable
+        run: |
+          if [ "$VITE_API_BASE_URL" = "https://api.iconicwealth.tfnsolutions.us/api/v1/" ]; then
+            echo "API URL is correctly configured."
+          else
+            echo "API URL is incorrect or empty."
+          fi
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
 
       - name: Build Vite project
         run: npm run build
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
-          
+
+      # STEP 3: Inspect generated production build
+      - name: Inspect production build
+        run: |
+          echo "Checking generated build for API URL..."
+          grep -R -oE 'https?://[^"]*iconicwealth[^"]*' dist/assets/ | sort -u
+
       - name: Set up SSH key
         run: |
           mkdir -p ~/.ssh
