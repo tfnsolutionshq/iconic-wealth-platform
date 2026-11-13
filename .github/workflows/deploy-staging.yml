@@ -41,8 +41,19 @@ jobs:
       # STEP 3: Inspect generated production build
       - name: Inspect production build
         run: |
-          echo "Checking generated build for API URL..."
-          grep -R -oE 'https?://[^"]*iconicwealth[^"]*' dist/assets/ | sort -u
+          echo "Checking generated build..."
+
+          if grep -R -Fq 'https://api.iconicwealth.tfnsolutions.us/api/v1/' dist/; then
+            echo "FOUND: Correct API URL (with api. subdomain)"
+          else
+            echo "NOT FOUND: Correct API URL"
+          fi
+
+          if grep -R -Fq 'https://iconicwealth.tfnsolutions.us/api/v1/' dist/; then
+            echo "FOUND: Incorrect API URL (without api. subdomain)"
+          else
+            echo "NOT FOUND: Incorrect API URL"
+          fi
 
       - name: Set up SSH key
         run: |
