@@ -11,4 +11,4 @@ npm test                  # business-rule and repository tests (Vitest)
 npm run build             # type-check + production build to dist/
 ```
 
-Every API request in development and production goes to `https://api.iconicwealth.tfnsolutions.us/api/v1/`. `VITE_API_BASE_URL` may override it for a specific environment; when it is empty, the application falls back to that canonical URL. The base URL is defined once in `src/app/config/env.ts` and all endpoint paths live in `src/data/api/`.
+Every API request in development and production uses the single `VITE_API_BASE_URL` value, which is set to `https://api.iconicwealth.tfnsolutions.us/api/v1/` in `.env.example`. There is no fallback: that variable is the API URL. All endpoint paths live in `src/data/api/`.

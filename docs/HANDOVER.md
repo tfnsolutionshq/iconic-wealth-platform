@@ -218,8 +218,7 @@ Extend the ports in `domain/repositories` first, then both adapters (mock and ht
 
 | Variable | Dev / staging | Production |
 | --- | --- | --- |
-| `VITE_API_BASE_URL` | `https://api.iconicwealth.tfnsolutions.us/api/v1/` (also the fallback when empty) | same canonical API URL |
-| `VITE_REGISTRATION_API_BASE_URL` | removed: registration and sign-in use `VITE_API_BASE_URL` | — |
+| `VITE_API_BASE_URL` | `https://api.iconicwealth.tfnsolutions.us/api/v1/` | same API URL |
 | `VITE_PAYSTACK_PUBLIC_KEY` | `pk_test_…` | `pk_live_…` |
 | `VITE_DEMO_MODE` | `true` (demos) | **`false`** |
 | `VITE_WA_COMMUNITY_URL`, `VITE_WA_SUPPORT_URL` | placeholders | cooperative’s real links |

@@ -19,7 +19,10 @@ afterEach(() => {
 
 describe('createContainer API wiring', () => {
   it('uses the HTTP repositories for every API-backed repository', async () => {
-    vi.stubEnv('VITE_API_BASE_URL', '');
+    vi.stubEnv(
+      'VITE_API_BASE_URL',
+      'https://api.iconicwealth.tfnsolutions.us/api/v1/',
+    );
     const { createContainer } = await import('./container');
     const { repos } = createContainer();
 
@@ -45,20 +48,22 @@ describe('createContainer API wiring', () => {
     expect(repos.admin.constructor.name).toBe('HttpAdminRepository');
   });
 
-  it('falls back to the canonical server when no API base URL is configured', async () => {
-    vi.stubEnv('VITE_API_BASE_URL', '');
-    const { API_BASE_URL, env } = await import('../config/env');
+  it('reads the API base URL from VITE_API_BASE_URL', async () => {
+    vi.stubEnv(
+      'VITE_API_BASE_URL',
+      'https://api.iconicwealth.tfnsolutions.us/api/v1/',
+    );
+    const { env } = await import('../config/env');
 
-    expect(env.apiBaseUrl).toBe(API_BASE_URL);
-    expect(API_BASE_URL).toBe(
+    expect(env.apiBaseUrl).toBe(
       'https://api.iconicwealth.tfnsolutions.us/api/v1/',
     );
   });
 
-  it('uses VITE_API_BASE_URL when it is configured', async () => {
-    vi.stubEnv('VITE_API_BASE_URL', 'https://staging.example.com/api/v1');
+  it('does not fall back when VITE_API_BASE_URL is empty', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', '');
     const { env } = await import('../config/env');
 
-    expect(env.apiBaseUrl).toBe('https://staging.example.com/api/v1');
+    expect(env.apiBaseUrl).toBe('');
   });
 });
