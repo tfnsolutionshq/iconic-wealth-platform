@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  ChevronLeft,
+  ChevronRight,
   Download,
   Funnel,
+  LoaderCircle,
   Plus,
   Search,
   ShieldCheck,
   Upload,
 } from "lucide-react";
-import type { MemberSummary } from "@/domain/entities";
-import type { MemberQuery } from "@/domain/repositories";
+import type { MemberListRow } from "@/domain/entities";
+import type { MemberQuery, PageMeta } from "@/domain/repositories";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
 import {
@@ -40,19 +43,53 @@ export function MembersPage() {
   const { repos } = useServices();
   const toast = useToast();
   const navigate = useNavigate();
-  const [q, setQ] = useState<MemberQuery>({ tab: "All", search: "" });
+  const [q, setQ] = useState<MemberQuery>({
+    tab: "All",
+    search: "",
+    page: 1,
+  });
   const [open, setOpen] = useState(false);
-  const [rows, setRows] = useState<MemberSummary[]>([]);
+  const [rows, setRows] = useState<MemberListRow[]>([]);
+  const [meta, setMeta] = useState<PageMeta>({
+    current_page: 1,
+    per_page: 20,
+    last_page: 1,
+    total: 0,
+  });
+  const [loading, setLoading] = useState(true);
   const [counts, setCounts] = useState<Record<
     MemberQuery["tab"],
     number
   > | null>(null);
   useEffect(() => {
-    repos.admin.listMembers(q).then(setRows);
-  }, [repos, q]);
+    let live = true;
+    setLoading(true);
+    repos.admin
+      .listMembers(q)
+      .then((page) => {
+        if (!live) return;
+        setRows(page.data);
+        setMeta(page.meta);
+      })
+      .catch((error) => {
+        if (live) toast((error as Error).message);
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [repos, q, toast]);
   useEffect(() => {
     repos.admin.countMembers().then(setCounts);
   }, [repos]);
+  /** Any filter change starts again from the first page. */
+  const updateQuery = (patch: Partial<MemberQuery>) =>
+    setQ((prev) => ({ ...prev, ...patch, page: 1 }));
+  const firstRow =
+    meta.total === 0 ? 0 : (meta.current_page - 1) * meta.per_page + 1;
+  const lastRow = meta.total === 0 ? 0 : firstRow + rows.length - 1;
   const tabs: { value: MemberQuery["tab"]; label: string }[] = [
     ["All", "All"],
     ["Active", "Active"],
@@ -106,7 +143,7 @@ export function MembersPage() {
           <Chips
             value={q.tab}
             options={tabs}
-            onChange={(tab) => setQ({ ...q, tab })}
+            onChange={(tab) => updateQuery({ tab })}
           />
           <div className="ml-auto flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <label className="flex h-10.5 w-full sm:w-72 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute focus-within:border-brand">
@@ -115,7 +152,7 @@ export function MembersPage() {
                 className="w-full bg-transparent text-sm font-semibold text-ink outline-none"
                 placeholder="Search name or member ID"
                 value={q.search}
-                onChange={(e) => setQ({ ...q, search: e.target.value })}
+                onChange={(e) => updateQuery({ search: e.target.value })}
               />
             </label>
             <Button
@@ -136,8 +173,7 @@ export function MembersPage() {
               placeholder="Any"
               value={q.eligibility ?? ""}
               onChange={(e) =>
-                setQ({
-                  ...q,
+                updateQuery({
                   eligibility: (e.target.value ||
                     undefined) as MemberQuery["eligibility"],
                 })
@@ -152,8 +188,7 @@ export function MembersPage() {
               placeholder="Any"
               value={q.referred === undefined ? "" : q.referred ? "yes" : "no"}
               onChange={(e) =>
-                setQ({
-                  ...q,
+                updateQuery({
                   referred: e.target.value
                     ? e.target.value === "yes"
                     : undefined,
@@ -166,25 +201,37 @@ export function MembersPage() {
               placeholder="Any"
               value={q.joinedYear ?? ""}
               onChange={(e) =>
-                setQ({ ...q, joinedYear: e.target.value || undefined })
+                updateQuery({ joinedYear: e.target.value || undefined })
               }
             />
             <div className="flex items-end">
               <Button
                 variant="outline"
                 size="md"
-                onClick={() => setQ({ tab: q.tab, search: q.search })}
+                onClick={() =>
+                  setQ({ tab: q.tab, search: q.search, page: 1 })
+                }
               >
                 Clear all
               </Button>
             </div>
           </Card>
         )}
-        <DataTable<MemberSummary>
-          rows={rows}
-          rowKey={(r) => r.id}
-          onRowClick={(r) => navigate(paths.admin.member(r.id))}
-          columns={[
+        {loading ? (
+          <Card
+            role="status"
+            aria-live="polite"
+            className="flex min-h-48 items-center justify-center gap-2"
+          >
+            <LoaderCircle className="animate-spin text-brand" size={18} />
+            <p className="text-sm font-semibold text-mute">Loading members…</p>
+          </Card>
+        ) : (
+          <DataTable<MemberListRow>
+            rows={rows}
+            rowKey={(r) => r.id}
+            onRowClick={(r) => navigate(paths.admin.member(r.id))}
+            columns={[
             {
               header: "Member",
               render: (r) => (
@@ -206,25 +253,39 @@ export function MembersPage() {
               header: "Monthly target",
               align: "right",
               render: (r) =>
-                r.targetKobo ? formatNaira(r.targetKobo) : "Not set",
+                r.targetKobo === undefined
+                  ? "—"
+                  : r.targetKobo
+                    ? formatNaira(r.targetKobo)
+                    : "Not set",
             },
             {
               header: "Saved",
               align: "right",
-              render: (r) => <b>{formatNaira(r.savedKobo)}</b>,
+              render: (r) =>
+                r.savedKobo === undefined ? (
+                  "—"
+                ) : (
+                  <b>{formatNaira(r.savedKobo)}</b>
+                ),
             },
             {
               header: "September",
-              render: (r) => (
-                <Pill tone={MONTH_TONE[r.currentMonthStatus]}>
-                  {r.currentMonthStatus}
-                </Pill>
-              ),
+              render: (r) =>
+                r.currentMonthStatus === undefined ? (
+                  <span className="text-mute">—</span>
+                ) : (
+                  <Pill tone={MONTH_TONE[r.currentMonthStatus]}>
+                    {r.currentMonthStatus}
+                  </Pill>
+                ),
             },
             {
               header: "Interest",
               render: (r) =>
-                r.eligibility === "Eligible" ? (
+                r.eligibility === undefined ? (
+                  <span className="text-mute">—</span>
+                ) : r.eligibility === "Eligible" ? (
                   <Pill tone="ok" icon={<ShieldCheck size={12} />}>
                     Eligible
                   </Pill>
@@ -238,11 +299,55 @@ export function MembersPage() {
                 <span className="text-mute">{r.referredBy ?? "—"}</span>
               ),
             },
-          ]}
-        />
-        <p className="text-[13px] font-semibold text-mute">
-          Showing {rows.length} members
-        </p>
+            ]}
+          />
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-[13px] font-semibold text-mute">
+            {loading
+              ? "Loading members…"
+              : meta.total === 0
+                ? "No members match these filters"
+                : `Showing ${firstRow}–${lastRow} of ${meta.total} members`}
+          </p>
+          {meta.last_page > 1 && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Previous page"
+                icon={<ChevronLeft size={16} />}
+                disabled={loading || meta.current_page <= 1}
+                onClick={() =>
+                  setQ((prev) => ({
+                    ...prev,
+                    page: Math.max(1, meta.current_page - 1),
+                  }))
+                }
+              >
+                <span className="sr-only">Previous page</span>
+              </Button>
+              <span className="text-[13px] font-semibold text-mute">
+                Page {meta.current_page} of {meta.last_page}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Next page"
+                icon={<ChevronRight size={16} />}
+                disabled={loading || meta.current_page >= meta.last_page}
+                onClick={() =>
+                  setQ((prev) => ({
+                    ...prev,
+                    page: Math.min(meta.last_page, meta.current_page + 1),
+                  }))
+                }
+              >
+                <span className="sr-only">Next page</span>
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
     </>
   );

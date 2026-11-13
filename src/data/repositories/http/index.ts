@@ -3,10 +3,10 @@
  * agree them in Sprint 0 and keep this file as the single place that knows URLs and payload shapes.
  * Money is exchanged in kobo (integers).
  */
-import type { AdminListItem, AdminRole, AdminUser, AuditEntry, Bank, ContributionPaymentMethod, InterestCalcRow, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, NotificationSettings, PayoutAccount, PayoutBatch, PayoutDestination, ReferralGroup, Registration, ReportKind, ReportResult, SavingsDashboard, SavingsMonth, SavingsPeriod, SavingsYear, Session, Testimonial, Transaction } from '@/domain/entities';
+import type { AdminListItem, AdminRole, AdminUser, AuditEntry, Bank, ContributionPaymentMethod, InterestCalcRow, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberListRow, MemberSummary, MonthIndex, NotificationSettings, PayoutAccount, PayoutBatch, PayoutDestination, ReferralGroup, Registration, ReportKind, ReportResult, SavingsDashboard, SavingsMonth, SavingsPeriod, SavingsYear, Session, Testimonial, Transaction } from '@/domain/entities';
 import type { PlatformSettings } from '@/domain/rules';
 import { naira } from '@/domain/rules';
-import type { AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, InterestRulesInput, MemberQuery, MemberRepository, NewRegistration, PayoutAccountRepository, RegistrationRepository, RegistrationStarted, SavingsDashboardRepository, SavingsTargetRepository, SettingsRepository, TestimonialRepository, VerifiedContribution, ApiMember, ApiMemberPage, ApiMemberStatus } from '@/domain/repositories';
+import type { AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, InterestRulesInput, MemberQuery, MemberListPage, MemberRepository, NewRegistration, PageMeta, PayoutAccountRepository, RegistrationRepository, RegistrationStarted, SavingsDashboardRepository, SavingsTargetRepository, SettingsRepository, TestimonialRepository, VerifiedContribution, ApiMember, ApiMemberPage, ApiMemberStatus } from '@/domain/repositories';
 import type { RegistrationDetails } from '@/domain/rules';
 import type { HttpClient } from '@/data/api/httpClient';
 import { ApiError, type ApiEnvelope } from '@/data/api/httpClient';
@@ -30,6 +30,58 @@ function unwrapData<T>(payload: ApiEnvelope<T> | T): T | null {
     return (payload as ApiEnvelope<T>).data;
   }
   return payload as T;
+}
+
+/**
+ * Normalises a record from GET /admin/members.
+ *
+ * The mock adapter returns `MemberSummary` rows, while the live API returns
+ * member records (`ApiMember`). In both cases the admin list needs at least an
+ * id, a name and a status; savings figures are carried through when present.
+ */
+function mapAdminMemberRow(raw: ApiMember | MemberListRow): MemberListRow {
+  if ('name' in raw) return raw;
+
+  const m = raw as ApiMember;
+  const extras = raw as unknown as Partial<MemberListRow>;
+  const name = m.full_name?.trim()
+    || `${m.first_name ?? ''} ${m.last_name ?? ''}`.trim()
+    || m.email;
+  return {
+    id: m.member_id || m.id,
+    name,
+    status: m.status === 'active' ? 'Active' : 'Suspended',
+    joinedOn: m.created_at?.slice(0, 10) ?? '',
+    referredBy: m.referred_by ?? undefined,
+    ...(extras.targetKobo !== undefined ? { targetKobo: extras.targetKobo } : {}),
+    ...(extras.savedKobo !== undefined ? { savedKobo: extras.savedKobo } : {}),
+    ...(extras.monthsPaid !== undefined ? { monthsPaid: extras.monthsPaid } : {}),
+    ...(extras.currentMonthStatus !== undefined ? { currentMonthStatus: extras.currentMonthStatus } : {}),
+    ...(extras.eligibility !== undefined ? { eligibility: extras.eligibility } : {}),
+    ...(extras.forfeitReason !== undefined ? { forfeitReason: extras.forfeitReason } : {}),
+  };
+}
+
+/** Reads the pagination metadata from an API envelope, falling back to the request page. */
+function readPageMeta(payload: unknown, fallback: PageMeta): PageMeta {
+  const raw = payload && typeof payload === 'object' && 'meta' in payload
+    ? (payload as { meta?: unknown }).meta
+    : undefined;
+  if (!raw || typeof raw !== 'object') return fallback;
+
+  const meta = raw as Record<string, unknown>;
+  const read = (key: keyof PageMeta, fallbackValue: number) => {
+    const value = meta[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Number(value);
+    return fallbackValue;
+  };
+  return {
+    current_page: read('current_page', fallback.current_page),
+    per_page: read('per_page', fallback.per_page),
+    last_page: read('last_page', fallback.last_page),
+    total: read('total', fallback.total),
+  };
 }
 
 /** Raw shape of the login response data from the API. */
@@ -467,8 +519,27 @@ export class HttpAdminRepository implements AdminRepository {
       forfeited: d.interest_eligibility.forfeited ?? 0,
     };
   }
-  listMembers(q: MemberQuery) { const p = new URLSearchParams({ tab: q.tab, search: q.search, ...(q.eligibility ? { eligibility: q.eligibility } : {}), ...(q.joinedYear ? { joinedYear: q.joinedYear } : {}), ...(q.referred !== undefined ? { referred: String(q.referred) } : {}) }); return this.http.get<MemberSummary[]>(`/admin/members?${p}`); }
-  countMembers() { return this.http.get<Record<MemberQuery['tab'], number>>('/admin/members/counts'); }
+  async listMembers(q: MemberQuery): Promise<MemberListPage> {
+    const p = new URLSearchParams({ tab: q.tab, search: q.search, ...(q.eligibility ? { eligibility: q.eligibility } : {}), ...(q.joinedYear ? { joinedYear: q.joinedYear } : {}), ...(q.referred !== undefined ? { referred: String(q.referred) } : {}) });
+    if (q.page && q.page > 1) p.set('page', String(q.page));
+    const payload = await this.http.get<ApiEnvelope<(ApiMember | MemberListRow)[]> | (ApiMember | MemberListRow)[]>(`/admin/members?${p}`);
+    const data = unwrapData(payload) ?? [];
+    const perPage = 20;
+    const page = q.page ?? 1;
+    return {
+      data: data.map(mapAdminMemberRow),
+      meta: readPageMeta(payload, {
+        current_page: page,
+        per_page: perPage,
+        last_page: Math.max(1, Math.ceil(data.length / perPage)),
+        total: data.length,
+      }),
+    };
+  }
+  async countMembers(): Promise<Record<MemberQuery['tab'], number>> {
+    const payload = await this.http.get<ApiEnvelope<Record<MemberQuery['tab'], number>> | Record<MemberQuery['tab'], number>>('/admin/members/counts');
+    return unwrapData(payload) ?? { All: 0, Active: 0, Suspended: 0, NotPaid: 0, Forfeited: 0 };
+  }
   listRegistrations() { return this.http.get<Registration[]>('/admin/registrations'); }
   async listAllMembers(params: { search?: string; status?: ApiMemberStatus; page?: number } = {}): Promise<ApiMemberPage> {
     const p = new URLSearchParams();

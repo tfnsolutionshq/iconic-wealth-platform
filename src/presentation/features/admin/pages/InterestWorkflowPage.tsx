@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Check, ChevronDown, Lock, Search, X } from "lucide-react";
-import type { AuditCategory, Eligibility, InterestBand, InterestCalcRow, InterestRateMode, InterestScope, InterestWorkflow, MemberSummary } from "@/domain/entities";
+import type { AuditCategory, Eligibility, InterestBand, InterestCalcRow, InterestRateMode, InterestScope, InterestWorkflow, MemberListRow } from "@/domain/entities";
 import { formatNaira, parseNairaInput } from "@/domain/rules";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
@@ -79,10 +79,10 @@ export function InterestWorkflowPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
   const [pickerEligibility, setPickerEligibility] = useState<PickerEligibility>("All");
-  const [pickerMembers, setPickerMembers] = useState<MemberSummary[]>([]);
+  const [pickerMembers, setPickerMembers] = useState<MemberListRow[]>([]);
   const [draftIds, setDraftIds] = useState<string[]>([]);
   const [pickerBusy, setPickerBusy] = useState(false);
-  const [members, setMembers] = useState<MemberSummary[]>([]);
+  const [members, setMembers] = useState<MemberListRow[]>([]);
   const [membersBusy, setMembersBusy] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
 
@@ -156,7 +156,7 @@ export function InterestWorkflowPage() {
     setMembersBusy(true);
     repos.admin
       .listMembers({ tab: "All", search: "" })
-      .then((list) => { if (live) setMembers(list); })
+      .then((page) => { if (live) setMembers(page.data); })
       .catch(() => {})
       .finally(() => { if (live) setMembersBusy(false); });
     return () => { live = false; };
@@ -169,7 +169,7 @@ export function InterestWorkflowPage() {
     setDraftIds(selectedIds);
     if (pickerMembers.length === 0) {
       setPickerBusy(true);
-      try { setPickerMembers(await repos.admin.listMembers({ tab: "All", search: "" })); }
+      try { setPickerMembers((await repos.admin.listMembers({ tab: "All", search: "" })).data); }
       catch (e) { toast((e as Error).message); }
       finally { setPickerBusy(false); }
     }
@@ -284,7 +284,7 @@ export function InterestWorkflowPage() {
     () => {},
     `${row.memberName} removed from payout.`,
   );
-  const removeMemberFromPreview = (m: MemberSummary) => run(
+  const removeMemberFromPreview = (m: Pick<MemberListRow, "id" | "name">) => run(
     () => repos.admin.setInterestExclusions(y, [...(w.excludedMemberIds ?? []), m.id])
       .then((wf) => audit("Removed member from payout", m.id, `${m.name} · ${wf.eligible} eligible`, "Financial")),
     () => {},

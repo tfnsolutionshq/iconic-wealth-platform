@@ -170,9 +170,21 @@ export interface Testimonial { id: string; name: string; descriptor: string; quo
 
 export interface AdminUser { id: string; name: string; email: string; role: AdminRole; status: 'Active' | 'Invited' | 'Deactivated' }
 
-export interface MemberSummary {
-  id: MemberId; name: string; status: MemberStatus; targetKobo: Kobo; savedKobo: Kobo; monthsPaid: number;
-  currentMonthStatus: MonthStatus; eligibility: Eligibility; forfeitReason?: string; referredBy?: string; joinedOn: string;
+/**
+ * A row in the admin members list.
+ *
+ * The live `/admin/members` endpoint returns the member record before the
+ * savings totals are exposed, so those figures are optional here. The mock
+ * repository still returns a full `MemberSummary`.
+ */
+export interface MemberListRow {
+  id: MemberId; name: string; status: MemberStatus; targetKobo?: Kobo; savedKobo?: Kobo; monthsPaid?: number;
+  currentMonthStatus?: MonthStatus; eligibility?: Eligibility; forfeitReason?: string; referredBy?: string; joinedOn: string;
+}
+
+export interface MemberSummary extends MemberListRow {
+  targetKobo: Kobo; savedKobo: Kobo; monthsPaid: number;
+  currentMonthStatus: MonthStatus; eligibility: Eligibility;
 }
 
 export type Session =

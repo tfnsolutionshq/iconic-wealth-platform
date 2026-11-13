@@ -55,7 +55,7 @@ src/
     usecases/        orchestration, e.g. ContributeUseCase: validate → initiate → gateway → verify
   data/              ← implements the ports
     mock/seed.ts     sample data from the approved build
-    repositories/mock   in-memory adapters (demo, local dev, tests)
+    repositories/mock   in-memory adapters (tests; wallet has no API yet)
     repositories/http   REST adapters (proposed contract, section 9)
     gateways/        PaystackInlineGateway, DemoGateway
     api/httpClient.ts
@@ -67,7 +67,7 @@ src/
     routes/          screens.ts (registry), paths.ts (URL helpers), router.tsx (generated from the registry)
     features/        website | auth | member | admin  → pages/ and components/
   app/               ← composition root
-    di/container.ts  the ONLY place that picks mock vs http and real vs demo gateway
+    di/container.ts  the ONLY place that wires the shared HTTP client and real vs demo gateway
     config/env.ts    typed environment
     providers/       AppProviders
 ```
@@ -218,8 +218,8 @@ Extend the ports in `domain/repositories` first, then both adapters (mock and ht
 
 | Variable | Dev / staging | Production |
 | --- | --- | --- |
-| `VITE_API_BASE_URL` | empty = mock data, or staging API | production API |
-| `VITE_REGISTRATION_API_BASE_URL` | optional: live registration and sign-in while the rest stays mock (`/api/v1` in dev, proxied by Vite); falls back to `VITE_API_BASE_URL` | optional override |
+| `VITE_API_BASE_URL` | `https://api.iconicwealth.tfnsolutions.us/api/v1/` (also the fallback when empty) | same canonical API URL |
+| `VITE_REGISTRATION_API_BASE_URL` | removed: registration and sign-in use `VITE_API_BASE_URL` | — |
 | `VITE_PAYSTACK_PUBLIC_KEY` | `pk_test_…` | `pk_live_…` |
 | `VITE_DEMO_MODE` | `true` (demos) | **`false`** |
 | `VITE_WA_COMMUNITY_URL`, `VITE_WA_SUPPORT_URL` | placeholders | cooperative’s real links |
