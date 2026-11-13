@@ -12,7 +12,11 @@ import {
   Upload,
 } from "lucide-react";
 import type { MemberListRow } from "@/domain/entities";
-import type { MemberQuery, PageMeta } from "@/domain/repositories";
+import type {
+  ApiMemberStatus,
+  MemberQuery,
+  PageMeta,
+} from "@/domain/repositories";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
 import {
@@ -23,9 +27,31 @@ import {
   Pill,
   SelectField,
 } from "../../../design-system";
-import { formatNaira } from "@/domain/rules";
+import { formatNaira, MONTHS_SHORT } from "@/domain/rules";
 import { AdminPageHeader } from "../../../layouts/AdminLayout";
 import { paths } from "../../../routes/paths";
+import {
+  isMemberStatus,
+  MEMBER_STATUS_LABEL,
+  memberStatusLabel,
+  memberStatusTone,
+} from "../memberStatus";
+
+type MemberPill = "All" | ApiMemberStatus | "NotPaid" | "Forfeited";
+
+/** Statuses shown as primary pills. */
+const PILL_STATUSES: ApiMemberStatus[] = ["active", "rejected", "suspended"];
+const PILL_STATUS_LABEL: Partial<Record<ApiMemberStatus, string>> = {
+  rejected: "Forfeited",
+};
+
+const BASELINE_OPTIONS: {
+  value: NonNullable<MemberQuery["baseline"]>;
+  label: string;
+}[] = [
+  { value: "10000-50000", label: "₦10,000 - ₦50,000" },
+  { value: "above-50000", label: "Above ₦50,000" },
+];
 
 const MONTH_TONE = {
   Paid: "ok",
@@ -90,17 +116,52 @@ export function MembersPage() {
   const firstRow =
     meta.total === 0 ? 0 : (meta.current_page - 1) * meta.per_page + 1;
   const lastRow = meta.total === 0 ? 0 : firstRow + rows.length - 1;
-  const tabs: { value: MemberQuery["tab"]; label: string }[] = [
-    ["All", "All"],
-    ["Active", "Active"],
-    ["Suspended", "Suspended"],
-    ["NotPaid", "Not paid this month"],
-    ["Forfeited", "Forfeited"],
-  ].map(([v, l]) => ({
-    value: v as MemberQuery["tab"],
-    label: `${l}${counts ? " " + counts[v as MemberQuery["tab"]] : ""}`,
-  }));
+  const currentMonthShort = MONTHS_SHORT[new Date().getMonth()];
+  const tabs: { value: MemberPill; label: string }[] = [
+    { value: "All", label: `All${counts ? " " + counts.All : ""}` },
+    ...PILL_STATUSES.map((status) => {
+      const count =
+        status === "active"
+          ? counts?.Active
+          : status === "suspended"
+            ? counts?.Suspended
+            : undefined;
+      return {
+        value: status,
+        label: `${PILL_STATUS_LABEL[status] ?? MEMBER_STATUS_LABEL[status]}${
+          count === undefined ? "" : " " + count
+        }`,
+      };
+    }),
+    {
+      value: "NotPaid",
+      label: `Not paid ${currentMonthShort}${
+        counts ? " " + counts.NotPaid : ""
+      }`,
+    },
+    {
+      value: "Forfeited",
+      label: `Interest forfeited${counts ? " " + counts.Forfeited : ""}`,
+    },
+  ];
+  const selectedPill: MemberPill =
+    q.status ??
+    (q.tab === "Active"
+      ? "active"
+      : q.tab === "Suspended"
+        ? "suspended"
+        : q.tab);
+  const selectPill = (pill: MemberPill) => {
+    if (pill === "All") {
+      updateQuery({ tab: "All", status: undefined });
+    } else if (isMemberStatus(pill)) {
+      updateQuery({ tab: "All", status: pill });
+    } else {
+      updateQuery({ tab: pill, status: undefined });
+    }
+  };
   const activeFilters = [
+    q.baseline,
     q.eligibility,
     q.referred !== undefined,
     q.joinedYear,
@@ -140,11 +201,7 @@ export function MembersPage() {
       />
       <div className="flex flex-col gap-4 px-4 py-5 sm:px-8 sm:py-6">
         <div className="flex flex-wrap items-center gap-2">
-          <Chips
-            value={q.tab}
-            options={tabs}
-            onChange={(tab) => updateQuery({ tab })}
-          />
+          <Chips value={selectedPill} options={tabs} onChange={selectPill} />
           <div className="ml-auto flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <label className="flex h-10.5 w-full sm:w-72 items-center gap-2 rounded-xl border-[1.5px] border-line bg-white px-3 text-mute focus-within:border-brand">
               <Search size={18} />
@@ -166,54 +223,75 @@ export function MembersPage() {
           </div>
         </div>
         {open && (
-          <Card className="grid gap-3 md:grid-cols-4">
-            <SelectField
-              label="Interest eligibility"
-              options={["Eligible", "Forfeited"]}
-              placeholder="Any"
-              value={q.eligibility ?? ""}
-              onChange={(e) =>
-                updateQuery({
-                  eligibility: (e.target.value ||
-                    undefined) as MemberQuery["eligibility"],
-                })
-              }
-            />
-            <SelectField
-              label="Referral"
-              options={[
-                { value: "yes", label: "Referred" },
-                { value: "no", label: "Not referred" },
-              ]}
-              placeholder="Any"
-              value={q.referred === undefined ? "" : q.referred ? "yes" : "no"}
-              onChange={(e) =>
-                updateQuery({
-                  referred: e.target.value
-                    ? e.target.value === "yes"
-                    : undefined,
-                })
-              }
-            />
-            <SelectField
-              label="Joined in"
-              options={["2023", "2024", "2025", "2026"]}
-              placeholder="Any"
-              value={q.joinedYear ?? ""}
-              onChange={(e) =>
-                updateQuery({ joinedYear: e.target.value || undefined })
-              }
-            />
-            <div className="flex items-end">
-              <Button
-                variant="outline"
-                size="md"
+          <Card className="flex flex-col gap-3">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className="text-sm font-bold text-brand transition hover:text-brand-dark"
                 onClick={() =>
-                  setQ({ tab: q.tab, search: q.search, page: 1 })
+                  setQ({
+                    tab: q.tab,
+                    search: q.search,
+                    status: q.status,
+                    page: 1,
+                  })
                 }
               >
                 Clear all
-              </Button>
+              </button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-4">
+              <SelectField
+                label="Baseline"
+                options={BASELINE_OPTIONS}
+                placeholder="Any"
+                value={q.baseline ?? ""}
+                onChange={(e) =>
+                  updateQuery({
+                    baseline: (e.target.value ||
+                      undefined) as MemberQuery["baseline"],
+                  })
+                }
+              />
+              <SelectField
+                label="Interest eligibility"
+                options={["Eligible", "Forfeited"]}
+                placeholder="Any"
+                value={q.eligibility ?? ""}
+                onChange={(e) =>
+                  updateQuery({
+                    eligibility: (e.target.value ||
+                      undefined) as MemberQuery["eligibility"],
+                  })
+                }
+              />
+              <SelectField
+                label="Referral"
+                options={[
+                  { value: "yes", label: "Referred" },
+                  { value: "no", label: "Not referred" },
+                ]}
+                placeholder="Any"
+                value={
+                  q.referred === undefined ? "" : q.referred ? "yes" : "no"
+                }
+                onChange={(e) =>
+                  updateQuery({
+                    referred: e.target.value
+                      ? e.target.value === "yes"
+                      : undefined,
+                  })
+                }
+              />
+              <SelectField
+                label="Joined in"
+                options={["2023", "2024", "2025", "2026"]}
+                placeholder="Any"
+                value={q.joinedYear ?? ""}
+                onChange={(e) =>
+                  updateQuery({ joinedYear: e.target.value || undefined })
+                }
+              />
             </div>
           </Card>
         )}
@@ -243,11 +321,14 @@ export function MembersPage() {
             },
             {
               header: "Status",
-              render: (r) => (
-                <Pill tone={r.status === "Active" ? "ok" : "fail"}>
-                  {r.status}
-                </Pill>
-              ),
+              render: (r) => {
+                const status = r.accountStatus ?? r.status;
+                return (
+                  <Pill tone={memberStatusTone(status)}>
+                    {memberStatusLabel(status)}
+                  </Pill>
+                );
+              },
             },
             {
               header: "Monthly target",

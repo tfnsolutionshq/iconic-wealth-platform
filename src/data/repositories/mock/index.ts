@@ -440,10 +440,19 @@ export class MockAdminRepository implements AdminRepository {
   }
   async listMembers(q: MemberQuery) {
     const s = q.search.trim().toLowerCase();
+    const accountStatus = (m: (typeof memberSummaries)[number]) =>
+      m.accountStatus ?? (m.status === 'Active' ? 'active' : 'suspended');
+    const inBaseline = (m: (typeof memberSummaries)[number]) =>
+      q.baseline === undefined
+        || (q.baseline === '10000-50000'
+          ? m.targetKobo >= naira(10_000) && m.targetKobo <= naira(50_000)
+          : m.targetKobo > naira(50_000));
     const filtered = memberSummaries.filter(m =>
       (q.tab === 'All' || (q.tab === 'Active' && m.status === 'Active') || (q.tab === 'Suspended' && m.status === 'Suspended') || (q.tab === 'NotPaid' && m.currentMonthStatus !== 'Paid') || (q.tab === 'Forfeited' && m.eligibility === 'Forfeited'))
-      && (!s || `${m.name} ${m.id}`.toLowerCase().includes(s)) && (!q.eligibility || m.eligibility === q.eligibility)
-      && (q.referred === undefined || q.referred === !!m.referredBy) && (!q.joinedYear || m.joinedOn.startsWith(q.joinedYear)));
+      && (!s || `${m.name} ${m.id}`.toLowerCase().includes(s)) && (!q.status || accountStatus(m) === q.status)
+      && (!q.eligibility || m.eligibility === q.eligibility)
+      && (q.referred === undefined || q.referred === !!m.referredBy) && (!q.joinedYear || m.joinedOn.startsWith(q.joinedYear))
+      && inBaseline(m));
     const perPage = 20;
     const total = filtered.length;
     const lastPage = Math.max(1, Math.ceil(total / perPage));

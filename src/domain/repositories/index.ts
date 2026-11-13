@@ -4,7 +4,7 @@
  *  - http: calls the backend API — see data/repositories/http
  * The presentation layer never imports data-layer classes directly; it receives these via ServicesContext.
  */
-import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, Bank, ContributionPaymentMethod, InterestBand, InterestCalcRow, InterestRateMode, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberListRow, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, PayoutDestination, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsDashboard, SavingsMonth, SavingsYear, Session, Testimonial, Transaction, WalletEntry, WalletSnapshot, WalletWithdrawal } from '../entities';
+import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, Bank, ContributionPaymentMethod, InterestBand, InterestCalcRow, InterestRateMode, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberAccountStatus, MemberNotification, MemberListRow, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, PayoutDestination, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsDashboard, SavingsMonth, SavingsYear, Session, Testimonial, Transaction, WalletEntry, WalletSnapshot, WalletWithdrawal } from '../entities';
 import type { RegistrationDetails } from '../rules/registration';
 import type { PlatformSettings } from '../rules/savings';
 
@@ -169,7 +169,21 @@ export interface InterestRulesInput {
   selectedMemberIds: string[];
 }
 
-export interface MemberQuery { tab: 'All' | 'Active' | 'Suspended' | 'NotPaid' | 'Forfeited'; search: string; page?: number; eligibility?: 'Eligible' | 'Forfeited'; referred?: boolean; joinedYear?: string }
+/** Baseline (monthly target) bands offered by the admin members filter. */
+export type MemberBaselineRange = '10000-50000' | 'above-50000';
+
+export interface MemberQuery {
+  tab: 'All' | 'Active' | 'Suspended' | 'NotPaid' | 'Forfeited';
+  search: string;
+  page?: number;
+  /** Sent to GET /admin/members as `status`. */
+  status?: ApiMemberStatus;
+  eligibility?: 'Eligible' | 'Forfeited';
+  referred?: boolean;
+  joinedYear?: string;
+  /** Sent to GET /admin/members as `baseline`. */
+  baseline?: MemberBaselineRange;
+}
 
 /** Pagination metadata returned by the API alongside list responses. */
 export interface PageMeta {
@@ -184,14 +198,8 @@ export interface MemberListPage {
   meta: PageMeta;
 }
 
-/** Raw member record returned by GET /admin/members. */
-export type ApiMemberStatus =
-  | 'pending_email_verification'
-  | 'pending_profile_completion'
-  | 'pending_approval'
-  | 'active'
-  | 'rejected'
-  | 'suspended';
+/** Raw member status returned by GET /admin/members, and accepted by its `status` filter. */
+export type ApiMemberStatus = MemberAccountStatus;
 
 export interface ApiMember {
   id: string;

@@ -15,42 +15,19 @@ import {
 } from "../../../design-system";
 import { AdminPageHeader } from "../../../layouts/AdminLayout";
 import { paths } from "../../../routes/paths";
-import type { Tone } from "../../../design-system/components/Feedback";
+import {
+  MEMBER_STATUS_LABEL as STATUS_LABEL,
+  MEMBER_STATUS_TONE as STATUS_TONE,
+  MEMBER_STATUS_VALUES,
+} from "../memberStatus";
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
 type StatusFilter = "all" | ApiMemberStatus;
 
-const STATUS_LABEL: Record<ApiMemberStatus, string> = {
-  pending_email_verification: "Pending email verification",
-  pending_profile_completion: "Pending profile completion",
-  pending_approval: "Pending admin approval",
-  active: "Active",
-  rejected: "Rejected",
-  suspended: "Suspended",
-};
-
-const STATUS_TONE: Record<ApiMemberStatus, Tone> = {
-  pending_email_verification: "mute",
-  pending_profile_completion: "gold",
-  pending_approval: "pending",
-  active: "ok",
-  rejected: "fail",
-  suspended: "fail",
-};
-
 const FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All" },
-  ...(
-    [
-      "pending_email_verification",
-      "pending_profile_completion",
-      "pending_approval",
-      "active",
-      "rejected",
-      "suspended",
-    ] as ApiMemberStatus[]
-  ).map((s) => ({ value: s, label: STATUS_LABEL[s] })),
+  ...MEMBER_STATUS_VALUES.map((s) => ({ value: s, label: STATUS_LABEL[s] })),
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
