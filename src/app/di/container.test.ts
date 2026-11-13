@@ -17,35 +17,48 @@ afterEach(() => {
   vi.resetModules();
 });
 
-describe('createContainer registration wiring', () => {
-  it('uses the HTTP registration and auth repositories when a registration API base URL is set', async () => {
-    vi.stubEnv('VITE_REGISTRATION_API_BASE_URL', '/api/v1');
+describe('createContainer API wiring', () => {
+  it('uses the HTTP repositories for every API-backed repository', async () => {
     vi.stubEnv('VITE_API_BASE_URL', '');
     const { createContainer } = await import('./container');
     const { repos } = createContainer();
 
+    expect(repos.auth.constructor.name).toBe('HttpAuthRepository');
     expect(repos.registration.constructor.name).toBe(
       'HttpRegistrationRepository',
     );
-    expect(repos.auth.constructor.name).toBe('HttpAuthRepository');
-    // Payout setup, the monthly target and the dashboard follow the live API even though the rest of member data stays mock.
+    expect(repos.member.constructor.name).toBe('HttpMemberRepository');
     expect(repos.payout.constructor.name).toBe('HttpPayoutAccountRepository');
-    expect(repos.savingsTarget.constructor.name).toBe('HttpSavingsTargetRepository');
-    expect(repos.savingsDashboard.constructor.name).toBe('HttpSavingsDashboardRepository');
+    expect(repos.savingsTarget.constructor.name).toBe(
+      'HttpSavingsTargetRepository',
+    );
+    expect(repos.savingsDashboard.constructor.name).toBe(
+      'HttpSavingsDashboardRepository',
+    );
+    expect(repos.settings.constructor.name).toBe('HttpSettingsRepository');
+    expect(repos.testimonials.constructor.name).toBe(
+      'HttpTestimonialRepository',
+    );
+    expect(repos.contribution.constructor.name).toBe(
+      'HttpContributionRepository',
+    );
+    expect(repos.admin.constructor.name).toBe('HttpAdminRepository');
   });
 
-  it('uses the mock repositories when no API base URL is set', async () => {
-    vi.stubEnv('VITE_REGISTRATION_API_BASE_URL', '');
+  it('falls back to the canonical server when no API base URL is configured', async () => {
     vi.stubEnv('VITE_API_BASE_URL', '');
-    const { createContainer } = await import('./container');
-    const { repos } = createContainer();
+    const { API_BASE_URL, env } = await import('../config/env');
 
-    expect(repos.registration.constructor.name).toBe(
-      'MockRegistrationRepository',
+    expect(env.apiBaseUrl).toBe(API_BASE_URL);
+    expect(API_BASE_URL).toBe(
+      'https://api.iconicwealth.tfnsolutions.us/api/v1/',
     );
-    expect(repos.auth.constructor.name).toBe('MockAuthRepository');
-    expect(repos.payout.constructor.name).toBe('MockPayoutAccountRepository');
-    expect(repos.savingsTarget.constructor.name).toBe('MockSavingsTargetRepository');
-    expect(repos.savingsDashboard.constructor.name).toBe('MockSavingsDashboardRepository');
+  });
+
+  it('uses VITE_API_BASE_URL when it is configured', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'https://staging.example.com/api/v1');
+    const { env } = await import('../config/env');
+
+    expect(env.apiBaseUrl).toBe('https://staging.example.com/api/v1');
   });
 });

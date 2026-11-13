@@ -8,8 +8,6 @@ import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
 import { Button, Logo, TextField } from "../../../design-system";
 import { YearCard } from "../../website/components/HomePageComponents/YearCard";
-import { DEMO_ACCOUNTS } from "@/data/mock/seed";
-import { env } from "@/app/config/env";
 import { paths } from "../../../routes/paths";
 
 export function LoginPage() {
@@ -17,14 +15,8 @@ export function LoginPage() {
   const { repos } = useServices();
   const toast = useToast();
   const navigate = useNavigate();
-  // Demo identities only make sense while sign-in is served by the mock repository.
-  const demoCredentials = env.demoMode && !env.registrationApiBaseUrl;
-  const [identifier, setIdentifier] = useState(
-    demoCredentials ? DEMO_ACCOUNTS[0].identifier : "",
-  );
-  const [password, setPassword] = useState(
-    demoCredentials ? "demo-password" : "",
-  );
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<LoginErrors>({});
   const [showPassword, setShowPassword] = useState(false);

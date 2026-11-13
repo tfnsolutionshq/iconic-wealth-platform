@@ -440,10 +440,19 @@ export class MockAdminRepository implements AdminRepository {
   }
   async listMembers(q: MemberQuery) {
     const s = q.search.trim().toLowerCase();
-    return delay(memberSummaries.filter(m =>
+    const filtered = memberSummaries.filter(m =>
       (q.tab === 'All' || (q.tab === 'Active' && m.status === 'Active') || (q.tab === 'Suspended' && m.status === 'Suspended') || (q.tab === 'NotPaid' && m.currentMonthStatus !== 'Paid') || (q.tab === 'Forfeited' && m.eligibility === 'Forfeited'))
       && (!s || `${m.name} ${m.id}`.toLowerCase().includes(s)) && (!q.eligibility || m.eligibility === q.eligibility)
-      && (q.referred === undefined || q.referred === !!m.referredBy) && (!q.joinedYear || m.joinedOn.startsWith(q.joinedYear))), 120);
+      && (q.referred === undefined || q.referred === !!m.referredBy) && (!q.joinedYear || m.joinedOn.startsWith(q.joinedYear)));
+    const perPage = 20;
+    const total = filtered.length;
+    const lastPage = Math.max(1, Math.ceil(total / perPage));
+    const currentPage = Math.min(Math.max(q.page ?? 1, 1), lastPage);
+    const start = (currentPage - 1) * perPage;
+    return delay({
+      data: filtered.slice(start, start + perPage),
+      meta: { current_page: currentPage, per_page: perPage, last_page: lastPage, total },
+    }, 120);
   }
   async countMembers() {
     const c = (f: (m: (typeof memberSummaries)[number]) => boolean) => memberSummaries.filter(f).length;

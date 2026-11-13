@@ -228,8 +228,8 @@ export function AdminPageHeader({
   const [people, setPeople] = useState<Partial<Record<AdminRole, string>>>({});
   const wrapRef = useRef<HTMLDivElement>(null);
   const admin = session?.kind === "admin" ? session.admin : null;
-  /** The role switcher is a demo of maker-checker: available in demo mode and whenever the in-memory mock backend is in use. */
-  const canSwitch = env.demoMode || !env.apiBaseUrl;
+  /** The role switcher is a demo of maker-checker: available in demo mode. */
+  const canSwitch = env.demoMode;
   const roleLabel = (r: AdminRole) => (r === "SuperAdmin" ? "Super Admin" : "Administrator");
 
   useEffect(() => {

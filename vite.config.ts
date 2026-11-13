@@ -7,8 +7,8 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   server: {
-    // Allows VITE_API_BASE_URL=/api/v1 in development, so the browser never makes a
-    // cross-origin request and the API host is configured in exactly one place.
+    // Optional: set VITE_API_BASE_URL=/api/v1 in development to proxy through Vite
+    // instead of calling the canonical API URL directly.
     proxy: {
       '/api': {
         target: 'https://api.iconicwealth.tfnsolutions.us',

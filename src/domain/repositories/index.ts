@@ -4,7 +4,7 @@
  *  - http: calls the backend API — see data/repositories/http
  * The presentation layer never imports data-layer classes directly; it receives these via ServicesContext.
  */
-import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, Bank, ContributionPaymentMethod, InterestBand, InterestCalcRow, InterestRateMode, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, PayoutDestination, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsDashboard, SavingsMonth, SavingsYear, Session, Testimonial, Transaction, WalletEntry, WalletSnapshot, WalletWithdrawal } from '../entities';
+import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, Bank, ContributionPaymentMethod, InterestBand, InterestCalcRow, InterestRateMode, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberListRow, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, PayoutDestination, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsDashboard, SavingsMonth, SavingsYear, Session, Testimonial, Transaction, WalletEntry, WalletSnapshot, WalletWithdrawal } from '../entities';
 import type { RegistrationDetails } from '../rules/registration';
 import type { PlatformSettings } from '../rules/savings';
 
@@ -169,7 +169,20 @@ export interface InterestRulesInput {
   selectedMemberIds: string[];
 }
 
-export interface MemberQuery { tab: 'All' | 'Active' | 'Suspended' | 'NotPaid' | 'Forfeited'; search: string; eligibility?: 'Eligible' | 'Forfeited'; referred?: boolean; joinedYear?: string }
+export interface MemberQuery { tab: 'All' | 'Active' | 'Suspended' | 'NotPaid' | 'Forfeited'; search: string; page?: number; eligibility?: 'Eligible' | 'Forfeited'; referred?: boolean; joinedYear?: string }
+
+/** Pagination metadata returned by the API alongside list responses. */
+export interface PageMeta {
+  current_page: number;
+  per_page: number;
+  last_page: number;
+  total: number;
+}
+
+export interface MemberListPage {
+  data: MemberListRow[];
+  meta: PageMeta;
+}
 
 /** Raw member record returned by GET /admin/members. */
 export type ApiMemberStatus =
@@ -208,12 +221,13 @@ export interface ApiMember {
 
 export interface ApiMemberPage {
   data: ApiMember[];
-  meta: { current_page: number; per_page: number; last_page: number; total: number };
+  meta: PageMeta;
 }
 
 export interface AdminRepository {
   dashboard(year: number): Promise<{ members: number; activeSavers: number; totalSavingsKobo: Kobo; pendingPayments: number; monthlyPaid: { month: string; paid: number; due: number }[]; eligible: number; forfeited: number }>;
-  listMembers(query: MemberQuery): Promise<MemberSummary[]>;
+  /** Paginated rows for the admin members list. Savings figures may be absent on the live API. */
+  listMembers(query: MemberQuery): Promise<MemberListPage>;
   countMembers(): Promise<Record<MemberQuery['tab'], number>>;
   listRegistrations(): Promise<Registration[]>;
   /** ADM-12: lists all members from GET /admin/members with server-side search, status filter, and pagination. */
