@@ -67,4 +67,4 @@ jobs:
           rsync -avz --delete --exclude='.htaccess' \
             -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
             dist/ \
-            tfnsolutions@${{ secrets.SSH_HOST }}:/home/tfnsolutions/iconicwealthhub.tfnsolutions.us/
+            tfnsolutions@${{ secrets.SSH_HOST }}:/home/tfnsolutions/iconicwealth.tfnsolutions.us/

@@ -64,8 +64,6 @@ export class HttpClient {
     const token = this.getToken();
     const url = `${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 
-    console.log("the URL is over here: ", url);
-
     let res: Response;
     try {
       res = await fetch(url, {
