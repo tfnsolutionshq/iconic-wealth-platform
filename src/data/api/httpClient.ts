@@ -73,7 +73,7 @@ export class HttpClient {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: body === undefined ? undefined : JSON.stringify(body),
-        credentials: "include",
+        credentials: "omit",
       });
     } catch {
       throw new ApiError(
