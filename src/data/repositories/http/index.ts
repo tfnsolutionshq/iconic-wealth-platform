@@ -3,7 +3,7 @@
  * agree them in Sprint 0 and keep this file as the single place that knows URLs and payload shapes.
  * Money is exchanged in kobo (integers).
  */
-import type { AdminListItem, AdminRole, AdminUser, AuditEntry, Bank, ContributionPaymentMethod, InterestCalcRow, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, NotificationSettings, PayoutAccount, PayoutBatch, PayoutDestination, ReferralGroup, Registration, ReportKind, ReportResult, SavingsDashboard, SavingsPeriod, SavingsYear, Session, Testimonial, Transaction } from '@/domain/entities';
+import type { AdminListItem, AdminRole, AdminUser, AuditEntry, Bank, ContributionPaymentMethod, InterestCalcRow, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, NotificationSettings, PayoutAccount, PayoutBatch, PayoutDestination, ReferralGroup, Registration, ReportKind, ReportResult, SavingsDashboard, SavingsMonth, SavingsPeriod, SavingsYear, Session, Testimonial, Transaction } from '@/domain/entities';
 import type { PlatformSettings } from '@/domain/rules';
 import { naira } from '@/domain/rules';
 import type { AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, InterestRulesInput, MemberQuery, MemberRepository, NewRegistration, PayoutAccountRepository, RegistrationRepository, RegistrationStarted, SavingsDashboardRepository, SavingsTargetRepository, SettingsRepository, TestimonialRepository, VerifiedContribution, ApiMember, ApiMemberPage, ApiMemberStatus } from '@/domain/repositories';
@@ -270,6 +270,24 @@ export class HttpSavingsTargetRepository implements SavingsTargetRepository {
   }
 }
 
+/** Raw savings month record returned by GET /savings/months. */
+interface ApiSavingsMonth {
+  id: string | null;
+  year: number;
+  month: number;
+  period: string;
+  month_name: string;
+  status: string;
+  status_label: string;
+  target_amount: string | number | null;
+  saved_amount: string | number;
+  remaining_amount: string | number;
+  progress_percentage: number | null;
+  target_met: boolean;
+  contributions_count: number;
+  close_note: string;
+  deadline: string;
+}
 /** Raw period record returned by GET /savings. */
 interface ApiSavingsPeriod {
   year: number;
@@ -282,7 +300,7 @@ interface ApiSavingsPeriod {
 /** Raw dashboard record returned by GET /savings. */
 interface ApiSavingsDashboard {
   active_month: ApiSavingsPeriod | null;
-  next_period: ApiSavingsPeriod;
+  next_period: ApiSavingsPeriod | null;
   summary: {
     year: number;
     saved_this_year: string;
@@ -317,10 +335,30 @@ function mapSavingsPeriod(p: ApiSavingsPeriod): SavingsPeriod {
   };
 }
 
+function mapSavingsMonth(m: ApiSavingsMonth): SavingsMonth {
+  return {
+    id: m.id,
+    year: m.year,
+    month: m.month,
+    period: m.period,
+    monthName: m.month_name,
+    status: m.status,
+    statusLabel: m.status_label,
+    targetAmount: m.target_amount == null ? null : koboFromApi(m.target_amount),
+    savedAmount: koboFromApi(m.saved_amount),
+    remainingAmount: koboFromApi(m.remaining_amount),
+    progressPercentage: m.progress_percentage,
+    targetMet: m.target_met,
+    contributionsCount: m.contributions_count,
+    closeNote: m.close_note,
+    deadline: m.deadline,
+  };
+}
+
 function mapSavingsDashboard(d: ApiSavingsDashboard): SavingsDashboard {
   return {
     activeMonth: d.active_month ? mapSavingsPeriod(d.active_month) : null,
-    nextPeriod: mapSavingsPeriod(d.next_period),
+    nextPeriod: d.next_period ? mapSavingsPeriod(d.next_period) : null,
     summary: {
       year: d.summary.year,
       savedThisYear: koboFromApi(d.summary.saved_this_year),
@@ -355,6 +393,11 @@ export class HttpSavingsDashboardRepository implements SavingsDashboardRepositor
     const data = unwrapData(payload);
     if (!data) throw new Error('Your savings dashboard is unavailable right now.');
     return mapSavingsDashboard(data);
+  }
+  async getMonths(year: number): Promise<SavingsMonth[]> {
+    const payload = await this.http.get<ApiEnvelope<ApiSavingsMonth[]> | ApiSavingsMonth[]>(`/savings/months?year=${year}`);
+    const data = unwrapData(payload);
+    return (data ?? []).map(mapSavingsMonth);
   }
 }
 

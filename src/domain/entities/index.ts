@@ -65,6 +65,25 @@ export interface SavingsYear {
   interestException?: boolean;         // approved by a Super Admin
 }
 
+/** One savings month returned by GET /savings/months. */
+export interface SavingsMonth {
+  id: string | null;
+  year: number;
+  month: number;                       // 1-12 (savings months are 1-11)
+  period: string;                      // e.g. "2026-01"
+  monthName: string;
+  status: string;                      // e.g. "defaulted", "upcoming", "saved", "open"
+  statusLabel: string;
+  targetAmount: Kobo | null;
+  savedAmount: Kobo;
+  remainingAmount: Kobo;
+  progressPercentage: number | null;
+  targetMet: boolean;
+  contributionsCount: number;
+  closeNote: string;
+  deadline: string;                    // ISO date-time
+}
+
 /** One savings period returned by the member dashboard endpoint. */
 export interface SavingsPeriod {
   year: number;
@@ -85,7 +104,7 @@ export interface PayoutJourneyStep {
 /** The signed-in member's dashboard from GET /savings. */
 export interface SavingsDashboard {
   activeMonth: SavingsPeriod | null;
-  nextPeriod: SavingsPeriod;
+  nextPeriod: SavingsPeriod | null;
   summary: {
     year: number;
     savedThisYear: Kobo;

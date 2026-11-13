@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chargeBreakdown, naira, validateDetails, isStrongPassword, mapRegistrationErrors, mapLoginErrors, deadlineFor, DEFAULT_SETTINGS as S, planAllocation, openMonth, monthState, canLock, autoLocksAfter, targetStreak, savingsStartFor, interestOnTrack, payoutProjection } from './index';
+import { chargeBreakdown, naira, validateDetails, isStrongPassword, mapRegistrationErrors, mapLoginErrors, deadlineFor, DEFAULT_SETTINGS as S, planAllocation, openMonth, monthState, canLock, autoLocksAfter, targetStreak, savingsStartFor, interestOnTrack, payoutProjection, targetPeriodFor } from './index';
 import type { SavingsYear, Transaction } from '../entities';
 
 const tx = (month: number, amount: number, i = 0): Transaction => ({ id: 'T' + month + i, reference: 'R' + month + i, memberId: 'M', memberName: 'M', kind: 'Contribution', year: 2026,
@@ -41,6 +41,13 @@ describe('mid-year joiners', () => {
 
 describe('monthly target', () => {
   it('7-month streak (Feb–Aug met, Jan missed target)', () => expect(targetStreak(year(), funmi, oct2, S)).toBe(7));
+  it('uses the current calendar month for a target', () => {
+    expect(targetPeriodFor(new Date(2026, 10, 8))).toEqual({ year: 2026, month: 11, monthName: 'November' });
+    expect(targetPeriodFor(new Date(2027, 0, 3))).toEqual({ year: 2027, month: 1, monthName: 'January' });
+  });
+  it('applies a December target to January of the next year', () => {
+    expect(targetPeriodFor(new Date(2026, 11, 18))).toEqual({ year: 2027, month: 1, monthName: 'January' });
+  });
 });
 
 describe('year-end payout projection', () => {

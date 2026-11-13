@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Member, SavingsDashboard, Transaction } from '@/domain/entities';
+import type { Member, SavingsDashboard, SavingsMonth, Transaction } from '@/domain/entities';
 import { useServices } from '../contexts/ServicesContext';
 
 export interface SavingsDashboardData {
   /** The signed-in member's dashboard from GET /savings. */
   dashboard: SavingsDashboard;
+  /** The status of every savings month for the dashboard's year. */
+  months: SavingsMonth[];
   /** The three most recent transactions, best-effort: an empty list when unavailable. */
   recent: Transaction[];
   now: Date;
@@ -26,14 +28,15 @@ export function useSavingsDashboard(member: Member | null) {
     setLoading(true);
     setError(null);
     try {
-      const [dashboard, transactions] = await Promise.all([
-        repos.savingsDashboard.get(member.id),
+      const dashboard = await repos.savingsDashboard.get(member.id);
+      const [transactions, months] = await Promise.all([
         repos.member.listTransactions(member.id).catch(() => [] as Transaction[]),
+        repos.savingsDashboard.getMonths(dashboard.summary.year).catch(() => [] as SavingsMonth[]),
       ]);
       const recent = [...transactions]
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .slice(0, 3);
-      setData({ dashboard, recent, now: clock.now() });
+      setData({ dashboard, months, recent, now: clock.now() });
     } catch (e) {
       // Keep the last good dashboard; surface the failure so the page can offer
       // a retry instead of showing “Loading…” forever.

@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { CalendarClock, Check, List, Lock, Plus, X } from "lucide-react";
+import { CalendarClock, Check, List, Lock, Plus, Users, X } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useSavingsDashboard } from "../../../hooks/useSavingsDashboard";
 import { Button, ButtonLink, Card, Pill, cn } from "../../../design-system";
-import { formatNaira, formatShortDate } from "@/domain/rules";
+import { formatNaira, formatShortDate, targetPeriodFor } from "@/domain/rules";
+import { SavingsTargetModal } from "../components/SavingsTargetModal";
 import { TxRow } from "../components/TransactionParts";
 import { paths } from "../../../routes/paths";
 import { env } from "@/app/config/env";
@@ -49,6 +51,7 @@ export function MemberHomePage() {
   const { repos } = useServices();
   const member = session?.kind === "member" ? session.member : null;
   const { data, error, reload } = useSavingsDashboard(member);
+  const [targetOpen, setTargetOpen] = useState(false);
   if (!member) return <Navigate to={paths.login} replace />;
   if (error && !data)
     return (
@@ -60,13 +63,20 @@ export function MemberHomePage() {
     );
   if (!data) return <p className="text-mute">Loading…</p>;
 
-  const { dashboard, recent, now } = data;
-  const { summary, nextPeriod, activeMonth, payoutJourney, settings } =
-    dashboard;
+  const { dashboard, recent, now, months } = data;
+  const { summary, activeMonth, payoutJourney, settings } = dashboard;
   const hasStarted = summary.totalMonths > 0 || summary.totalSaved > 0;
-  const period = activeMonth ?? nextPeriod;
-  const periodDate = parseDate(period.deadline);
   const payoutDate = parseDate(payoutJourney.payoutDate);
+  // A target always belongs to the calendar month the member is in now.
+  const targetPeriod = targetPeriodFor(now);
+  const currentMonth = months.find(
+    (m) => m.year === targetPeriod.year && m.month === targetPeriod.month,
+  );
+  const target = currentMonth?.targetAmount ?? null;
+  const targetSaved = currentMonth?.savedAmount ?? 0;
+  const targetPct = target
+    ? Math.min(100, Math.round((targetSaved / target) * 100))
+    : 0;
 
   return (
     <div className="mx-auto flex flex-col gap-4 max-w-245">
@@ -85,7 +95,7 @@ export function MemberHomePage() {
         </div>
         <ButtonLink
           to={paths.member.contribute}
-          size="sm"
+          size="md"
           variant="primary"
           icon={<Plus size={18} />}
           className="hidden md:inline-flex"
@@ -96,6 +106,7 @@ export function MemberHomePage() {
 
       <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
         <Card tone="night" className="p-4.5 gap-4 rounded-card">
+          {/* Header row */}
           <div className="flex items-center justify-between gap-2">
             <span className="text-[13px] font-bold text-white/70">
               Saved in {summary.year}
@@ -118,26 +129,75 @@ export function MemberHomePage() {
                   : "Interest: forfeited"}
             </span>
           </div>
-          <div className="text-[40px] font-extrabold tracking-tight tabular-nums">
+
+          {/* Amount saved */}
+          <div className="text-[40px] font-extrabold tracking-tight tabular-nums my-2">
             {formatNaira(summary.savedThisYear)}
           </div>
-          <div className="flex gap-1">
-            {MONTH_SHORT.map((letter, i) => (
-              <span
-                key={i}
-                className={cn(
-                  "flex size-5 items-center justify-center rounded-md text-[10px] font-bold",
-                  activeMonth?.month === i + 1
-                    ? "bg-brand text-white"
-                    : "bg-soft text-mute",
-                )}
-                title={MONTH_NAMES[i]}
-              >
-                {letter}
-              </span>
-            ))}
+
+          {/* Month tiles */}
+          <div className="grid grid-cols-12 gap-1">
+            {MONTH_SHORT.map((letter, i) => {
+              const month = months[i];
+              const isActiveMonth = activeMonth?.month === i + 1;
+              const isDefaulted =
+                month?.status === "defaulted" || month?.status === "missed";
+              const isSaved =
+                month?.status === "saved" || month?.status === "completed";
+              const isDecember = i === 11;
+
+              return (
+                <div
+                  key={i}
+                  className="col-span-1 flex min-w-0 flex-col items-center gap-2"
+                >
+                  {/* Tile */}
+                  <div
+                    className={cn(
+                      "aspect-13/9 w-full rounded-lg flex items-center justify-center transition-colors",
+                      isDecember
+                        ? "bg-[#4a2f45]"
+                        : isSaved
+                          ? "bg-brand"
+                          : isDefaulted
+                            ? "bg-red-500"
+                            : isActiveMonth
+                              ? "bg-transparent"
+                              : "bg-white/10",
+                      // Current month: thick white border (not on December)
+                      isActiveMonth && !isDecember && "border-2 border-white",
+                    )}
+                  >
+                    {isDecember ? (
+                      <span className="text-sm font-bold text-[#f5c27a]">
+                        ₦
+                      </span>
+                    ) : isSaved ? (
+                      <Check size={14} strokeWidth={3} className="text-white" />
+                    ) : isDefaulted ? (
+                      <X size={14} strokeWidth={3} className="text-white" />
+                    ) : null}
+                  </div>
+
+                  {/* Month letter below the tile */}
+                  <span
+                    className={cn(
+                      "text-[10.5px] font-bold leading-none",
+                      isDefaulted && !isDecember
+                        ? "text-red-400"
+                        : "text-white/60",
+                    )}
+                    title={MONTH_NAMES[i]}
+                  >
+                    {letter}
+                  </span>
+                </div>
+              );
+            })}
           </div>
-          <div className="flex items-center justify-between gap-2 text-[13px] font-semibold text-white/75">
+
+          {/* Footer row */}
+          <div className="flex items-center justify-between gap-2 text-[13px] font-semibold text-white/75 mt-5">
             <span>
               {summary.totalMonths} of {TOTAL_MONTHS_IN_YEAR} months saved
             </span>
@@ -155,7 +215,8 @@ export function MemberHomePage() {
                 <div className="flex-1 flex-col">
                   <b className="text-ink">{activeMonth.monthName} is open</b>
                   <span className="text-[13px] font-semibold text-mute">
-                    Closes {formatShortDate(periodDate)}
+                    Closes{" "}
+                    {formatShortDate(parseDate(activeMonth.deadline))}
                   </span>
                 </div>
               </div>
@@ -202,34 +263,98 @@ export function MemberHomePage() {
       </div>
 
       <div className="grid gap-3 lg:grid-cols-3">
-        <Card tone="soft" className="rounded-card">
-          <span className="text-[13px] font-semibold text-mute">
-            Monthly target
-          </span>
-          <b className="text-[20px] font-extrabold">Not set</b>
-        </Card>
+        <button
+          type="button"
+          className="block h-full text-left"
+          aria-haspopup="dialog"
+          aria-label={
+            target
+              ? `Change ${targetPeriod.monthName} savings target`
+              : `Set a savings target for ${targetPeriod.monthName}`
+          }
+          onClick={() => setTargetOpen(true)}
+        >
+          <Card
+            tone="soft"
+            className="h-full rounded-card border border-gray-200 bg-white"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-[13px] font-semibold text-mute">
+                {target ? `${targetPeriod.monthName} target` : "Monthly target"}
+              </p>
+              {target ? (
+                targetSaved >= target ? (
+                  <Pill tone="ok">Met</Pill>
+                ) : (
+                  <Pill tone="gold" icon={false}>
+                    {formatNaira(target - targetSaved)} to go
+                  </Pill>
+                )
+              ) : null}
+            </div>
+            <b className="text-[20px] font-extrabold">
+              {target ? formatNaira(target) : "Not set"}
+            </b>
+            {target ? (
+              <>
+                <div
+                  className="mt-2 h-1.5 overflow-hidden rounded-pill bg-soft"
+                  role="progressbar"
+                  aria-valuenow={targetPct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={`Progress toward ${targetPeriod.monthName} target`}
+                >
+                  <i
+                    className={cn(
+                      "block h-full rounded-pill transition-[width] duration-700",
+                      targetSaved >= target
+                        ? "bg-ok"
+                        : "bg-linear-to-r from-brand to-gold",
+                    )}
+                    style={{ width: `${targetPct}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-[12px] font-semibold text-mute">
+                  {formatNaira(targetSaved)} saved · {targetPct}%
+                </p>
+                <p className="mt-2 text-[12px] font-bold text-brand">
+                  Change {targetPeriod.monthName} target
+                </p>
+              </>
+            ) : (
+              <p className="mt-1 text-[12px] font-bold text-brand">
+                Set a target for {targetPeriod.monthName}
+              </p>
+            )}
+          </Card>
+        </button>
         <Link to={paths.member.savings} className="block">
-          <Card tone="soft" className="rounded-card">
-            <span className="text-[13px] font-semibold text-mute">
-              Target streak
-            </span>
+          <Card
+            tone="soft"
+            className="rounded-card border border-gray-200 bg-white"
+          >
+            <p className="text-[13px] font-semibold text-mute">Target streak</p>
             <b className="text-[20px] font-extrabold">
               {summary.streak} month{summary.streak === 1 ? "" : "s"}
             </b>
-            <span className="text-[12px] font-semibold text-mute">
+            <p className="text-[12px] font-semibold text-mute">
               Met in {summary.monthsTargetMet} of {TOTAL_MONTHS_IN_YEAR} months
-            </span>
+            </p>
           </Card>
         </Link>
         <Link to={paths.member.payout} className="block">
-          <Card tone="soft" className="rounded-card">
-            <span className="text-[13px] font-semibold text-mute">
+          <Card
+            tone="soft"
+            className="rounded-card border border-gray-200 bg-white"
+          >
+            <p className="text-[13px] font-semibold text-mute">
               Year-end payout
-            </span>
+            </p>
             <b className="text-[20px] font-extrabold">December</b>
-            <span className="text-[12px] font-semibold text-mute">
+            <p className="text-[12px] font-semibold text-mute">
               On or before {formatShortDate(payoutDate)}
-            </span>
+            </p>
           </Card>
         </Link>
       </div>
@@ -289,7 +414,7 @@ export function MemberHomePage() {
             See all
           </Link>
         </div>
-        {recent.length ? (
+        {recent?.length ? (
           recent.map((t) => <TxRow key={t.id} t={t} />)
         ) : (
           <div className="flex flex-col items-center gap-2 py-12 text-center text-mute">
@@ -299,6 +424,17 @@ export function MemberHomePage() {
           </div>
         )}
       </Card>
+
+      <SavingsTargetModal
+        open={targetOpen}
+        onClose={() => setTargetOpen(false)}
+        memberId={member.id}
+        year={targetPeriod.year}
+        monthName={targetPeriod.monthName}
+        target={target}
+        minimum={settings.minimumPerPayment}
+        onSaved={() => void reload()}
+      />
     </div>
   );
 }

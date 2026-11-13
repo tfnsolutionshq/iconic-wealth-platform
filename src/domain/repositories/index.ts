@@ -4,7 +4,7 @@
  *  - http: calls the backend API — see data/repositories/http
  * The presentation layer never imports data-layer classes directly; it receives these via ServicesContext.
  */
-import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, Bank, ContributionPaymentMethod, InterestBand, InterestCalcRow, InterestRateMode, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, PayoutDestination, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsDashboard, SavingsYear, Session, Testimonial, Transaction, WalletEntry, WalletSnapshot, WalletWithdrawal } from '../entities';
+import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, Bank, ContributionPaymentMethod, InterestBand, InterestCalcRow, InterestRateMode, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, PayoutDestination, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsDashboard, SavingsMonth, SavingsYear, Session, Testimonial, Transaction, WalletEntry, WalletSnapshot, WalletWithdrawal } from '../entities';
 import type { RegistrationDetails } from '../rules/registration';
 import type { PlatformSettings } from '../rules/savings';
 
@@ -92,6 +92,8 @@ export interface SavingsTargetRepository {
 export interface SavingsDashboardRepository {
   /** GET /savings — the dashboard for the signed-in member. */
   get(memberId?: string): Promise<SavingsDashboard>;
+  /** GET /savings/months?year= — default status of all savings months for a year. */
+  getMonths(year: number): Promise<SavingsMonth[]>;
 }
 
 export interface MemberRepository {

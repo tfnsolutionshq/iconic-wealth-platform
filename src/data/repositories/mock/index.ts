@@ -1,6 +1,6 @@
-import type { AdminListItem, AdminRole, AdminUser, Allocation, AuditEntry, Bank, ContributionPaymentMethod, InterestBand, InterestCalcRow, InterestWorkflow, Kobo, MonthIndex, NotificationSettings, PayoutBatch, PayoutDestination, Registration, ReportKind, ReportResult, SavingsDashboard, Session, Testimonial, Transaction, WalletEntry, WalletWithdrawal } from '@/domain/entities';
+import type { AdminListItem, AdminRole, AdminUser, Allocation, AuditEntry, Bank, ContributionPaymentMethod, InterestBand, InterestCalcRow, InterestWorkflow, Kobo, MonthIndex, NotificationSettings, PayoutBatch, PayoutDestination, Registration, ReportKind, ReportResult, SavingsDashboard, SavingsMonth, Session, Testimonial, Transaction, WalletEntry, WalletWithdrawal } from '@/domain/entities';
 import type { AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, MemberQuery, MemberRepository, NewRegistration, InterestRulesInput, PayoutAccountRepository, RegistrationRepository, RegistrationStarted, SavingsDashboardRepository, SavingsTargetRepository, SettingsRepository, TestimonialRepository, VerifiedContribution, WalletRepository, LoginResult } from '@/domain/repositories';
-import { DEFAULT_SETTINGS, MONTHS, autoLocksAfter, canLock, chargeBreakdown, deadlineFor, formatNaira, minimumFor, monthState, monthsSaved, naira, openMonth, payoutProjection, planAllocation, savedThisYear, targetHistory, targetStreak, walletBalances, type PlatformSettings, type RegistrationDetails } from '@/domain/rules';
+import { DEFAULT_SETTINGS, MONTHS, MONTHS_SHORT, autoLocksAfter, canLock, chargeBreakdown, deadlineFor, formatNaira, formatShortDate, minimumFor, monthState, monthTotal, monthPayments, monthsSaved, naira, openMonth, payoutProjection, planAllocation, savedThisYear, targetHistory, targetStreak, walletBalances, type PlatformSettings, type RegistrationDetails } from '@/domain/rules';
 import type { Clock } from '@/domain/services/clock';
 import { adminUsers, auditEntries, interestYears, memberSummaries, members, payoutBatches, registrations, savingsYears, testimonials, transactions, walletEntries, walletWithdrawals } from '@/data/mock/seed';
 
@@ -227,6 +227,51 @@ export class MockSavingsDashboardRepository implements SavingsDashboardRepositor
         platformChargePerPayment: DEFAULT_SETTINGS.platformCharge,
       },
     };
+  }
+  async getMonths(year?: number): Promise<SavingsMonth[]> {
+    const y = year ?? this.clock.now().getFullYear();
+    const now = this.clock.now();
+    const member = members[0];
+    const savingsYear = savingsYears.find(sy => sy.memberId === member.id && sy.year === y) ?? {
+      memberId: member.id,
+      year: y,
+      startMonth: 0 as MonthIndex,
+      joinMonth: null,
+      target: 0,
+      targets: {},
+      locks: {},
+    };
+    const txs = transactions.filter(t => t.memberId === member.id);
+    const out: SavingsMonth[] = [];
+    for (let i = 0; i <= DEFAULT_SETTINGS.lastSavingsMonth; i++) {
+      const st = monthState(savingsYear, txs, i, now, DEFAULT_SETTINGS);
+      const status =
+        st === 'saved' ? 'saved' :
+        st === 'missed' ? 'defaulted' :
+        st === 'open' || st === 'catchup' ? 'open' :
+        'upcoming';
+      const saved = monthTotal(savingsYear, txs, i);
+      const min = minimumFor(DEFAULT_SETTINGS, y);
+      out.push({
+        id: null,
+        year: y,
+        month: i + 1,
+        period: `${y}-${String(i + 1).padStart(2, '0')}`,
+        monthName: MONTHS[i],
+        status,
+        statusLabel: status.charAt(0).toUpperCase() + status.slice(1),
+        targetAmount: null,
+        savedAmount: saved,
+        remainingAmount: 0 as Kobo,
+        progressPercentage: null,
+        targetMet: saved >= min,
+        contributionsCount: monthPayments(savingsYear, txs, i).length,
+        closeNote: `Closed automatically after ${formatShortDate(deadlineFor(y, i as MonthIndex))}`,
+        deadline: deadlineFor(y, i as MonthIndex).toISOString(),
+      });
+    }
+    await delay(null, 50);
+    return out;
   }
 }
 
