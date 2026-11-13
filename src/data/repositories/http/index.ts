@@ -51,6 +51,7 @@ function mapAdminMemberRow(raw: ApiMember | MemberListRow): MemberListRow {
     id: m.member_id || m.id,
     name,
     status: m.status === 'active' ? 'Active' : 'Suspended',
+    accountStatus: m.status,
     joinedOn: m.created_at?.slice(0, 10) ?? '',
     referredBy: m.referred_by ?? undefined,
     ...(extras.targetKobo !== undefined ? { targetKobo: extras.targetKobo } : {}),
@@ -520,7 +521,15 @@ export class HttpAdminRepository implements AdminRepository {
     };
   }
   async listMembers(q: MemberQuery): Promise<MemberListPage> {
-    const p = new URLSearchParams({ tab: q.tab, search: q.search, ...(q.eligibility ? { eligibility: q.eligibility } : {}), ...(q.joinedYear ? { joinedYear: q.joinedYear } : {}), ...(q.referred !== undefined ? { referred: String(q.referred) } : {}) });
+    const p = new URLSearchParams({
+      tab: q.tab,
+      search: q.search,
+      ...(q.status ? { status: q.status } : {}),
+      ...(q.eligibility ? { eligibility: q.eligibility } : {}),
+      ...(q.joinedYear ? { joinedYear: q.joinedYear } : {}),
+      ...(q.baseline ? { baseline: q.baseline } : {}),
+      ...(q.referred !== undefined ? { referred: String(q.referred) } : {}),
+    });
     if (q.page && q.page > 1) p.set('page', String(q.page));
     const payload = await this.http.get<ApiEnvelope<(ApiMember | MemberListRow)[]> | (ApiMember | MemberListRow)[]>(`/admin/members?${p}`);
     const data = unwrapData(payload) ?? [];

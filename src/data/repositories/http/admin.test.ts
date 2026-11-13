@@ -61,6 +61,7 @@ describe('HttpAdminRepository', () => {
           id: 'IWH-00001',
           name: 'Ada Obi',
           status: 'Active',
+          accountStatus: 'active',
           joinedOn: '2026-01-02',
           referredBy: undefined,
         },
@@ -80,6 +81,21 @@ describe('HttpAdminRepository', () => {
 
     expect(url).toContain('page=2');
     expect(page.meta.current_page).toBe(2);
+  });
+
+  it('sends the status and baseline filters', async () => {
+    const fetchMock = stubFetch(200, envelope([], { current_page: 1, per_page: 20, last_page: 1, total: 0 }));
+
+    await repo().listMembers({
+      tab: 'All',
+      search: '',
+      status: 'pending_approval',
+      baseline: 'above-50000',
+    });
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+
+    expect(url).toContain('status=pending_approval');
+    expect(url).toContain('baseline=above-50000');
   });
 
   it('unwraps the member counts', async () => {
