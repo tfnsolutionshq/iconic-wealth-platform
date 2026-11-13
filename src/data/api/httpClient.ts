@@ -15,27 +15,31 @@ export class ApiError extends Error {
     readonly payload?: unknown,
   ) {
     super(message);
-    this.name = 'ApiError';
+    this.name = "ApiError";
   }
 }
 
 function normalizeErrors(errors: unknown): Record<string, string[]> {
-  if (!errors || typeof errors !== 'object') return {};
+  if (!errors || typeof errors !== "object") return {};
   const out: Record<string, string[]> = {};
-  for (const [field, value] of Object.entries(errors as Record<string, unknown>)) {
-    if (typeof value === 'string') out[field] = [value];
-    else if (Array.isArray(value)) out[field] = value.map(String).filter(Boolean);
+  for (const [field, value] of Object.entries(
+    errors as Record<string, unknown>,
+  )) {
+    if (typeof value === "string") out[field] = [value];
+    else if (Array.isArray(value))
+      out[field] = value.map(String).filter(Boolean);
   }
   return out;
 }
 
 function fallbackMessage(status: number): string {
-  if (status === 401) return 'Your session has expired. Please log in again.';
-  if (status >= 500) return 'The server is unavailable right now. Please try again.';
+  if (status === 401) return "Your session has expired. Please log in again.";
+  if (status >= 500)
+    return "The server is unavailable right now. Please try again.";
   return `Request failed (${status}).`;
 }
 
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /**
  * Thin fetch wrapper. The configured base URL is applied here once, so repositories only ever
@@ -45,28 +49,37 @@ type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 export class HttpClient {
   private readonly baseUrl: string;
 
-  constructor(baseUrl: string, private readonly getToken: () => string | null) {
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
+  constructor(
+    baseUrl: string,
+    private readonly getToken: () => string | null,
+  ) {
+    this.baseUrl = baseUrl.replace(/\/+$/, "");
   }
 
-  async request<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
+  async request<T>(
+    method: HttpMethod,
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
     const token = this.getToken();
-    const url = `${this.baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+    const url = `${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+
+    console.log("the URL is over here: ", url);
 
     let res: Response;
     try {
       res = await fetch(url, {
         method,
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: body === undefined ? undefined : JSON.stringify(body),
-        credentials: 'include',
+        credentials: "include",
       });
     } catch {
       throw new ApiError(
-        'We couldn’t reach the server. Check your connection and try again.',
+        "We couldn’t reach the server. Check your connection and try again.",
         0,
       );
     }
@@ -82,7 +95,10 @@ export class HttpClient {
     }
 
     if (!res.ok) {
-      const envelope = payload as Partial<ApiEnvelope<unknown>> | null | undefined;
+      const envelope = payload as
+        | Partial<ApiEnvelope<unknown>>
+        | null
+        | undefined;
       throw new ApiError(
         envelope?.message || fallbackMessage(res.status),
         res.status,
@@ -94,38 +110,40 @@ export class HttpClient {
     // A 200 response can still report a failed operation.
     if (
       payload &&
-      typeof payload === 'object' &&
+      typeof payload === "object" &&
       (payload as { success?: unknown }).success === false
     ) {
       const envelope = payload as ApiEnvelope<unknown>;
       throw new ApiError(
-        envelope.message || 'The request could not be completed.',
+        envelope.message || "The request could not be completed.",
         res.status,
         normalizeErrors(envelope.errors),
         payload,
       );
     }
 
-    return (res.status === 204 || payload === undefined ? undefined : payload) as T;
+    return (
+      res.status === 204 || payload === undefined ? undefined : payload
+    ) as T;
   }
 
   get<T>(path: string) {
-    return this.request<T>('GET', path);
+    return this.request<T>("GET", path);
   }
 
   post<T>(path: string, body?: unknown) {
-    return this.request<T>('POST', path, body);
+    return this.request<T>("POST", path, body);
   }
 
   put<T>(path: string, body?: unknown) {
-    return this.request<T>('PUT', path, body);
+    return this.request<T>("PUT", path, body);
   }
 
   patch<T>(path: string, body?: unknown) {
-    return this.request<T>('PATCH', path, body);
+    return this.request<T>("PATCH", path, body);
   }
 
   delete<T>(path: string) {
-    return this.request<T>('DELETE', path);
+    return this.request<T>("DELETE", path);
   }
 }
