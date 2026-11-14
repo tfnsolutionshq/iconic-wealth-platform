@@ -37,6 +37,10 @@ export class ContributeUseCase {
       settled = await this.contributions.payFromWallet(memberId, year.year, amount);
     } else {
       const intent = await this.contributions.initiate(memberId, year.year, amount, method);
+      if (!intent.accessCode && intent.authorizationUrl && typeof window !== 'undefined') {
+        window.location.href = intent.authorizationUrl;
+        return { outcome: 'pending', targetMetMonth: null, communityUnlocked: false, method };
+      }
       const outcome = await this.gateway.checkout(intent);
       if (outcome === 'closed') return { outcome: 'pending', targetMetMonth: null, communityUnlocked: false, method };
       settled = await this.contributions.verify(intent.reference);

@@ -28,8 +28,7 @@ export function createContainer(): Container {
   const clock = systemClock;
   const demoGateway =
     env.demoMode || !env.paystackPublicKey ? new DemoGateway() : null;
-  const gateway =
-    demoGateway ?? new PaystackInlineGateway(env.paystackPublicKey);
+  const gateway = new PaystackInlineGateway(env.paystackPublicKey, demoGateway);
 
   const readStoredToken = (): string | null => {
     if (typeof localStorage !== "undefined") {

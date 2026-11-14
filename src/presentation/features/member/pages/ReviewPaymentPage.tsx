@@ -60,7 +60,7 @@ export function ReviewPaymentPage() {
   const member = session?.kind === "member" ? session.member : null;
   const { data } = useSavings(member);
   const [busy, setBusy] = useState(false);
-  const [method, setMethod] = useState<ContributionPaymentMethod>("Bank Account");
+  const [method, setMethod] = useState<ContributionPaymentMethod>("Online");
   const [wallet, setWallet] = useState<WalletSnapshot | null>(null);
   const [bankDeadline, setBankDeadline] = useState(
     () => Date.now() + BANK_TRANSFER_WINDOW_MS,
@@ -140,23 +140,30 @@ export function ReviewPaymentPage() {
   };
   const pay = async () => {
     if (!canPay) return;
-    if (bankExpired) {
-      startNewWindow();
-      return;
-    }
     setBusy(true);
     try {
-      const r = await new ContributeUseCase(
-        repos.contribution,
-        repos.gateway,
-      ).pay(member.id, year, txs, draft.amount!, now, settings, method);
-      if (r.communityUnlocked)
-        updateMember({ ...member, community: "Eligible" });
-      draft.setResult(r);
-      navigate(paths.member.result);
+      const intent = await repos.contribution.initiate(
+        member.id,
+        year.year,
+        draft.amount!,
+        method,
+      );
+
+      if (!intent.accessCode && intent.authorizationUrl) {
+        window.location.href = intent.authorizationUrl;
+        return;
+      }
+
+      const outcome = await repos.gateway.checkout(intent);
+      if (outcome === "closed") {
+        setBusy(false);
+        return;
+      }
+
+      draft.setResult(null);
+      navigate(`${paths.member.result}?reference=${encodeURIComponent(intent.reference)}`);
     } catch (e) {
       toast((e as Error).message);
-    } finally {
       setBusy(false);
     }
   };
@@ -208,43 +215,43 @@ export function ReviewPaymentPage() {
           <button
             type="button"
             role="radio"
-            aria-checked={method === "Bank Account"}
-            onClick={chooseBank}
-            className={methodTile(method === "Bank Account")}
+            disabled
+            aria-disabled="true"
+            aria-checked={false}
+            className="flex flex-col gap-2 rounded-card border border-line bg-soft/40 p-3.5 text-left opacity-60 cursor-not-allowed"
           >
-            <span className={methodIcon(method === "Bank Account")}>
-              <Landmark size={20} />
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-input bg-soft text-mute">
+                <Landmark size={20} />
+              </span>
+              <Pill tone="mute">Coming soon</Pill>
+            </div>
             <span className="flex min-w-0 flex-col gap-0.5">
-              <b className="text-sm">Bank Account</b>
+              <b className="text-sm text-mute">Bank Account</b>
               <span className="text-[12px] leading-snug font-semibold text-mute">
-                Transfer to our account. No charge.
+                Direct transfer coming soon.
               </span>
             </span>
           </button>
           <button
             type="button"
             role="radio"
-            aria-checked={method === "Wallet"}
-            onClick={() => setMethod("Wallet")}
-            className={methodTile(method === "Wallet")}
+            disabled
+            aria-disabled="true"
+            aria-checked={false}
+            className="flex flex-col gap-2 rounded-card border border-line bg-soft/40 p-3.5 text-left opacity-60 cursor-not-allowed"
           >
-            <span className={methodIcon(method === "Wallet")}>
-              <Wallet size={20} />
-            </span>
-            <span className="flex min-w-0 flex-col gap-0.5">
-              <b className="text-sm">Wallet</b>
-              <span className="text-[12px] leading-snug font-semibold text-mute">
-                {wallet
-                  ? `${formatNaira(wallet.availableKobo)} available. No charge.`
-                  : "Loading your balance…"}
+            <div className="flex items-center justify-between">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-input bg-soft text-mute">
+                <Wallet size={20} />
               </span>
-              {method === "Wallet" && wallet && walletShortfall > 0 && (
-                <span className="flex items-center gap-1 text-[12px] font-bold text-fail">
-                  <TriangleAlert size={13} />
-                  {formatNaira(walletShortfall)} short.
-                </span>
-              )}
+              <Pill tone="mute">Coming soon</Pill>
+            </div>
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <b className="text-sm text-mute">Wallet</b>
+              <span className="text-[12px] leading-snug font-semibold text-mute">
+                Wallet payment coming soon.
+              </span>
             </span>
           </button>
           <button
@@ -254,13 +261,16 @@ export function ReviewPaymentPage() {
             onClick={() => setMethod("Online")}
             className={methodTile(method === "Online")}
           >
-            <span className={methodIcon(method === "Online")}>
-              <CreditCard size={20} />
-            </span>
+            <div className="flex items-center justify-between">
+              <span className={methodIcon(method === "Online")}>
+                <CreditCard size={20} />
+              </span>
+              <Pill tone="ok">Active</Pill>
+            </div>
             <span className="flex min-w-0 flex-col gap-0.5">
-              <b className="text-sm">Online</b>
+              <b className="text-sm">Online (Paystack)</b>
               <span className="text-[12px] leading-snug font-semibold text-mute">
-                Paystack checkout. Includes {formatNaira(settings.platformCharge)}.
+                Card, bank, or USSD payment.
               </span>
             </span>
           </button>
@@ -397,22 +407,12 @@ export function ReviewPaymentPage() {
             <Lock size={18} />
           )
         }
-        disabled={!canPay}
+        disabled={!canPay || busy}
         onClick={pay}
       >
         {busy
-          ? method === "Bank Account"
-            ? "Confirming payment…"
-            : method === "Wallet"
-              ? "Paying from wallet…"
-              : "Opening Paystack…"
-          : method === "Bank Account"
-            ? bankExpired
-              ? `Start a new ${BANK_WINDOW_MINUTES}-minute window`
-              : `I have paid ${formatNaira(b.total)}`
-            : method === "Wallet"
-              ? `Pay ${formatNaira(b.total)} from wallet`
-              : `Pay ${formatNaira(b.total)} with Paystack`}
+          ? "Redirecting to Paystack…"
+          : `Pay ${formatNaira(draft.amount)} with Paystack`}
       </Button>
       <ButtonLink to={paths.member.contribute} variant="outline" full>
         Change amount
