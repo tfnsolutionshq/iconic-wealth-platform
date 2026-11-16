@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { Clock, Download, Search } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Download,
+  LoaderCircle,
+  Search,
+} from "lucide-react";
 import type { Transaction } from "@/domain/entities";
+import type {
+  TransactionPageMeta,
+  TransactionQuery,
+} from "@/domain/repositories";
 import { MONTHS, formatNaira } from "@/domain/rules";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
@@ -13,6 +24,13 @@ const STATUS_TONE = { Successful: "ok", Pending: "pending", Failed: "fail", Proc
 type Tab = "All" | "Successful" | "Pending" | "Failed" | "Late";
 type Kind = "All" | "Contribution" | "Payout";
 type Range = "all" | "today" | "7" | "30";
+interface QueryState {
+  tab: Tab;
+  kind: Kind;
+  range: Range;
+  search: string;
+  page: number;
+}
 
 const fmtDateTime = (iso: string) => {
   const d = new Date(iso);
@@ -42,31 +60,82 @@ export function AdminTransactionsPage() {
   const toast = useToast();
   const { session } = useAuth();
   const now = useMemo(() => clock.now(), [clock]);
-  const [all, setAll] = useState<Transaction[]>([]);
-  const [tab, setTab] = useState<Tab>("All");
-  const [kind, setKind] = useState<Kind>("All");
-  const [range, setRange] = useState<Range>("all");
-  const [search, setSearch] = useState("");
+  const [q, setQ] = useState<QueryState>({
+    tab: "All",
+    kind: "All",
+    range: "all",
+    search: "",
+    page: 1,
+  });
+  const [rows, setRows] = useState<Transaction[]>([]);
+  const [meta, setMeta] = useState<TransactionPageMeta>({
+    current_page: 1,
+    per_page: 20,
+    last_page: 1,
+    total: 0,
+    counts: { all: 0, successful: 0, pending: 0, failed: 0, late: 0 },
+  });
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<Transaction | null>(null);
 
   useEffect(() => {
-    repos.admin.listTransactions().then(setAll);
-  }, [repos]);
+    let live = true;
+    setLoading(true);
+    const query: TransactionQuery = {
+      page: q.page,
+      status: q.tab,
+      kind: q.kind,
+      range: q.range,
+      search: q.search,
+    };
+    repos.admin
+      .listTransactions(query)
+      .then((page) => {
+        if (!live) return;
+        setRows(page.data);
+        setMeta(page.meta);
+      })
+      .catch((error) => {
+        if (live) toast((error as Error).message);
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [repos, q, toast]);
+
+  /** Any filter change starts again from the first page. */
+  const updateQuery = (patch: Partial<QueryState>) =>
+    setQ((prev) => ({ ...prev, ...patch, page: 1 }));
 
   const daysAgo = (iso: string) => (now.getTime() - new Date(iso).getTime()) / 86_400_000;
   const list = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return all.filter(
+    const term = q.search.trim().toLowerCase();
+    return rows.filter(
       (t) =>
-        (tab === "All" || (tab === "Late" ? t.late : t.status === tab)) &&
-        (kind === "All" || t.kind === kind) &&
-        (range === "all" || (range === "today" ? daysAgo(t.createdAt) < 1 : daysAgo(t.createdAt) < Number(range))) &&
-        (!q || `${t.memberName} ${t.memberId} ${t.reference} ${t.gatewayReference ?? ""} ${Math.round(t.amountKobo / 100)}`.toLowerCase().includes(q)),
+        (q.tab === "All" || (q.tab === "Late" ? t.late : t.status === q.tab)) &&
+        (q.kind === "All" || t.kind === q.kind) &&
+        (q.range === "all" || (q.range === "today" ? daysAgo(t.createdAt) < 1 : daysAgo(t.createdAt) < Number(q.range))) &&
+        (!term || `${t.memberName} ${t.memberId} ${t.reference} ${t.gatewayReference ?? ""} ${Math.round(t.amountKobo / 100)}`.toLowerCase().includes(term)),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [all, tab, kind, range, search, now]);
+  }, [rows, q.tab, q.kind, q.range, q.search, now]);
 
-  const count = (t: Tab) => (t === "All" ? all.length : t === "Late" ? all.filter((x) => x.late).length : all.filter((x) => x.status === t).length);
+  const count = (t: Tab) =>
+    t === "All"
+      ? meta.counts.all
+      : t === "Late"
+        ? meta.counts.late
+        : t === "Successful"
+          ? meta.counts.successful
+          : t === "Pending"
+            ? meta.counts.pending
+            : meta.counts.failed;
+  const firstRow =
+    meta.total === 0 ? 0 : (meta.current_page - 1) * meta.per_page + 1;
+  const lastRow = meta.total === 0 ? 0 : firstRow + list.length - 1;
 
   const exportCsv = async () => {
     downloadCsv("iwh-transactions.csv",
@@ -97,8 +166,8 @@ export function AdminTransactionsPage() {
       <div className="flex flex-col gap-4 px-4 py-5 sm:px-8 sm:py-6">
         <div className="flex flex-wrap items-center gap-2">
           <Chips<Tab>
-            value={tab}
-            onChange={setTab}
+            value={q.tab}
+            onChange={(tab) => updateQuery({ tab })}
             options={[
               { value: "All", label: `All ${count("All")}` },
               { value: "Successful", label: `Successful ${count("Successful")}` },
@@ -113,30 +182,88 @@ export function AdminTransactionsPage() {
               <input
                 className="w-full bg-transparent text-sm font-semibold text-ink outline-none"
                 placeholder="Member, reference or amount"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                value={q.search}
+                onChange={(e) => updateQuery({ search: e.target.value })}
               />
             </label>
-            <Select aria-label="Transaction type" value={kind} onChange={(e) => setKind(e.target.value as Kind)} options={[{ value: "All", label: "All types" }, { value: "Contribution", label: "Contributions" }, { value: "Payout", label: "Payouts" }]} />
-            <Select aria-label="Filter by date" value={range} onChange={(e) => setRange(e.target.value as Range)} options={[{ value: "all", label: "Any date" }, { value: "today", label: "Today" }, { value: "7", label: "Last 7 days" }, { value: "30", label: "Last 30 days" }]} />
+            <Select aria-label="Transaction type" value={q.kind} onChange={(e) => updateQuery({ kind: e.target.value as Kind })} options={[{ value: "All", label: "All types" }, { value: "Contribution", label: "Contributions" }, { value: "Payout", label: "Payouts" }]} />
+            <Select aria-label="Filter by date" value={q.range} onChange={(e) => updateQuery({ range: e.target.value as Range })} options={[{ value: "all", label: "Any date" }, { value: "today", label: "Today" }, { value: "7", label: "Last 7 days" }, { value: "30", label: "Last 30 days" }]} />
           </div>
         </div>
-        <DataTable<Transaction>
-          rows={list}
-          rowKey={(r) => r.id}
-          onRowClick={setOpen}
-          columns={[
-            { header: "Date", render: (t) => <span className="text-mute">{fmtDateTime(t.createdAt)}</span> },
-            { header: "Member", render: (t) => <b>{t.memberName}</b> },
-            { header: "Description", render: (t) => (<span className="flex items-center gap-2">{describe(t)}{t.late && <Pill tone="pending" icon={<Clock size={12} />}>Late</Pill>}</span>) },
-            { header: "Amount", align: "right", render: (t) => <b>{formatNaira(t.amountKobo)}</b> },
-            { header: "Platform charge", align: "right", render: (t) => formatNaira(t.platformChargeKobo) },
-            { header: "Reference", render: (t) => <span className="font-mono text-xs">{t.reference}</span> },
-            { header: "Status", render: (t) => <Pill tone={STATUS_TONE[t.status]}>{t.status}</Pill> },
-            { header: "Reason", render: (t) => <span className="text-sm text-mute">{t.failureReason ?? "—"}</span> },
-          ]}
-        />
-        <p className="text-[13px] font-semibold text-mute">Showing {list.length} of {all.length}</p>
+        {loading ? (
+          <Card
+            role="status"
+            aria-live="polite"
+            className="flex min-h-48 items-center justify-center gap-2"
+          >
+            <LoaderCircle className="animate-spin text-brand" size={18} />
+            <p className="text-sm font-semibold text-mute">
+              Loading transactions…
+            </p>
+          </Card>
+        ) : (
+          <DataTable<Transaction>
+            rows={list}
+            rowKey={(r) => r.id}
+            onRowClick={setOpen}
+            columns={[
+              { header: "Date", render: (t) => <span className="text-mute">{fmtDateTime(t.createdAt)}</span> },
+              { header: "Member", render: (t) => <b>{t.memberName}</b> },
+              { header: "Description", render: (t) => (<span className="flex items-center gap-2">{describe(t)}{t.late && <Pill tone="pending" icon={<Clock size={12} />}>Late</Pill>}</span>) },
+              { header: "Amount", align: "right", render: (t) => <b>{formatNaira(t.amountKobo)}</b> },
+              { header: "Platform charge", align: "right", render: (t) => formatNaira(t.platformChargeKobo) },
+              { header: "Reference", render: (t) => <span className="font-mono text-xs">{t.reference}</span> },
+              { header: "Status", render: (t) => <Pill tone={STATUS_TONE[t.status]}>{t.status}</Pill> },
+              { header: "Reason", render: (t) => <span className="text-sm text-mute">{t.failureReason ?? "—"}</span> },
+            ]}
+          />
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-[13px] font-semibold text-mute">
+            {loading
+              ? "Loading transactions…"
+              : meta.total === 0
+                ? "No transactions match these filters"
+                : `Showing ${firstRow}–${lastRow} of ${meta.total} transactions`}
+          </p>
+          {meta.last_page > 1 && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Previous page"
+                icon={<ChevronLeft size={16} />}
+                disabled={loading || meta.current_page <= 1}
+                onClick={() =>
+                  setQ((prev) => ({
+                    ...prev,
+                    page: Math.max(1, meta.current_page - 1),
+                  }))
+                }
+              >
+                <span className="sr-only">Previous page</span>
+              </Button>
+              <span className="text-[13px] font-semibold text-mute">
+                Page {meta.current_page} of {meta.last_page}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Next page"
+                icon={<ChevronRight size={16} />}
+                disabled={loading || meta.current_page >= meta.last_page}
+                onClick={() =>
+                  setQ((prev) => ({
+                    ...prev,
+                    page: Math.min(meta.last_page, meta.current_page + 1),
+                  }))
+                }
+              >
+                <span className="sr-only">Next page</span>
+              </Button>
+            </div>
+          )}
+        </div>
         <Banner tone="neutral">
           Status comes from server-side verification with Paystack. Each payment must be at least the platform minimum (₦10,000); online payments carry a ₦100 platform charge.
         </Banner>

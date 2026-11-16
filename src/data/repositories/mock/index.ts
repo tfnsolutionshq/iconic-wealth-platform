@@ -45,6 +45,9 @@ import type {
   VerifiedContribution,
   WalletRepository,
   LoginResult,
+  TransactionCounts,
+  TransactionListPage,
+  TransactionQuery,
 } from "@/domain/repositories";
 import {
   DEFAULT_SETTINGS,
@@ -1125,9 +1128,64 @@ export class MockAdminRepository implements AdminRepository {
       120,
     );
   }
-  async listTransactions() {
+  listTransactions(): Promise<Transaction[]>;
+  listTransactions(query: TransactionQuery): Promise<TransactionListPage>;
+  async listTransactions(
+    query?: TransactionQuery,
+  ): Promise<Transaction[] | TransactionListPage> {
+    const sorted = [...transactions].sort((a, b) =>
+      b.createdAt.localeCompare(a.createdAt),
+    );
+    if (!query) return delay(sorted, 120);
+
+    const search = query.search?.trim().toLowerCase() ?? "";
+    const now = Date.now();
+    const daysAgo = (iso: string) =>
+      (now - new Date(iso).getTime()) / 86_400_000;
+    const filtered = sorted.filter((t) => {
+      const matchesStatus =
+        !query.status ||
+        query.status === "All" ||
+        (query.status === "Late" ? t.late : t.status === query.status);
+      const matchesKind =
+        !query.kind || query.kind === "All" || t.kind === query.kind;
+      const matchesRange =
+        !query.range ||
+        query.range === "all" ||
+        (query.range === "today"
+          ? daysAgo(t.createdAt) < 1
+          : daysAgo(t.createdAt) < Number(query.range));
+      const matchesSearch =
+        !search ||
+        `${t.memberName} ${t.memberId} ${t.reference} ${t.gatewayReference ?? ""} ${Math.round(t.amountKobo / 100)}`
+          .toLowerCase()
+          .includes(search);
+      return matchesStatus && matchesKind && matchesRange && matchesSearch;
+    });
+
+    const perPage = 20;
+    const total = filtered.length;
+    const lastPage = Math.max(1, Math.ceil(total / perPage));
+    const currentPage = Math.min(Math.max(query.page ?? 1, 1), lastPage);
+    const start = (currentPage - 1) * perPage;
+    const counts: TransactionCounts = {
+      all: transactions.length,
+      successful: transactions.filter((t) => t.status === "Successful").length,
+      pending: transactions.filter((t) => t.status === "Pending").length,
+      failed: transactions.filter((t) => t.status === "Failed").length,
+      late: transactions.filter((t) => t.late).length,
+    };
     return delay(
-      [...transactions].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      {
+        data: filtered.slice(start, start + perPage),
+        meta: {
+          current_page: currentPage,
+          per_page: perPage,
+          last_page: lastPage,
+          total,
+          counts,
+        },
+      },
       120,
     );
   }
