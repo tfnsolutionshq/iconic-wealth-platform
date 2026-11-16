@@ -63,6 +63,10 @@ import type {
   ApiMember,
   ApiMemberPage,
   ApiMemberStatus,
+  TransactionCounts,
+  TransactionListPage,
+  TransactionPageMeta,
+  TransactionQuery,
 } from "@/domain/repositories";
 import type { RegistrationDetails } from "@/domain/rules";
 import type { HttpClient } from "@/data/api/httpClient";
@@ -136,15 +140,297 @@ function mapAdminMemberRow(raw: ApiMember | MemberListRow): MemberListRow {
   };
 }
 
+/** Raw transaction row returned by GET /admin/transactions. */
+interface ApiAdminTransaction {
+  id?: string;
+  reference?: string;
+  gateway_reference?: string;
+  paystack_reference?: string;
+  member_id?: string;
+  member_name?: string;
+  member?: string | {
+    id?: string;
+    member_id?: string;
+    full_name?: string;
+    name?: string;
+    first_name?: string;
+    last_name?: string;
+  };
+  user?: {
+    id?: string;
+    member_id?: string;
+    full_name?: string;
+    name?: string;
+    first_name?: string;
+    last_name?: string;
+  };
+  kind?: string;
+  type?: string;
+  transaction_type?: string;
+  year?: number | string;
+  month?: number | string;
+  amount?: string | number;
+  amount_kobo?: string | number;
+  net_amount?: string | number;
+  platform_charge?: string | number;
+  platform_charge_kobo?: string | number;
+  status?: string;
+  status_label?: string;
+  late?: boolean;
+  is_late?: boolean;
+  failure_reason?: string;
+  reason?: string;
+  created_at?: string;
+  confirmed_at?: string;
+  date?: string;
+  savings_month?: {
+    year?: number;
+    month?: number;
+    period?: string;
+    month_name?: string;
+  };
+  payment_method?: string;
+  paymentMethod?: ContributionPaymentMethod;
+  channel?: string;
+  payout_destination?: PayoutDestination;
+  payoutDestination?: PayoutDestination;
+  allocations?: Transaction["allocations"];
+  // Fields already normalised by the API.
+  memberName?: string;
+  memberId?: string;
+  amountKobo?: number;
+  platformChargeKobo?: number;
+  gatewayReference?: string;
+  failureReason?: string;
+  createdAt?: string;
+}
+
+/** Normalises an admin transaction row, whether it is in API snake_case or domain shape. */
+function mapAdminTransaction(raw: ApiAdminTransaction): Transaction {
+  const member = typeof raw.member === "object" ? raw.member : raw.user;
+  const memberName =
+    raw.memberName ??
+    raw.member_name ??
+    (typeof raw.member === "string" ? raw.member : undefined) ??
+    member?.full_name ??
+    member?.name ??
+    [member?.first_name, member?.last_name].filter(Boolean).join(" ");
+  const memberId =
+    raw.memberId ?? raw.member_id ?? member?.member_id ?? member?.id ?? "";
+
+  const kindText = String(
+    raw.kind ?? raw.type ?? raw.transaction_type ?? "",
+  ).toLowerCase();
+  const kind: Transaction["kind"] = kindText.includes("payout")
+    ? "Payout"
+    : "Contribution";
+
+  const period = raw.savings_month?.period ?? "";
+  const periodMatch = /^(\d{4})-(\d{2})$/.exec(period);
+  const createdAt =
+    raw.createdAt ??
+    raw.created_at ??
+    raw.confirmed_at ??
+    raw.date ??
+    new Date().toISOString();
+
+  const amountKobo =
+    raw.amountKobo !== undefined
+      ? Number(raw.amountKobo)
+      : raw.amount_kobo !== undefined
+        ? Number(raw.amount_kobo)
+        : koboFromApi(raw.amount ?? raw.net_amount);
+  const platformChargeKobo =
+    raw.platformChargeKobo !== undefined
+      ? Number(raw.platformChargeKobo)
+      : raw.platform_charge_kobo !== undefined
+        ? Number(raw.platform_charge_kobo)
+        : koboFromApi(raw.platform_charge);
+  const netAmountKobo = koboFromApi(raw.net_amount);
+
+  const createdYear = new Date(createdAt).getFullYear();
+  const year =
+    Number(
+      raw.year ??
+        raw.savings_month?.year ??
+        (periodMatch ? periodMatch[1] : createdYear),
+    ) || createdYear;
+
+  const toMonthIndex = (value: number): MonthIndex =>
+    Math.max(0, Math.min(11, value)) as MonthIndex;
+
+  let monthIndex: MonthIndex | null = null;
+  if (periodMatch) {
+    monthIndex = toMonthIndex(Number(periodMatch[2]) - 1);
+  } else if (raw.savings_month?.month !== undefined) {
+    monthIndex = toMonthIndex(Number(raw.savings_month.month) - 1);
+  } else if (raw.month !== undefined) {
+    monthIndex = toMonthIndex(Number(raw.month) - 1);
+  } else if (raw.savings_month?.month_name) {
+    const idx = MONTHS.findIndex(
+      (m) =>
+        m.toLowerCase() === raw.savings_month!.month_name!.toLowerCase(),
+    );
+    if (idx >= 0) monthIndex = idx as MonthIndex;
+  }
+
+  const statusText = (raw.status ?? "").toLowerCase();
+  let status: TransactionStatus = "Pending";
+  if (
+    ["successful", "success", "confirmed", "paid", "completed"].includes(
+      statusText,
+    )
+  ) {
+    status = "Successful";
+  } else if (statusText === "processing") {
+    status = "Processing";
+  } else if (
+    ["failed", "declined", "cancelled", "abandoned"].includes(statusText)
+  ) {
+    status = "Failed";
+  }
+
+  const methodText = (
+    raw.paymentMethod ??
+    raw.payment_method ??
+    raw.channel ??
+    ""
+  ).toLowerCase();
+  const paymentMethod: ContributionPaymentMethod | undefined =
+    methodText === "wallet"
+      ? "Wallet"
+      : ["bank", "bank_transfer", "bank account"].includes(methodText)
+        ? "Bank Account"
+        : methodText
+          ? "Online"
+          : undefined;
+
+  const allocations =
+    kind === "Payout"
+      ? []
+      : Array.isArray(raw.allocations) && raw.allocations.length > 0
+        ? raw.allocations
+        : [
+            {
+              month:
+                monthIndex ?? (new Date(createdAt).getMonth() as MonthIndex),
+              amountKobo: netAmountKobo || amountKobo,
+            },
+          ];
+
+  const failureReason =
+    raw.failureReason ??
+    raw.failure_reason ??
+    raw.reason ??
+    (status === "Failed" ? raw.status_label : undefined);
+  const payoutDestination = raw.payoutDestination ?? raw.payout_destination;
+
+  return {
+    id: raw.id ?? raw.reference ?? `TX-${createdAt}`,
+    reference: raw.reference ?? raw.id ?? "",
+    gatewayReference:
+      raw.gatewayReference ??
+      raw.gateway_reference ??
+      raw.paystack_reference,
+    memberId,
+    memberName: memberName || memberId || "—",
+    kind,
+    year,
+    allocations,
+    amountKobo,
+    platformChargeKobo,
+    ...(paymentMethod ? { paymentMethod } : {}),
+    ...(payoutDestination ? { payoutDestination } : {}),
+    status,
+    late: Boolean(
+      raw.late ?? raw.is_late ?? /late/i.test(raw.status_label ?? ""),
+    ),
+    ...(failureReason ? { failureReason } : {}),
+    createdAt,
+  };
+}
+
+/** Extracts transaction rows from an envelope, a paginator object or a plain array. */
+function readAdminTransactionRows(payload: unknown): unknown[] {
+  const data = unwrapData<unknown>(payload);
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === "object") {
+    const record = data as {
+      data?: unknown;
+      transactions?: unknown;
+      items?: unknown;
+    };
+    if (Array.isArray(record.data)) return record.data;
+    if (Array.isArray(record.transactions)) return record.transactions;
+    if (Array.isArray(record.items)) return record.items;
+  }
+  return [];
+}
+
+function readMetaNumber(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (
+    typeof value === "string" &&
+    value.trim() !== "" &&
+    Number.isFinite(Number(value))
+  ) {
+    return Number(value);
+  }
+  return fallback;
+}
+
+/**
+ * Finds the object that carries pagination metadata. It may sit on the
+ * envelope (`meta`), inside the payload (`data.meta`) or be the paginator
+ * payload itself.
+ */
+function readMetaRecord(payload: unknown): Record<string, unknown> | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const root = payload as Record<string, unknown>;
+  if (root.meta && typeof root.meta === "object") {
+    return root.meta as Record<string, unknown>;
+  }
+  if ("current_page" in root || "per_page" in root || "last_page" in root) {
+    return root;
+  }
+  const data = unwrapData<unknown>(payload);
+  if (!data || typeof data !== "object") return undefined;
+  const inner = data as Record<string, unknown>;
+  if (inner.meta && typeof inner.meta === "object") {
+    return inner.meta as Record<string, unknown>;
+  }
+  if ("current_page" in inner || "per_page" in inner || "last_page" in inner) {
+    return inner;
+  }
+  return undefined;
+}
+
+/** Reads pagination plus the status counts returned with GET /admin/transactions. */
+function readTransactionPageMeta(
+  payload: unknown,
+  fallback: PageMeta,
+): TransactionPageMeta {
+  const meta = readPageMeta(payload, fallback);
+  const rawMeta = readMetaRecord(payload);
+  const rawCounts = rawMeta?.counts;
+  const counts: Record<string, unknown> =
+    rawCounts && typeof rawCounts === "object"
+      ? (rawCounts as Record<string, unknown>)
+      : {};
+  const transactionCounts: TransactionCounts = {
+    all: readMetaNumber(counts.all, meta.total),
+    successful: readMetaNumber(counts.successful, 0),
+    pending: readMetaNumber(counts.pending, 0),
+    failed: readMetaNumber(counts.failed, 0),
+    late: readMetaNumber(counts.late, 0),
+  };
+  return { ...meta, counts: transactionCounts };
+}
+
 /** Reads the pagination metadata from an API envelope, falling back to the request page. */
 function readPageMeta(payload: unknown, fallback: PageMeta): PageMeta {
-  const raw =
-    payload && typeof payload === "object" && "meta" in payload
-      ? (payload as { meta?: unknown }).meta
-      : undefined;
-  if (!raw || typeof raw !== "object") return fallback;
-
-  const meta = raw as Record<string, unknown>;
+  const meta = readMetaRecord(payload);
+  if (!meta) return fallback;
   const read = (key: keyof PageMeta, fallbackValue: number) => {
     const value = meta[key];
     if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -1313,8 +1599,42 @@ export class HttpAdminRepository implements AdminRepository {
       monthly: { month: string; members: number }[];
     }>(`/admin/savings?year=${year}`);
   }
-  listTransactions() {
-    return this.http.get<Transaction[]>("/admin/transactions");
+  listTransactions(): Promise<Transaction[]>;
+  listTransactions(query: TransactionQuery): Promise<TransactionListPage>;
+  async listTransactions(
+    query?: TransactionQuery,
+  ): Promise<Transaction[] | TransactionListPage> {
+    const p = new URLSearchParams();
+    if (query?.status && query.status !== "All") {
+      p.set("status", query.status.toLowerCase());
+    }
+    if (query?.kind && query.kind !== "All") {
+      p.set("type", query.kind.toLowerCase());
+    }
+    if (query?.range && query.range !== "all") {
+      p.set("range", query.range);
+    }
+    if (query?.search?.trim()) p.set("search", query.search.trim());
+    if (query?.page && query.page > 1) p.set("page", String(query.page));
+
+    const qs = p.toString();
+    const payload = await this.http.get<unknown>(
+      `/admin/transactions${qs ? `?${qs}` : ""}`,
+    );
+    const data = readAdminTransactionRows(payload).map((row) =>
+      mapAdminTransaction(row as ApiAdminTransaction),
+    );
+
+    if (!query) return data;
+    return {
+      data,
+      meta: readTransactionPageMeta(payload, {
+        current_page: query.page ?? 1,
+        per_page: 20,
+        last_page: Math.max(1, Math.ceil(data.length / 20)),
+        total: data.length,
+      }),
+    };
   }
   listInterest() {
     return this.http.get<InterestYearSummary[]>("/admin/interest");

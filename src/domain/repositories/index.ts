@@ -315,6 +315,32 @@ export interface MemberListPage {
   meta: PageMeta;
 }
 
+/** Counts returned alongside GET /admin/transactions, used for the status tabs. */
+export interface TransactionCounts {
+  all: number;
+  successful: number;
+  pending: number;
+  failed: number;
+  late: number;
+}
+
+export interface TransactionPageMeta extends PageMeta {
+  counts: TransactionCounts;
+}
+
+export interface TransactionListPage {
+  data: Transaction[];
+  meta: TransactionPageMeta;
+}
+
+export interface TransactionQuery {
+  page?: number;
+  status?: "All" | "Successful" | "Pending" | "Failed" | "Late";
+  kind?: "All" | "Contribution" | "Payout";
+  range?: "all" | "today" | "7" | "30";
+  search?: string;
+}
+
 /** Raw member status returned by GET /admin/members, and accepted by its `status` filter. */
 export type ApiMemberStatus = MemberAccountStatus;
 
@@ -430,6 +456,7 @@ export interface AdminRepository {
   }>;
   /** ADM-14: every contribution and payout (server-side verified). */
   listTransactions(): Promise<Transaction[]>;
+  listTransactions(query: TransactionQuery): Promise<TransactionListPage>;
   /** ADM-15 to ADM-17: one interest configuration per savings year; 8-stage maker-checker workflow. */
   listInterest(): Promise<InterestYearSummary[]>;
   getInterest(
