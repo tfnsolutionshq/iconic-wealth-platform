@@ -95,17 +95,25 @@ export function PaymentResultPage() {
   const reference =
     t?.reference ?? urlRef ?? `IWH-C-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 
-  // Use net amount saved if available, else total amount
-  const amountSavedKobo = verifiedData?.savingsMonth?.savedAmount || t?.amountKobo || 10_000_00;
-  const amountPaidKobo = (t?.amountKobo || 0) + (t?.platformChargeKobo || 0) || amountSavedKobo;
+  // `t.amountKobo` from verify() is the gross amount paid (net_amount + platform_charge),
+  // while `savingsMonth.savedAmount` is the net amount credited to savings.
+  const amountSavedKobo =
+    verifiedData?.savingsMonth?.savedAmount || t?.amountKobo || 10_000_00;
+  const amountPaidKobo =
+    t?.amountKobo ||
+    (amountSavedKobo + (t?.platformChargeKobo || 0));
 
   const monthName =
     verifiedData?.savingsMonth?.monthName ||
     (t?.allocations?.[0] ? MONTHS[t.allocations[0].month] : MONTHS[currentMonth]);
   const appliedYear = verifiedData?.savingsMonth?.year || t?.year || currentYear;
+  const hasExplicitTarget =
+    verifiedData?.savingsMonth?.targetAmount != null &&
+    verifiedData.savingsMonth.targetAmount > 0;
   const targetMet =
     o === "success" &&
-    Boolean(verifiedData?.targetMet || (result && result.targetMetMonth !== null));
+    ((verifiedData && hasExplicitTarget && Boolean(verifiedData.targetMet)) ||
+      (result !== null && result.targetMetMonth !== null));
 
   const downloadReceipt = () => {
     if (!member) return;

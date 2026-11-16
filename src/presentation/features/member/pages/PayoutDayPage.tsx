@@ -18,6 +18,7 @@ import {
   Banner,
   Button,
   Card,
+  LoadingScreen,
   OpenDecisionTag,
   Pill,
   cn,
@@ -38,7 +39,7 @@ export function PayoutDayPage() {
   const [completed, setCompleted] = useState<Transaction | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (!member || !data) return <p className="text-mute">Loading…</p>;
+  if (!member || !data) return <LoadingScreen />;
 
   const { year, txs, now, settings } = data;
   const payoutDate = new Date(

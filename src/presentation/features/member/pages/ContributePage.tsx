@@ -15,6 +15,7 @@ import {
   Banner,
   Button,
   Card,
+  LoadingScreen,
   Modal,
   Pill,
   cn,
@@ -124,7 +125,7 @@ export function ContributePage() {
           </Link>
           <h1 className="text-[19px] font-extrabold">Contribute</h1>
         </div>
-        <p className="text-mute">Loading…</p>
+        <LoadingScreen />
       </div>
     );
   }

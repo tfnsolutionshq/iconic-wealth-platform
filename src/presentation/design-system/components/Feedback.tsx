@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Check, Clock, Info, RefreshCw, X } from "lucide-react";
+import logoMain from "@/assets/brand/logo-main.png";
 import { cn } from "../cn";
 
 export type Tone =
@@ -107,6 +108,79 @@ export function EmptyState({
       {icon}
       <b className="text-ink">{title}</b>
       {children}
+    </div>
+  );
+}
+
+/** Branded loading indicator with the Iconic Wealth Hub logo and a violet-gold spinner ring. */
+export function LoadingSpinner({
+  label,
+  size = "md",
+  className,
+}: {
+  label?: string;
+  size?: "sm" | "md";
+  className?: string;
+}) {
+  const outer = size === "sm" ? "size-14" : "size-20";
+  const inner = size === "sm" ? "size-10" : "size-14";
+  const img = size === "sm" ? "size-7" : "size-10";
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col items-center justify-center gap-3",
+        className,
+      )}
+      role="status"
+      aria-live="polite"
+      aria-label={label || "Loading"}
+    >
+      <div className={cn("relative flex items-center justify-center", outer)}>
+        <span
+          aria-hidden="true"
+          className="absolute inset-0 rounded-full border-[3px] border-brand-tint"
+        />
+        <span
+          aria-hidden="true"
+          className="absolute inset-0 animate-spin rounded-full border-[3px] border-transparent border-t-brand border-r-gold"
+        />
+        <span
+          className={cn(
+            "flex items-center justify-center rounded-full bg-white shadow-xs",
+            inner,
+          )}
+        >
+          <img
+            src={logoMain}
+            alt="Iconic Wealth Hub"
+            className={cn("object-contain", img)}
+          />
+        </span>
+      </div>
+      {label && (
+        <span className="text-sm font-semibold text-mute">{label}</span>
+      )}
+    </div>
+  );
+}
+
+/** Full-area centered branded loading screen for pages and route suspense fallbacks. */
+export function LoadingScreen({
+  label,
+  className,
+}: {
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex min-h-[45vh] w-full items-center justify-center py-12",
+        className,
+      )}
+    >
+      <LoadingSpinner label={label} />
     </div>
   );
 }

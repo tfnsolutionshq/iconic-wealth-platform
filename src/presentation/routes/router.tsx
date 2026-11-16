@@ -1,5 +1,6 @@
 import { lazy, Suspense, type ReactElement } from 'react';
 import { createBrowserRouter, Navigate, type RouteObject } from 'react-router-dom';
+import { LoadingScreen } from '../design-system';
 import { SCREENS } from './screens';
 import { AuthLayout, SiteLayout } from '../layouts/SiteLayout';
 import { MemberLayout } from '../layouts/MemberLayout';
@@ -58,7 +59,7 @@ const PAGES: Record<string, ReactElement> = {
   '/admin/settings': <SettingsPage />, '/admin/content': <ContentPage />,
 };
 /** Member and admin pages load on demand (separate chunks) so website visitors don't download portal code. */
-const element = (path: string) => <Suspense fallback={<p className="p-8 text-mute">Loading…</p>}>{PAGES[path] ?? <ScaffoldPage path={path} />}</Suspense>;
+const element = (path: string) => <Suspense fallback={<LoadingScreen />}>{PAGES[path] ?? <ScaffoldPage path={path} />}</Suspense>;
 const children = (filter: (p: string) => boolean): RouteObject[] => SCREENS.filter(s => filter(s.path)).map(s => ({ path: s.path, element: element(s.path) }));
 const AUTH_ONLY = ['/login', '/register'];
 

@@ -28,6 +28,7 @@ import {
   ButtonLink,
   Card,
   KeyValue,
+  LoadingScreen,
   OpenDecisionTag,
   Pill,
   cn,
@@ -91,7 +92,7 @@ export function ReviewPaymentPage() {
   }, [method, bankDeadline]);
 
   if (!draft.amount) return <Navigate to={paths.member.contribute} replace />;
-  if (!member || !data) return <p className="text-mute">Loading…</p>;
+  if (!member || !data) return <LoadingScreen />;
 
   const { dashboard, now, viewState } = data;
   const { activeMonth, summary, settings } = dashboard;
@@ -148,7 +149,7 @@ export function ReviewPaymentPage() {
       const intent = await repos.contribution.initiate(
         member.id,
         activeYear,
-        draft.amount!,
+        b.total,
         method,
       );
 

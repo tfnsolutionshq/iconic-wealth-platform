@@ -13,8 +13,8 @@ import {
   HttpSavingsTargetRepository,
   HttpSettingsRepository,
   HttpTestimonialRepository,
+  HttpWalletRepository,
 } from "@/data/repositories/http";
-import { MockWalletRepository } from "@/data/repositories/mock";
 import { DemoGateway, PaystackInlineGateway } from "@/data/gateways";
 import { env } from "@/app/config/env";
 
@@ -81,8 +81,7 @@ export function createContainer(): Container {
     contribution: new HttpContributionRepository(http),
     admin: new HttpAdminRepository(http),
     gateway,
-    // No wallet API yet: the wallet stays local so it never makes a network request.
-    wallet: new MockWalletRepository(clock),
+    wallet: new HttpWalletRepository(http),
   };
 
   return { clock, demoGateway, repos };
