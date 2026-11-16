@@ -410,6 +410,11 @@ export function deriveSavingsViewState(
 
 const dashboardCache = new Map<string, SavingsDashboardData>();
 
+/** Clears all cached dashboard snapshots (call on login/logout so accounts never bleed). */
+export function clearSavingsDashboardCache() {
+  dashboardCache.clear();
+}
+
 /**
  * Loads the member dashboard from GET /savings. Recent transactions are loaded
  * separately and never fail the dashboard: the live savings endpoint is the
@@ -417,13 +422,36 @@ const dashboardCache = new Map<string, SavingsDashboardData>();
  */
 export function useSavingsDashboard(member: Member | null) {
   const { repos, clock } = useServices();
-  const [data, setData] = useState<SavingsDashboardData | null>(() =>
-    member ? (dashboardCache.get(member.id) ?? null) : null,
-  );
+  const memberId = member?.id ?? null;
+  const [state, setState] = useState<{
+    memberId: string | null;
+    data: SavingsDashboardData | null;
+  }>(() => ({
+    memberId,
+    data: memberId ? (dashboardCache.get(memberId) ?? null) : null,
+  }));
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(
-    member !== null && !dashboardCache.has(member.id),
+    memberId !== null && !dashboardCache.has(memberId),
   );
+
+  // Immediately clear/swap data if the signed-in member changes without a page refresh
+  const data =
+    state.memberId === memberId
+      ? state.data
+      : memberId
+        ? (dashboardCache.get(memberId) ?? null)
+        : null;
+
+  useEffect(() => {
+    if (state.memberId !== memberId) {
+      setState({
+        memberId,
+        data: memberId ? (dashboardCache.get(memberId) ?? null) : null,
+      });
+      setError(null);
+    }
+  }, [memberId, state.memberId]);
 
   const reload = useCallback(async () => {
     if (!member) return;
@@ -458,7 +486,7 @@ export function useSavingsDashboard(member: Member | null) {
       );
       const nextData = { dashboard, months, recent, now, viewState };
       dashboardCache.set(member.id, nextData);
-      setData(nextData);
+      setState({ memberId: member.id, data: nextData });
     } catch (e) {
       setError((e as Error).message || "We couldn’t load your dashboard.");
     } finally {

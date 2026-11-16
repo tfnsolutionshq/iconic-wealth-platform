@@ -1785,7 +1785,6 @@ export class MockWalletRepository implements WalletRepository {
     return walletEntries.filter((e) => e.memberId === memberId);
   }
   async getSnapshot(memberId: string) {
-    memberOf(memberId);
     const entries = this.entriesOf(memberId).sort((a, b) =>
       b.createdAt.localeCompare(a.createdAt),
     );
@@ -1800,7 +1799,6 @@ export class MockWalletRepository implements WalletRepository {
     });
   }
   async requestTopUp(memberId: string, amountKobo: Kobo): Promise<WalletEntry> {
-    memberOf(memberId);
     if (!Number.isInteger(amountKobo) || amountKobo <= 0)
       throw new Error("Enter an amount greater than ₦0.");
     const entry: WalletEntry = {
@@ -1823,8 +1821,8 @@ export class MockWalletRepository implements WalletRepository {
     memberId: string,
     amountKobo: Kobo,
   ): Promise<WalletWithdrawal> {
-    const m = memberOf(memberId);
-    if (!m.payoutAccount)
+    const m = members.find((x) => x.id === memberId);
+    if (!m?.payoutAccount)
       throw new Error(
         "Set up your payout account in Profile before withdrawing.",
       );

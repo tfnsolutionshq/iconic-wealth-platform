@@ -14,7 +14,14 @@ import { useAuth } from "../../../contexts/AuthContext";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
 import { useSavingsDashboard } from "../../../hooks/useSavingsDashboard";
-import { Button, ButtonLink, Card, Pill, cn } from "../../../design-system";
+import {
+  Button,
+  ButtonLink,
+  Card,
+  LoadingScreen,
+  Pill,
+  cn,
+} from "../../../design-system";
 import { formatNaira, formatShortDate, targetPeriodFor } from "@/domain/rules";
 import { LockMonthModal } from "../components/LockMonthModal";
 import { SavingsTargetModal } from "../components/SavingsTargetModal";
@@ -100,7 +107,7 @@ export function MemberHomePage() {
         <Button onClick={() => void reload()}>Try again</Button>
       </Card>
     );
-  if (!data) return <p className="text-mute">Loading…</p>;
+  if (!data) return <LoadingScreen />;
 
   const { dashboard, recent, now, months, viewState } = data;
   const { summary, activeMonth, payoutJourney, settings } = dashboard;

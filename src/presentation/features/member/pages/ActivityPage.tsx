@@ -6,7 +6,14 @@ import { formatNaira } from "@/domain/rules";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
-import { Button, Card, Chips, EmptyState } from "../../../design-system";
+import {
+  Button,
+  Card,
+  Chips,
+  EmptyState,
+  LoadingScreen,
+  LoadingSpinner,
+} from "../../../design-system";
 import { downloadCsv } from "../../../utils/csv";
 import { TxRow, describeTx } from "../components/TransactionParts";
 
@@ -70,7 +77,7 @@ export function ActivityPage() {
     };
   }, [repos, member, tab, query, page, toast]);
 
-  if (!member) return <p className="text-mute">Loading…</p>;
+  if (!member) return <LoadingScreen />;
 
   const firstRow =
     meta.total === 0 ? 0 : (meta.current_page - 1) * meta.per_page + 1;
@@ -137,13 +144,8 @@ export function ActivityPage() {
       </div>
       <Card>
         {loading ? (
-          <div
-            role="status"
-            aria-live="polite"
-            className="flex min-h-40 items-center justify-center gap-2 py-8"
-          >
-            <LoaderCircle className="animate-spin text-brand" size={18} />
-            <p className="text-sm font-semibold text-mute">Loading activity…</p>
+          <div className="flex min-h-48 items-center justify-center py-8">
+            <LoadingSpinner size="sm" label="Loading activity…" />
           </div>
         ) : list.length ? (
           list.map((t) => <TxRow key={t.id} t={t} />)

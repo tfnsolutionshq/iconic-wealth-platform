@@ -22,6 +22,7 @@ import {
   Button,
   ButtonLink,
   Card,
+  LoadingScreen,
   Modal,
   Pill,
   cn,
@@ -94,7 +95,7 @@ export function SavingsPage() {
         <Button onClick={() => void reload()}>Try again</Button>
       </Card>
     );
-  if (!data) return <p className="text-mute">Loading…</p>;
+  if (!data) return <LoadingScreen />;
 
   const { dashboard, months, now, viewState } = data;
   const { summary, activeMonth, payoutJourney, settings } = dashboard;

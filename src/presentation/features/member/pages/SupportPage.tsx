@@ -11,7 +11,7 @@ import { formatNaira, formatShortDate, minimumFor } from "@/domain/rules";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useSavings } from "../../../hooks/useSavings";
-import { Card, cn } from "../../../design-system";
+import { Card, LoadingScreen, cn } from "../../../design-system";
 import { paths } from "../../../routes/paths";
 import { env } from "@/app/config/env";
 
@@ -23,7 +23,7 @@ export function SupportPage() {
   const { data } = useSavings(member);
   const [open, setOpen] = useState<string | null>(null);
 
-  if (!member || !data) return <p className="text-mute">Loading…</p>;
+  if (!member || !data) return <LoadingScreen />;
   const { settings, year } = data;
   const min = minimumFor(settings, year.year);
   const payout = new Date(

@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import type { AdminRole, AdminUser, Member, Session } from "@/domain/entities";
+import { clearSavingsDashboardCache } from "../hooks/useSavingsDashboard";
 import { useServices } from "./ServicesContext";
 
 interface AuthState {
@@ -113,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (id: string, pw: string): Promise<Session> => {
+      clearSavingsDashboardCache();
       const result = await repos.auth.login(id, pw);
       persist(result);
       return result.session;
@@ -121,6 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(async () => {
+    clearSavingsDashboardCache();
     await repos.auth.logout();
     // Remove the token, raw user and session from localStorage. The UI clears
     // immediately via the state setters above.
