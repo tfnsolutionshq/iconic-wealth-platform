@@ -11,9 +11,8 @@ import { paths } from "../../../routes/paths";
 import {
   TX_STATUS_TONE,
   describeTx,
-  downloadFile,
+  downloadReceiptPdf,
   fmtDateTime,
-  receiptHtml,
   totalPaid,
 } from "../components/TransactionParts";
 
@@ -71,10 +70,7 @@ export function ReceiptPage() {
         : null;
 
   const download = () => {
-    downloadFile(
-      `receipt-${tx.reference}.html`,
-      receiptHtml(tx, `${member.firstName} ${member.lastName}`),
-    );
+    downloadReceiptPdf(tx, `${member.firstName} ${member.lastName}`);
     toast("Receipt downloaded.");
   };
 

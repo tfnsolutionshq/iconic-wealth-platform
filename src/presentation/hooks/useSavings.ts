@@ -1,28 +1,57 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { Member, SavingsYear, Transaction } from '@/domain/entities';
-import type { PlatformSettings } from '@/domain/rules';
-import { useServices } from '../contexts/ServicesContext';
+import { useCallback, useEffect, useState } from "react";
+import type { Member, SavingsYear, Transaction } from "@/domain/entities";
+import { DEFAULT_SETTINGS, type PlatformSettings } from "@/domain/rules";
+import { useServices } from "../contexts/ServicesContext";
 
-export interface SavingsData { year: SavingsYear; txs: Transaction[]; settings: PlatformSettings; now: Date }
+export interface SavingsData {
+  year: SavingsYear;
+  txs: Transaction[];
+  settings: PlatformSettings;
+  now: Date;
+}
+
 /** Loads everything the savings rules need for one member: savings year, transactions and platform settings. */
 export function useSavings(member: Member | null) {
   const { repos, clock } = useServices();
   const [data, setData] = useState<SavingsData | null>(null);
   const [error, setError] = useState<string | null>(null);
+
   const reload = useCallback(async () => {
     if (!member) return;
     setError(null);
+    const now = clock.now();
     try {
-      const now = clock.now(); const settings = await repos.settings.get();
-      const yearNo = member.joinedOn > `${now.getFullYear()}-${String(settings.cutoffMonth + 1).padStart(2, '0')}-31` ? now.getFullYear() + 1 : now.getFullYear();
-      const [year, txs] = await Promise.all([repos.member.getSavingsYear(member.id, yearNo), repos.member.listTransactions(member.id)]);
+      const settings = await repos.settings.get();
+      const yearNo =
+        member.joinedOn >
+        `${now.getFullYear()}-${String(settings.cutoffMonth + 1).padStart(2, "0")}-31`
+          ? now.getFullYear() + 1
+          : now.getFullYear();
+      const [year, txs] = await Promise.all([
+        repos.member.getSavingsYear(member.id, yearNo),
+        repos.member.listTransactions(member.id),
+      ]);
       setData({ year, txs, settings, now });
     } catch (e) {
-      // Keep the last good data; surface the failure so the page can offer a retry
-      // instead of showing “Loading…” forever.
-      setError((e as Error).message || 'We couldn’t load your savings.');
+      // Safe fallback when endpoints are unavailable
+      const settings = DEFAULT_SETTINGS;
+      const year: SavingsYear = {
+        memberId: member.id,
+        year: now.getFullYear(),
+        startMonth: 0,
+        joinMonth: null,
+        target: 0,
+        targets: {},
+        locks: {},
+      };
+      setData({ year, txs: [], settings, now });
+      setError((e as Error).message || "We couldn’t load your savings.");
     }
   }, [repos, clock, member]);
-  useEffect(() => { void reload(); }, [reload]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
   return { data, error, reload };
 }

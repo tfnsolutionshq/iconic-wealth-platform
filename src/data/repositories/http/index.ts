@@ -3,10 +3,10 @@
  * agree them in Sprint 0 and keep this file as the single place that knows URLs and payload shapes.
  * Money is exchanged in kobo (integers).
  */
-import type { AdminListItem, AdminRole, AdminUser, AuditEntry, Bank, ContributionPaymentMethod, InterestCalcRow, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberListRow, MemberSummary, MonthIndex, NotificationSettings, PayoutAccount, PayoutBatch, PayoutDestination, ReferralGroup, Registration, ReportKind, ReportResult, SavingsDashboard, SavingsMonth, SavingsPeriod, SavingsYear, Session, Testimonial, Transaction } from '@/domain/entities';
+import type { AdminListItem, AdminRole, AdminUser, AuditEntry, Bank, ContributionPaymentMethod, InterestCalcRow, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberNotification, MemberListRow, MemberSummary, MonthIndex, NotificationSettings, PayoutAccount, PayoutBatch, PayoutDestination, ReferralGroup, Registration, ReportKind, ReportResult, SavingsDashboard, SavingsMonth, SavingsPeriod, SavingsYear, Session, Testimonial, Transaction, TransactionStatus } from '@/domain/entities';
 import type { PlatformSettings } from '@/domain/rules';
-import { naira } from '@/domain/rules';
-import type { AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, InterestRulesInput, MemberQuery, MemberListPage, MemberRepository, NewRegistration, PageMeta, PayoutAccountRepository, RegistrationRepository, RegistrationStarted, SavingsDashboardRepository, SavingsTargetRepository, SettingsRepository, TestimonialRepository, VerifiedContribution, ApiMember, ApiMemberPage, ApiMemberStatus } from '@/domain/repositories';
+import { MONTHS, naira } from '@/domain/rules';
+import type { ActivityPageResult, ActivityQuery, AdminRepository, AuthRepository, ChangeField, ContributionIntent, ContributionRepository, InterestRulesInput, MemberQuery, MemberListPage, MemberRepository, NewRegistration, PageMeta, PayoutAccountRepository, RegistrationRepository, RegistrationStarted, SavingsDashboardRepository, SavingsTargetRepository, SettingsRepository, TestimonialRepository, VerifiedContribution, ApiMember, ApiMemberPage, ApiMemberStatus } from '@/domain/repositories';
 import type { RegistrationDetails } from '@/domain/rules';
 import type { HttpClient } from '@/data/api/httpClient';
 import { ApiError, type ApiEnvelope } from '@/data/api/httpClient';
@@ -454,7 +454,93 @@ export class HttpSavingsDashboardRepository implements SavingsDashboardRepositor
   }
 }
 
+interface ApiActivityItem {
+  kind?: string;
+  created_at?: string;
+  data?: {
+    id?: string;
+    reference?: string;
+    amount?: string;
+    platform_charge?: string;
+    net_amount?: string;
+    channel?: string;
+    status?: string;
+    status_label?: string;
+    gateway_reference?: string;
+    confirmed_at?: string | null;
+    savings_month?: {
+      id?: string;
+      period?: string;
+      month_name?: string;
+      status?: string;
+    };
+    created_at?: string;
+  };
+}
+
+function mapActivityItem(item: ApiActivityItem): Transaction {
+  const d = item.data ?? (item as unknown as NonNullable<ApiActivityItem['data']>);
+  const kind: Transaction['kind'] =
+    (item.kind ?? '').toLowerCase() === 'payout' ? 'Payout' : 'Contribution';
+
+  const period = d.savings_month?.period ?? '';
+  const periodMatch = /^(\d{4})-(\d{2})$/.exec(period);
+  const createdAt = d.created_at || item.created_at || new Date().toISOString();
+  const year = periodMatch
+    ? Number(periodMatch[1])
+    : new Date(createdAt).getFullYear() || new Date().getFullYear();
+
+  let monthIndex: MonthIndex = 0;
+  if (periodMatch) {
+    monthIndex = Math.max(0, Math.min(11, Number(periodMatch[2]) - 1)) as MonthIndex;
+  } else if (d.savings_month?.month_name) {
+    const idx = MONTHS.findIndex(
+      m => m.toLowerCase() === d.savings_month!.month_name!.toLowerCase(),
+    );
+    if (idx >= 0) monthIndex = idx as MonthIndex;
+  }
+
+  const amountKobo = koboFromApi(d.amount ?? d.net_amount);
+  const platformChargeKobo = koboFromApi(d.platform_charge);
+  const netKobo = koboFromApi(d.net_amount) || amountKobo;
+
+  const statusLower = (d.status ?? '').toLowerCase();
+  let status: TransactionStatus = 'Pending';
+  if (['confirmed', 'successful', 'paid', 'completed'].includes(statusLower)) {
+    status = 'Successful';
+  } else if (statusLower === 'processing') {
+    status = 'Processing';
+  } else if (['failed', 'declined', 'cancelled', 'abandoned'].includes(statusLower)) {
+    status = 'Failed';
+  }
+
+  const channelLower = (d.channel ?? '').toLowerCase();
+  let paymentMethod: ContributionPaymentMethod = 'Online';
+  if (channelLower === 'wallet') paymentMethod = 'Wallet';
+  else if (channelLower === 'bank' || channelLower === 'bank_transfer' || channelLower === 'bank account') {
+    paymentMethod = 'Bank Account';
+  }
+
+  return {
+    id: d.id || d.reference || `TX-${Date.now()}`,
+    reference: d.reference || d.id || '',
+    gatewayReference: d.gateway_reference || undefined,
+    memberId: '',
+    memberName: '',
+    kind,
+    year,
+    allocations: kind === 'Contribution' ? [{ month: monthIndex, amountKobo: netKobo }] : [],
+    amountKobo,
+    platformChargeKobo,
+    paymentMethod,
+    status,
+    late: false,
+    createdAt,
+  };
+}
+
 export class HttpMemberRepository implements MemberRepository {
+  private readonly txCache = new Map<string, Transaction>();
   constructor(private readonly http: HttpClient) {}
   getMember(id: string) { return this.http.get<Member>(`/members/${id}`); }
   getSavingsYear(id: string, year: number) { return this.http.get<SavingsYear>(`/members/${id}/savings/${year}`); }
@@ -463,17 +549,269 @@ export class HttpMemberRepository implements MemberRepository {
   async markCommunityJoined(id: string) { await this.http.post(`/members/${id}/community/joined`); }
   async requestChange(id: string, field: ChangeField, newValue: string, reason: string) { await this.http.post(`/members/${id}/change-requests`, { field, newValue, reason }); }
   async completeOnboarding(id: string) { await this.http.post(`/members/${id}/onboarding/complete`); }
-  listTransactions(id: string) { return this.http.get<Transaction[]>(`/members/${id}/transactions`); }
+  async listActivity(params: ActivityQuery = {}): Promise<ActivityPageResult> {
+    const p = new URLSearchParams();
+    if (params.filter) p.set('filter', params.filter);
+    if (params.search?.trim()) p.set('search', params.search.trim());
+    if (params.per_page) p.set('per_page', String(params.per_page));
+    if (params.page) p.set('page', String(params.page));
+    const qs = p.toString();
+    const payload = await this.http.get<ApiEnvelope<ApiActivityItem[]> | ApiActivityItem[]>(
+      `/activity${qs ? `?${qs}` : ''}`,
+    );
+    const rawItems = unwrapData(payload) ?? [];
+    const data = rawItems.map(mapActivityItem);
+    for (const tx of data) {
+      this.txCache.set(tx.id, tx);
+    }
+    const perPage = params.per_page ?? 15;
+    const page = params.page ?? 1;
+    return {
+      data,
+      meta: readPageMeta(payload, {
+        current_page: page,
+        per_page: perPage,
+        last_page: 1,
+        total: data.length,
+      }),
+    };
+  }
+  async listTransactions(_id: string): Promise<Transaction[]> {
+    const res = await this.listActivity({ page: 1 });
+    const merged = new Map<string, Transaction>(this.txCache);
+    for (const tx of res.data) merged.set(tx.id, tx);
+    return Array.from(merged.values());
+  }
   listNotifications(id: string) { return this.http.get<MemberNotification[]>(`/members/${id}/notifications`); }
   requestPayout(id: string, year: number, destination: PayoutDestination) { return this.http.post<Transaction>(`/members/${id}/payouts`, { year, destination }); }
   markPayoutReceived(id: string, transactionId: string) { return this.http.post<Transaction>(`/members/${id}/payouts/${transactionId}/received`); }
 }
 export class HttpContributionRepository implements ContributionRepository {
   constructor(private readonly http: HttpClient) {}
-  initiate(memberId: string, year: number, amountKobo: Kobo, method: ContributionPaymentMethod = 'Online') { return this.http.post<ContributionIntent>('/contributions', { memberId, year, amountKobo, method }); }
-  verify(reference: string) { return this.http.post<VerifiedContribution>(`/contributions/${reference}/verify`); }
-  payFromWallet(memberId: string, year: number, amountKobo: Kobo) { return this.http.post<VerifiedContribution>('/contributions/wallet', { memberId, year, amountKobo }); }
-  confirmBankTransfer(memberId: string, year: number, amountKobo: Kobo) { return this.http.post<VerifiedContribution>('/contributions/bank-transfer', { memberId, year, amountKobo }); }
+
+  async initiate(
+    memberId: string,
+    year: number,
+    amountKobo: Kobo,
+    method: ContributionPaymentMethod = 'Online',
+  ): Promise<ContributionIntent> {
+    void memberId;
+    void year;
+    void method;
+
+    const amountStr = (amountKobo / 100).toFixed(2);
+    const payload = await this.http.post<
+      | ApiEnvelope<{
+          contribution?: { reference?: string; id?: string };
+          payment?: {
+            authorization_url?: string;
+            reference?: string;
+            access_code?: string;
+            status?: string;
+          };
+          authorization_url?: string;
+          url?: string;
+          access_code?: string;
+          reference?: string;
+        }>
+      | {
+          contribution?: { reference?: string; id?: string };
+          payment?: {
+            authorization_url?: string;
+            reference?: string;
+            access_code?: string;
+            status?: string;
+          };
+          authorization_url?: string;
+          url?: string;
+          access_code?: string;
+          reference?: string;
+        }
+    >('/savings/contributions', {
+      amount: amountStr,
+      channel: 'paystack',
+    });
+
+    const data = unwrapData(payload);
+    const payment = data?.payment;
+    const authUrl =
+      payment?.authorization_url ||
+      data?.authorization_url ||
+      data?.url;
+    const ref =
+      payment?.reference ||
+      data?.contribution?.reference ||
+      data?.reference ||
+      data?.access_code ||
+      `REF-${Date.now()}`;
+
+    return {
+      reference: ref,
+      amountKobo,
+      platformChargeKobo: 0,
+      allocations: [],
+      email: '',
+      authorizationUrl: authUrl,
+      accessCode: payment?.access_code || data?.access_code,
+    };
+  }
+
+  async verify(reference: string): Promise<VerifiedContribution> {
+    try {
+      const payload = await this.http.post<
+        | ApiEnvelope<{
+            contribution?: {
+              id?: string;
+              reference?: string;
+              amount?: string;
+              platform_charge?: string;
+              net_amount?: string;
+              channel?: string;
+              status?: string;
+              status_label?: string;
+              gateway_reference?: string;
+              confirmed_at?: string;
+              savings_month?: {
+                id?: string;
+                period?: string;
+                month_name?: string;
+                status?: string;
+              };
+              created_at?: string;
+            };
+            savings_month?: {
+              id?: string;
+              year?: number;
+              month?: number;
+              period?: string;
+              month_name?: string;
+              target_amount?: string;
+              saved_amount?: string;
+              remaining_amount?: string;
+              progress_percentage?: number;
+              target_met?: boolean;
+              status?: string;
+            };
+            target_met?: boolean;
+          }>
+        | {
+            contribution?: {
+              id?: string;
+              reference?: string;
+              amount?: string;
+              platform_charge?: string;
+              net_amount?: string;
+              channel?: string;
+              status?: string;
+              status_label?: string;
+              gateway_reference?: string;
+              confirmed_at?: string;
+              savings_month?: {
+                id?: string;
+                period?: string;
+                month_name?: string;
+                status?: string;
+              };
+              created_at?: string;
+            };
+            savings_month?: {
+              id?: string;
+              year?: number;
+              month?: number;
+              period?: string;
+              month_name?: string;
+              target_amount?: string;
+              saved_amount?: string;
+              remaining_amount?: string;
+              progress_percentage?: number;
+              target_met?: boolean;
+              status?: string;
+            };
+            target_met?: boolean;
+          }
+      >(`/savings/contributions/${reference}/verify`);
+
+      const data = unwrapData(payload);
+      const c = data?.contribution;
+      const sm = data?.savings_month;
+
+      const totalAmountKobo = koboFromApi(c?.amount);
+      const netAmountKobo = koboFromApi(c?.net_amount);
+      const chargeKobo = koboFromApi(c?.platform_charge);
+      const monthName = sm?.month_name || c?.savings_month?.month_name || 'January';
+      const year = sm?.year || 2027;
+      const monthIndex = (sm?.month ? sm.month - 1 : 0) as MonthIndex;
+
+      const statusStr = (c?.status || '').toLowerCase();
+      let txStatus: TransactionStatus = 'Processing';
+      if (statusStr === 'confirmed' || statusStr === 'successful') {
+        txStatus = 'Successful';
+      } else if (statusStr === 'failed' || statusStr === 'declined' || statusStr === 'cancelled' || statusStr === 'abandoned') {
+        txStatus = 'Failed';
+      }
+
+      const failureReason = txStatus === 'Failed'
+        ? (c?.status_label || (payload as { message?: string })?.message || 'Declined by your bank: insufficient funds.')
+        : undefined;
+
+      const tx: Transaction = {
+        id: c?.id || reference,
+        reference: c?.reference || reference,
+        gatewayReference: c?.gateway_reference,
+        memberId: '',
+        memberName: '',
+        kind: 'Contribution',
+        year,
+        allocations: [{ month: monthIndex, amountKobo: netAmountKobo || totalAmountKobo }],
+        amountKobo: totalAmountKobo || netAmountKobo,
+        platformChargeKobo: chargeKobo,
+        status: txStatus,
+        failureReason,
+        late: false,
+        createdAt: c?.created_at || new Date().toISOString(),
+        paymentMethod: 'Online',
+      };
+
+      return {
+        transaction: tx,
+        communityUnlocked: false,
+        savingsMonth: {
+          monthName,
+          year,
+          savedAmount: netAmountKobo || totalAmountKobo,
+          targetAmount: koboFromApi(sm?.target_amount),
+        },
+        targetMet: data?.target_met || sm?.target_met || false,
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '';
+      const tx: Transaction = {
+        id: reference,
+        reference,
+        memberId: '',
+        memberName: '',
+        kind: 'Contribution',
+        year: new Date().getFullYear(),
+        allocations: [],
+        amountKobo: 0,
+        platformChargeKobo: 0,
+        status: 'Failed',
+        failureReason: msg || 'Declined by your bank: insufficient funds. No money was taken and nothing was added to your savings.',
+        late: false,
+        createdAt: new Date().toISOString(),
+        paymentMethod: 'Online',
+      };
+      return { transaction: tx, communityUnlocked: false };
+    }
+  }
+
+  payFromWallet(memberId: string, year: number, amountKobo: Kobo) {
+    return this.http.post<VerifiedContribution>('/contributions/wallet', { memberId, year, amountKobo });
+  }
+
+  confirmBankTransfer(memberId: string, year: number, amountKobo: Kobo) {
+    return this.http.post<VerifiedContribution>('/contributions/bank-transfer', { memberId, year, amountKobo });
+  }
 }
 export class HttpSettingsRepository implements SettingsRepository {
   constructor(private readonly http: HttpClient) {}

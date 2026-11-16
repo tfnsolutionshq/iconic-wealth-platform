@@ -96,6 +96,18 @@ export interface SavingsDashboardRepository {
   getMonths(year: number): Promise<SavingsMonth[]>;
 }
 
+export interface ActivityQuery {
+  filter?: 'contributions' | 'payouts' | 'pending' | 'failed';
+  search?: string;
+  per_page?: number;
+  page?: number;
+}
+
+export interface ActivityPageResult {
+  data: Transaction[];
+  meta: PageMeta;
+}
+
 export interface MemberRepository {
   getMember(id: string): Promise<Member>;
   getSavingsYear(id: string, year: number): Promise<SavingsYear>;
@@ -108,6 +120,7 @@ export interface MemberRepository {
   requestChange(id: string, field: ChangeField, newValue: string, reason: string): Promise<void>;
   completeOnboarding(id: string): Promise<void>;
   listTransactions(id: string): Promise<Transaction[]>;
+  listActivity(params?: ActivityQuery): Promise<ActivityPageResult>;
   listNotifications(id: string): Promise<MemberNotification[]>;
   /** MEM-18/19: full year-end payout to the verified bank account or the platform wallet (once per member/year). */
   requestPayout(id: string, year: number, destination: PayoutDestination): Promise<Transaction>;
@@ -121,8 +134,26 @@ export interface SettingsRepository {
   save(patch: { minimumByYear?: Record<number, Kobo>; cutoffMonth?: MonthIndex; payoutDates?: Record<number, string> }): Promise<PlatformSettings>;
 }
 
-export interface ContributionIntent { reference: string; amountKobo: Kobo; platformChargeKobo: Kobo; allocations: Allocation[]; email: string }
-export interface VerifiedContribution { transaction: Transaction; communityUnlocked: boolean }
+export interface ContributionIntent {
+  reference: string;
+  amountKobo: Kobo;
+  platformChargeKobo: Kobo;
+  allocations: Allocation[];
+  email: string;
+  authorizationUrl?: string;
+  accessCode?: string;
+}
+export interface VerifiedContribution {
+  transaction: Transaction;
+  communityUnlocked: boolean;
+  savingsMonth?: {
+    monthName: string;
+    year: number;
+    savedAmount: Kobo;
+    targetAmount: Kobo;
+  };
+  targetMet?: boolean;
+}
 export interface ContributionRepository {
   /** Server re-plans the allocation (oldest open month) and creates our unique reference BEFORE the gateway opens. */
   initiate(memberId: string, year: number, amountKobo: Kobo, method?: ContributionPaymentMethod): Promise<ContributionIntent>;

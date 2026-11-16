@@ -294,6 +294,15 @@ export class MockMemberRepository implements MemberRepository {
   async requestChange(_id: string, _field: ChangeField, _value: string, _reason: string) { await delay(null); }
   async completeOnboarding(id: string) { memberOf(id).onboarding = 'Complete'; await delay(null, 50); }
   async listTransactions(id: string) { return delay(transactions.filter(t => t.memberId === id)); }
+  async listActivity(params: { page?: number; per_page?: number } = {}) {
+    const data = transactions;
+    const page = params.page ?? 1;
+    const perPage = params.per_page ?? 15;
+    return delay({
+      data,
+      meta: { current_page: page, per_page: perPage, last_page: 1, total: data.length },
+    });
+  }
   async listNotifications() { return delay([]); }
   async requestPayout(id: string, year: number, destination: PayoutDestination): Promise<Transaction> {
     const m = memberOf(id), y = yearOf(id, year);
