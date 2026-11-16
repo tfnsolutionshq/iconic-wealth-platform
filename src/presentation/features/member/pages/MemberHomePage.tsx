@@ -1,11 +1,22 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { CalendarClock, Check, List, Lock, Plus, Users, X } from "lucide-react";
+import {
+  CalendarClock,
+  Check,
+  History,
+  List,
+  Lock,
+  Plus,
+  Users,
+  X,
+} from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useServices } from "../../../contexts/ServicesContext";
+import { useToast } from "../../../contexts/ToastContext";
 import { useSavingsDashboard } from "../../../hooks/useSavingsDashboard";
 import { Button, ButtonLink, Card, Pill, cn } from "../../../design-system";
 import { formatNaira, formatShortDate, targetPeriodFor } from "@/domain/rules";
+import { LockMonthModal } from "../components/LockMonthModal";
 import { SavingsTargetModal } from "../components/SavingsTargetModal";
 import { TxRow } from "../components/TransactionParts";
 import { paths } from "../../../routes/paths";
@@ -49,9 +60,37 @@ function parseDate(value: string): Date {
 export function MemberHomePage() {
   const { session, updateMember } = useAuth();
   const { repos } = useServices();
+  const toast = useToast();
   const member = session?.kind === "member" ? session.member : null;
   const { data, error, reload } = useSavingsDashboard(member);
   const [targetOpen, setTargetOpen] = useState(false);
+  const [lockOpen, setLockOpen] = useState(false);
+
+  const hasConfirmedPaymentFromData = Boolean(
+    data &&
+      (data.dashboard.summary.totalMonths > 0 ||
+        data.dashboard.summary.totalSaved > 0 ||
+        data.dashboard.summary.savedThisYear > 0 ||
+        (data.dashboard.activeMonth?.savedAmount ?? 0) > 0 ||
+        (data.dashboard.activeMonth?.contributionsCount ?? 0) > 0 ||
+        data.recent.some(
+          (t) =>
+            t.kind === "Contribution" &&
+            t.status === "Successful" &&
+            t.amountKobo >= data.dashboard.settings.minimumPerPayment,
+        )),
+  );
+
+  useEffect(() => {
+    if (
+      member &&
+      member.community === "Locked" &&
+      hasConfirmedPaymentFromData
+    ) {
+      updateMember({ ...member, community: "Eligible" });
+    }
+  }, [member, hasConfirmedPaymentFromData, updateMember]);
+
   if (!member) return <Navigate to={paths.login} replace />;
   if (error && !data)
     return (
@@ -63,23 +102,106 @@ export function MemberHomePage() {
     );
   if (!data) return <p className="text-mute">Loading…</p>;
 
-  const { dashboard, recent, now, months } = data;
+  const { dashboard, recent, now, months, viewState } = data;
   const { summary, activeMonth, payoutJourney, settings } = dashboard;
-  const hasStarted = summary.totalMonths > 0 || summary.totalSaved > 0;
+  const {
+    joinMonthName,
+    isMonthCatchUp,
+    isMonthSaved,
+    catchUpMonthsLeft,
+    isCatchUpMode,
+    activeCatchUpMonthName,
+    openPeriod,
+  } = viewState;
+
+  const effectiveActiveMonth = openPeriod ?? activeMonth;
+
+  const minimum = settings.minimumPerPayment;
+  const displaySavedTotal =
+    summary.savedThisYear ||
+    summary.totalSaved ||
+    (effectiveActiveMonth?.savedAmount ?? 0);
+
+  const savedMonthsCount = Array.from(
+    { length: TOTAL_MONTHS_IN_YEAR },
+    (_, i) => i + 1,
+  ).filter(isMonthSaved).length;
+
+  const hasStarted =
+    savedMonthsCount > 0 ||
+    summary.totalMonths > 0 ||
+    summary.totalSaved > 0 ||
+    displaySavedTotal > 0 ||
+    (effectiveActiveMonth?.contributionsCount ?? 0) > 0;
+
+  const effectiveDefaultedMonths = isCatchUpMode ? 0 : summary.defaultedMonths;
   const payoutDate = parseDate(payoutJourney.payoutDate);
-  // A target always belongs to the calendar month the member is in now.
   const targetPeriod = targetPeriodFor(now);
+  const targetMonthNum = effectiveActiveMonth?.month ?? targetPeriod.month;
+  const targetMonthName =
+    effectiveActiveMonth?.monthName ?? targetPeriod.monthName;
+  const targetYear = effectiveActiveMonth?.year ?? targetPeriod.year;
   const currentMonth = months.find(
-    (m) => m.year === targetPeriod.year && m.month === targetPeriod.month,
+    (m) => m.year === targetYear && m.month === targetMonthNum,
   );
-  const target = currentMonth?.targetAmount ?? null;
-  const targetSaved = currentMonth?.savedAmount ?? 0;
-  const targetPct = target
-    ? Math.min(100, Math.round((targetSaved / target) * 100))
-    : 0;
+  const target =
+    effectiveActiveMonth?.targetAmount ?? currentMonth?.targetAmount ?? null;
+  const targetSaved =
+    viewState.monthSavedAmount(targetMonthNum) ||
+    effectiveActiveMonth?.savedAmount ||
+    currentMonth?.savedAmount ||
+    0;
+  const canEditTarget = !isCatchUpMode && Boolean(effectiveActiveMonth);
+  const targetRemaining =
+    effectiveActiveMonth?.remainingAmount ??
+    (target ? Math.max(0, target - targetSaved) : 0);
+  const targetMet = Boolean(
+    effectiveActiveMonth?.targetMet ??
+      (target !== null && target > 0 && targetSaved >= target),
+  );
+  const targetPct =
+    effectiveActiveMonth?.progressPercentage != null
+      ? Math.min(100, Math.round(effectiveActiveMonth.progressPercentage))
+      : target
+        ? Math.min(100, Math.round((targetSaved / target) * 100))
+        : 0;
+
+  const monthsTargetMetCount = Math.max(
+    summary.monthsTargetMet,
+    savedMonthsCount,
+  );
+  const streakCount = Math.max(summary.streak, monthsTargetMetCount);
+
+  const activeDeadlineDate = effectiveActiveMonth
+    ? parseDate(effectiveActiveMonth.deadline)
+    : null;
+  const daysLeft = activeDeadlineDate
+    ? Math.max(
+        0,
+        Math.ceil((activeDeadlineDate.getTime() - now.getTime()) / 86_400_000),
+      )
+    : null;
+
+  const catchLeftCount = catchUpMonthsLeft.length;
+
+  const hasConfirmedPayment =
+    hasStarted ||
+    recent.some(
+      (t) =>
+        t.kind === "Contribution" &&
+        t.status === "Successful" &&
+        t.amountKobo >= minimum,
+    );
+
+  const communityState =
+    member.community === "Granted"
+      ? "Granted"
+      : hasConfirmedPayment || member.community === "Eligible"
+        ? "Eligible"
+        : "Locked";
 
   return (
-    <div className="mx-auto flex flex-col gap-4 max-w-245">
+    <div className="mx-auto flex max-w-245 flex-col gap-4">
       <div className="flex items-center justify-between">
         <div className="flex flex-col gap-0.5">
           <span className="text-[13px] font-semibold text-mute">
@@ -105,7 +227,7 @@ export function MemberHomePage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-        <Card tone="night" className="p-4.5 gap-4 rounded-card">
+        <Card tone="night" className="gap-4 rounded-card p-4.5">
           {/* Header row */}
           <div className="flex items-center justify-between gap-2">
             <span className="text-[13px] font-bold text-white/70">
@@ -117,34 +239,44 @@ export function MemberHomePage() {
                 "bg-white/14 text-white",
               )}
             >
-              {!hasStarted ? null : summary.defaultedMonths === 0 ? (
+              {!hasStarted ? null : effectiveDefaultedMonths === 0 ? (
                 <Check size={10} strokeWidth={2.6} />
               ) : (
                 <X size={10} strokeWidth={2.6} />
               )}
               {!hasStarted
                 ? "Not started"
-                : summary.defaultedMonths === 0
+                : effectiveDefaultedMonths === 0
                   ? "Interest: on track"
                   : "Interest: forfeited"}
             </span>
           </div>
 
           {/* Amount saved */}
-          <div className="text-[40px] font-extrabold tracking-tight tabular-nums my-2">
-            {formatNaira(summary.savedThisYear)}
+          <div className="my-2 text-[40px] font-extrabold tracking-tight tabular-nums">
+            {formatNaira(displaySavedTotal)}
           </div>
 
           {/* Month tiles */}
           <div className="grid grid-cols-12 gap-1">
             {MONTH_SHORT.map((letter, i) => {
-              const month = months[i];
-              const isActiveMonth = activeMonth?.month === i + 1;
-              const isDefaulted =
-                month?.status === "defaulted" || month?.status === "missed";
-              const isSaved =
-                month?.status === "saved" || month?.status === "completed";
+              const monthNum = i + 1;
+              const month =
+                months.find((m) => m.month === monthNum) ?? months[i];
               const isDecember = i === 11;
+              const isSaved = !isDecember && isMonthSaved(monthNum);
+              const isCatchUpTile =
+                !isDecember && isMonthCatchUp(monthNum) && !isSaved;
+              const isDefaulted =
+                !isDecember &&
+                !isSaved &&
+                !isCatchUpTile &&
+                !isCatchUpMode &&
+                (month?.status === "defaulted" || month?.status === "missed");
+              const isActiveNormalMonth =
+                !isDecember &&
+                !isCatchUpMode &&
+                effectiveActiveMonth?.month === monthNum;
 
               return (
                 <div
@@ -154,18 +286,19 @@ export function MemberHomePage() {
                   {/* Tile */}
                   <div
                     className={cn(
-                      "aspect-13/9 w-full rounded-lg flex items-center justify-center transition-colors",
+                      "flex aspect-13/9 w-full items-center justify-center rounded-lg transition-colors",
                       isDecember
                         ? "bg-[#4a2f45]"
                         : isSaved
-                          ? "bg-brand"
-                          : isDefaulted
-                            ? "bg-red-500"
-                            : isActiveMonth
-                              ? "bg-transparent"
-                              : "bg-white/10",
-                      // Current month: thick white border (not on December)
-                      isActiveMonth && !isDecember && "border-2 border-white",
+                          ? "bg-[#9B6BF2]"
+                          : isCatchUpTile
+                            ? "border-2 border-dashed border-gold bg-transparent text-gold"
+                            : isDefaulted
+                              ? "border-[1.5px] border-dashed border-fail bg-red-500/30"
+                              : isActiveNormalMonth
+                                ? "bg-transparent"
+                                : "bg-white/10",
+                      isActiveNormalMonth && "border-2 border-white",
                     )}
                   >
                     {isDecember ? (
@@ -183,9 +316,7 @@ export function MemberHomePage() {
                   <span
                     className={cn(
                       "text-[10.5px] font-bold leading-none",
-                      isDefaulted && !isDecember
-                        ? "text-red-400"
-                        : "text-white/60",
+                      isDefaulted ? "text-red-400" : "text-white/60",
                     )}
                     title={MONTH_NAMES[i]}
                   >
@@ -197,39 +328,70 @@ export function MemberHomePage() {
           </div>
 
           {/* Footer row */}
-          <div className="flex items-center justify-between gap-2 text-[13px] font-semibold text-white/75 mt-5">
+          <div className="mt-5 flex items-center justify-between gap-2 text-[13px] font-semibold text-white/75">
             <span>
-              {summary.totalMonths} of {TOTAL_MONTHS_IN_YEAR} months saved
+              {savedMonthsCount} of {TOTAL_MONTHS_IN_YEAR} months saved
             </span>
             <span>Payout by {formatShortDate(payoutDate)}</span>
           </div>
         </Card>
 
-        <Card className="p-4.5 gap-4 rounded-card">
-          {activeMonth ? (
+        <div className="flex flex-col justify-between gap-4 rounded-card border-2 border-gold bg-[#FFFBF2] p-5">
+          {isCatchUpMode ? (
             <>
-              <div className="flex gap-2">
-                <span className="flex size-10 items-center justify-center rounded-input bg-brand-tint text-brand-dark">
+              <div className="flex items-start gap-3">
+                <span className="flex size-10.5 shrink-0 items-center justify-center rounded-input bg-[#FDF3E4] text-[#7A5410]">
+                  <History size={20} strokeWidth={2.2} />
+                </span>
+                <div className="flex flex-1 flex-col gap-1">
+                  <b className="text-[16px] font-extrabold text-ink">
+                    Catch-up:{" "}
+                    {activeCatchUpMonthName ??
+                      dashboard.nextPeriod?.monthName ??
+                      activeMonth?.monthName ??
+                      "January"}
+                  </b>
+                  <span className="text-[13px] leading-relaxed font-semibold text-mute">
+                    {joinMonthName
+                      ? `You joined in ${joinMonthName}. Clear ${catchLeftCount} catch-up month${catchLeftCount === 1 ? "" : "s"} (${formatNaira(minimum)} each) before ${joinMonthName} savings count.`
+                      : `Clear ${catchLeftCount} catch-up month${catchLeftCount === 1 ? "" : "s"} (${formatNaira(minimum)} each) before regular monthly savings count.`}
+                  </span>
+                </div>
+              </div>
+              <ButtonLink to={paths.member.contribute} variant="primary" full>
+                Pay catch-up
+              </ButtonLink>
+            </>
+          ) : effectiveActiveMonth ? (
+            <>
+              <div className="flex gap-2.5">
+                <span className="flex size-10.5 shrink-0 items-center justify-center rounded-input bg-[#faefd4] text-[#8a5b0d]">
                   <CalendarClock size={20} />
                 </span>
-                <div className="flex-1 flex-col">
-                  <b className="text-ink">{activeMonth.monthName} is open</b>
+                <div className="flex flex-1 flex-col">
+                  <b className="text-ink">
+                    {effectiveActiveMonth.monthName} is open
+                  </b>
                   <span className="text-[13px] font-semibold text-mute">
                     Closes{" "}
-                    {formatShortDate(parseDate(activeMonth.deadline))}
+                    {formatShortDate(parseDate(effectiveActiveMonth.deadline))}
+                    {daysLeft !== null
+                      ? ` · ${daysLeft} day${daysLeft === 1 ? "" : "s"} left`
+                      : ""}
                   </span>
                 </div>
               </div>
               <div className="mt-1 flex items-center justify-between gap-2">
                 <span className="text-[13px] font-semibold text-mute">
-                  Saved for {activeMonth.monthName}
+                  Saved for {effectiveActiveMonth.monthName}
                 </span>
-                <b className="text-ink">{formatNaira(summary.savedThisYear)}</b>
+                <b className="tabular-nums text-ink">
+                  {formatNaira(targetSaved)}
+                </b>
               </div>
-              <div className="mt-1 flex gap-2">
+              <div className="mt-1 flex gap-2.5">
                 <ButtonLink
                   to={paths.member.contribute}
-                  size="sm"
                   variant="primary"
                   full
                   className="flex-1"
@@ -238,11 +400,21 @@ export function MemberHomePage() {
                 </ButtonLink>
                 {hasStarted && (
                   <button
+                    type="button"
+                    onClick={() => {
+                      if (targetSaved >= minimum) {
+                        setLockOpen(true);
+                      } else {
+                        toast(
+                          `You can lock ${effectiveActiveMonth.monthName} once it has at least ${formatNaira(minimum)}.`,
+                        );
+                      }
+                    }}
                     className={cn(
-                      "inline-flex h-10 items-center justify-center gap-2 rounded-pill px-4 text-[13px] font-bold transition",
-                      summary.defaultedMonths > 0
-                        ? "bg-brand text-white hover:bg-brand-dark"
-                        : "bg-white text-ink hover:bg-brand hover:text-white",
+                      "inline-flex min-h-12 items-center justify-center gap-2 rounded-pill border-[1.5px] px-4.5 text-[15px] font-bold transition",
+                      targetSaved >= minimum
+                        ? "border-line bg-white text-ink hover:border-brand"
+                        : "cursor-not-allowed border-transparent bg-[#EAE6F2] text-mute",
                     )}
                   >
                     <Lock size={18} /> Lock
@@ -259,35 +431,34 @@ export function MemberHomePage() {
               </span>
             </div>
           )}
-        </Card>
+        </div>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-3">
-        <button
-          type="button"
-          className="block h-full text-left"
-          aria-haspopup="dialog"
-          aria-label={
-            target
-              ? `Change ${targetPeriod.monthName} savings target`
-              : `Set a savings target for ${targetPeriod.monthName}`
-          }
-          onClick={() => setTargetOpen(true)}
-        >
+        {isCatchUpMode || !canEditTarget ? (
           <Card
             tone="soft"
-            className="h-full rounded-card border border-gray-200 bg-white"
+            className={cn(
+              "h-full rounded-card border bg-white",
+              !isCatchUpMode && target && targetMet
+                ? "border-[#bfe3d5] bg-linear-to-b from-[#f3fbf7] to-white"
+                : "border-gray-200",
+            )}
           >
             <div className="flex items-start justify-between gap-2">
               <p className="text-[13px] font-semibold text-mute">
-                {target ? `${targetPeriod.monthName} target` : "Monthly target"}
+                {!isCatchUpMode && target
+                  ? `${targetMonthName} target`
+                  : "Monthly target"}
               </p>
-              {target ? (
-                targetSaved >= target ? (
-                  <Pill tone="ok">Met</Pill>
+              {!isCatchUpMode && target ? (
+                targetMet ? (
+                  <Pill tone="ok" icon={<Check size={12} />}>
+                    Target met
+                  </Pill>
                 ) : (
                   <Pill tone="gold" icon={false}>
-                    {formatNaira(target - targetSaved)} to go
+                    {formatNaira(targetRemaining)} to go
                   </Pill>
                 )
               ) : null}
@@ -295,7 +466,7 @@ export function MemberHomePage() {
             <b className="text-[20px] font-extrabold">
               {target ? formatNaira(target) : "Not set"}
             </b>
-            {target ? (
+            {!isCatchUpMode && target ? (
               <>
                 <div
                   className="mt-2 h-1.5 overflow-hidden rounded-pill bg-soft"
@@ -303,63 +474,137 @@ export function MemberHomePage() {
                   aria-valuenow={targetPct}
                   aria-valuemin={0}
                   aria-valuemax={100}
-                  aria-label={`Progress toward ${targetPeriod.monthName} target`}
+                  aria-label={`Progress toward ${targetMonthName} target`}
                 >
                   <i
                     className={cn(
                       "block h-full rounded-pill transition-[width] duration-700",
-                      targetSaved >= target
+                      targetMet
                         ? "bg-ok"
                         : "bg-linear-to-r from-brand to-gold",
                     )}
                     style={{ width: `${targetPct}%` }}
                   />
                 </div>
-                <p className="mt-1 text-[12px] font-semibold text-mute">
-                  {formatNaira(targetSaved)} saved · {targetPct}%
-                </p>
-                <p className="mt-2 text-[12px] font-bold text-brand">
-                  Change {targetPeriod.monthName} target
-                </p>
+                <div className="mt-1.5 flex items-center justify-between gap-2 text-[12px] font-semibold text-mute">
+                  <span>
+                    {formatNaira(targetSaved)} saved this month · {targetPct}%
+                  </span>
+                  <span>Locked</span>
+                </div>
               </>
-            ) : (
-              <p className="mt-1 text-[12px] font-bold text-brand">
-                Set a target for {targetPeriod.monthName}
-              </p>
-            )}
+            ) : null}
           </Card>
-        </button>
+        ) : (
+          <button
+            type="button"
+            className="block h-full text-left"
+            aria-haspopup="dialog"
+            aria-label={
+              target
+                ? `Change ${targetMonthName} savings target`
+                : `Set a savings target for ${targetMonthName}`
+            }
+            onClick={() => setTargetOpen(true)}
+          >
+            <Card
+              tone="soft"
+              className={cn(
+                "h-full rounded-card border bg-white",
+                targetMet
+                  ? "border-[#bfe3d5] bg-linear-to-b from-[#f3fbf7] to-white"
+                  : "border-gray-200",
+              )}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[13px] font-semibold text-mute">
+                  {target ? `${targetMonthName} target` : "Monthly target"}
+                </p>
+                {target ? (
+                  targetMet ? (
+                    <Pill tone="ok" icon={<Check size={12} />}>
+                      Target met
+                    </Pill>
+                  ) : (
+                    <Pill tone="gold" icon={false}>
+                      {formatNaira(targetRemaining)} to go
+                    </Pill>
+                  )
+                ) : null}
+              </div>
+              <b className="text-[20px] font-extrabold">
+                {target ? formatNaira(target) : "Not set"}
+              </b>
+              {target ? (
+                <>
+                  <div
+                    className="mt-2 h-1.5 overflow-hidden rounded-pill bg-soft"
+                    role="progressbar"
+                    aria-valuenow={targetPct}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`Progress toward ${targetMonthName} target`}
+                  >
+                    <i
+                      className={cn(
+                        "block h-full rounded-pill transition-[width] duration-700",
+                        targetMet
+                          ? "bg-ok"
+                          : "bg-linear-to-r from-brand to-gold",
+                      )}
+                      style={{ width: `${targetPct}%` }}
+                    />
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between gap-2 text-[12px] font-semibold text-mute">
+                    <span>
+                      {formatNaira(targetSaved)} saved this month · {targetPct}%
+                    </span>
+                    <span>Resets each month</span>
+                  </div>
+                  <p className="mt-2 text-[12px] font-bold text-brand">
+                    Change {targetMonthName} target
+                  </p>
+                </>
+              ) : (
+                <p className="mt-1 text-[12px] font-bold text-brand">
+                  Set a target for {targetMonthName}
+                </p>
+              )}
+            </Card>
+          </button>
+        )}
+
         <Link to={paths.member.savings} className="block">
           <Card
             tone="soft"
-            className="rounded-card border border-gray-200 bg-white"
+            className="h-full rounded-card border border-gray-200 bg-white"
           >
             <p className="text-[13px] font-semibold text-mute">Target streak</p>
             <b className="text-[20px] font-extrabold">
-              {summary.streak} month{summary.streak === 1 ? "" : "s"}
+              {streakCount} month{streakCount === 1 ? "" : "s"}
             </b>
             <p className="text-[12px] font-semibold text-mute">
-              Met in {summary.monthsTargetMet} of {TOTAL_MONTHS_IN_YEAR} months
+              Met in {monthsTargetMetCount} of {TOTAL_MONTHS_IN_YEAR} months ›
             </p>
           </Card>
         </Link>
         <Link to={paths.member.payout} className="block">
           <Card
             tone="soft"
-            className="rounded-card border border-gray-200 bg-white"
+            className="h-full rounded-card border border-gray-200 bg-white"
           >
             <p className="text-[13px] font-semibold text-mute">
               Year-end payout
             </p>
             <b className="text-[20px] font-extrabold">December</b>
             <p className="text-[12px] font-semibold text-mute">
-              On or before {formatShortDate(payoutDate)}
+              On or before {formatShortDate(payoutDate)} ›
             </p>
           </Card>
         </Link>
       </div>
 
-      {member.community === "Locked" && (
+      {communityState === "Locked" && (
         <Card className="flex flex-wrap items-center gap-3">
           <span className="flex size-10.5 items-center justify-center rounded-input bg-soft">
             <Lock size={20} />
@@ -376,9 +621,9 @@ export function MemberHomePage() {
           </Pill>
         </Card>
       )}
-      {member.community === "Eligible" && (
-        <Card className="flex items-center gap-3 border-[#cdb8f6] bg-linear-to-b from-[#f7f2fe] to-white">
-          <span className="flex size-10.5 items-center justify-center rounded-input bg-brand-tint text-brand-dark">
+      {communityState === "Eligible" && (
+        <div className="flex flex-wrap items-center gap-3 rounded-card border border-[#cdb8f6] bg-linear-to-b from-[#f7f2fe] to-white p-4.5">
+          <span className="flex size-10.5 shrink-0 items-center justify-center rounded-input bg-brand-tint text-brand-dark">
             <Users size={20} />
           </span>
           <span className="flex flex-1 flex-col">
@@ -391,18 +636,18 @@ export function MemberHomePage() {
             href={env.waCommunityUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex h-9 items-center rounded-pill bg-brand px-3.5 text-[13px] font-bold text-white"
+            className="inline-flex h-10 items-center rounded-pill bg-brand px-4.5 text-[14px] font-bold text-white transition hover:bg-brand-dark"
             onClick={async () => {
-              await repos.member.markCommunityJoined(member.id);
+              await repos.member.markCommunityJoined(member.id).catch(() => {});
               updateMember({ ...member, community: "Granted" });
             }}
           >
             Join
           </a>
-        </Card>
+        </div>
       )}
 
-      <Card className="p-4.5 rounded-card">
+      <Card className="rounded-card p-4.5">
         <div className="mb-1 flex items-center justify-between">
           <h2 className="text-[19px] font-extrabold tracking-[-0.01em]">
             Recent activity
@@ -425,16 +670,36 @@ export function MemberHomePage() {
         )}
       </Card>
 
-      <SavingsTargetModal
-        open={targetOpen}
-        onClose={() => setTargetOpen(false)}
-        memberId={member.id}
-        year={targetPeriod.year}
-        monthName={targetPeriod.monthName}
-        target={target}
-        minimum={settings.minimumPerPayment}
-        onSaved={() => void reload()}
-      />
+      {canEditTarget && (
+        <SavingsTargetModal
+          open={targetOpen}
+          onClose={() => setTargetOpen(false)}
+          memberId={member.id}
+          year={targetYear}
+          monthName={targetMonthName}
+          target={target}
+          minimum={settings.minimumPerPayment}
+          onSaved={() => void reload()}
+        />
+      )}
+
+      {effectiveActiveMonth && !isCatchUpMode && (
+        <LockMonthModal
+          open={lockOpen}
+          onClose={() => setLockOpen(false)}
+          memberId={member.id}
+          year={effectiveActiveMonth.year}
+          month={effectiveActiveMonth.month}
+          monthId={
+            effectiveActiveMonth.id ??
+            viewState.monthSavingsId(effectiveActiveMonth.month)
+          }
+          monthName={effectiveActiveMonth.monthName}
+          savedAmount={targetSaved}
+          deadline={parseDate(effectiveActiveMonth.deadline)}
+          onLocked={() => void reload()}
+        />
+      )}
     </div>
   );
 }

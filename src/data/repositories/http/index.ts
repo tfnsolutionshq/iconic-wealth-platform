@@ -786,18 +786,34 @@ interface ApiSavingsMonth {
   contributions_count: number;
   close_note: string;
   deadline: string;
+  is_catch_up?: boolean;
+  is_catchup?: boolean;
 }
 /** Raw period record returned by GET /savings. */
 interface ApiSavingsPeriod {
+  id?: string | null;
   year: number;
   month: number;
   period: string;
   month_name: string;
   deadline: string;
+  is_catch_up?: boolean;
+  is_catchup?: boolean;
+  target_amount?: string | number | null;
+  saved_amount?: string | number;
+  remaining_amount?: string | number;
+  progress_percentage?: number | null;
+  target_met?: boolean;
+  status?: string;
+  status_label?: string;
+  close_note?: string;
+  contributions_count?: number;
 }
 
 /** Raw dashboard record returned by GET /savings. */
 interface ApiSavingsDashboard {
+  is_catch_up?: boolean;
+  is_catchup?: boolean;
   active_month: ApiSavingsPeriod | null;
   next_period: ApiSavingsPeriod | null;
   summary: {
@@ -832,11 +848,24 @@ const koboFromApi = (value: string | number | null | undefined): Kobo =>
 
 function mapSavingsPeriod(p: ApiSavingsPeriod): SavingsPeriod {
   return {
+    id: p.id,
     year: p.year,
     month: p.month,
     period: p.period,
     monthName: p.month_name,
     deadline: p.deadline,
+    isCatchUp: p.is_catch_up ?? p.is_catchup,
+    targetAmount:
+      p.target_amount == null ? null : koboFromApi(p.target_amount),
+    savedAmount: p.saved_amount == null ? undefined : koboFromApi(p.saved_amount),
+    remainingAmount:
+      p.remaining_amount == null ? undefined : koboFromApi(p.remaining_amount),
+    progressPercentage: p.progress_percentage,
+    targetMet: p.target_met,
+    status: p.status,
+    statusLabel: p.status_label,
+    closeNote: p.close_note,
+    contributionsCount: p.contributions_count,
   };
 }
 
@@ -857,11 +886,13 @@ function mapSavingsMonth(m: ApiSavingsMonth): SavingsMonth {
     contributionsCount: m.contributions_count,
     closeNote: m.close_note,
     deadline: m.deadline,
+    isCatchUp: m.is_catch_up ?? m.is_catchup,
   };
 }
 
 function mapSavingsDashboard(d: ApiSavingsDashboard): SavingsDashboard {
   return {
+    isCatchUp: d.is_catch_up ?? d.is_catchup,
     activeMonth: d.active_month ? mapSavingsPeriod(d.active_month) : null,
     nextPeriod: d.next_period ? mapSavingsPeriod(d.next_period) : null,
     summary: {
@@ -945,7 +976,8 @@ function mapActivityItem(item: ApiActivityItem): Transaction {
 
   const period = d.savings_month?.period ?? "";
   const periodMatch = /^(\d{4})-(\d{2})$/.exec(period);
-  const createdAt = d.created_at || item.created_at || new Date().toISOString();
+  const createdAt =
+    d.confirmed_at || d.created_at || item.created_at || new Date().toISOString();
   const year = periodMatch
     ? Number(periodMatch[1])
     : new Date(createdAt).getFullYear() || new Date().getFullYear();
@@ -963,9 +995,9 @@ function mapActivityItem(item: ApiActivityItem): Transaction {
     if (idx >= 0) monthIndex = idx as MonthIndex;
   }
 
-  const amountKobo = koboFromApi(d.amount ?? d.net_amount);
+  const grossKobo = koboFromApi(d.amount ?? d.net_amount);
   const platformChargeKobo = koboFromApi(d.platform_charge);
-  const netKobo = koboFromApi(d.net_amount) || amountKobo;
+  const netKobo = koboFromApi(d.net_amount) || grossKobo;
 
   const statusLower = (d.status ?? "").toLowerCase();
   let status: TransactionStatus = "Pending";
@@ -1002,12 +1034,20 @@ function mapActivityItem(item: ApiActivityItem): Transaction {
       kind === "Contribution"
         ? [{ month: monthIndex, amountKobo: netKobo }]
         : [],
-    amountKobo,
+    amountKobo: netKobo,
     platformChargeKobo,
     paymentMethod,
     status,
     late: false,
     createdAt,
+    savingsMonth: d.savings_month?.id
+      ? {
+          id: d.savings_month.id,
+          period: d.savings_month.period ?? "",
+          monthName: d.savings_month.month_name ?? MONTHS[monthIndex],
+          status: d.savings_month.status ?? "",
+        }
+      : undefined,
   };
 }
 
@@ -1033,7 +1073,30 @@ export class HttpMemberRepository implements MemberRepository {
       applyToFollowing,
     });
   }
-  lockMonth(id: string, year: number, month: MonthIndex) {
+  async lockMonth(
+    id: string,
+    year: number,
+    month: MonthIndex,
+    monthId?: string | null,
+  ) {
+    let targetMonthId = monthId ?? null;
+    if (!targetMonthId) {
+      for (const tx of this.txCache.values()) {
+        if (
+          tx.savingsMonth?.id &&
+          tx.year === year &&
+          tx.allocations.some((a) => a.month === month)
+        ) {
+          targetMonthId = tx.savingsMonth.id;
+          break;
+        }
+      }
+    }
+    if (targetMonthId) {
+      return this.http.post<SavingsYear>(
+        `/savings/months/${targetMonthId}/lock`,
+      );
+    }
     return this.http.post<SavingsYear>(
       `/members/${id}/savings/${year}/months/${month}/lock`,
     );
@@ -1084,10 +1147,24 @@ export class HttpMemberRepository implements MemberRepository {
     };
   }
   async listTransactions(_id: string): Promise<Transaction[]> {
-    const res = await this.listActivity({ page: 1 });
-    const merged = new Map<string, Transaction>(this.txCache);
-    for (const tx of res.data) merged.set(tx.id, tx);
-    return Array.from(merged.values());
+    try {
+      const payload = await this.http.get<
+        ApiEnvelope<ApiActivityItem[]> | ApiActivityItem[]
+      >("/savings/contributions?per_page=100");
+      const rawItems = unwrapData(payload) ?? [];
+      const data = rawItems.map(mapActivityItem);
+      for (const tx of data) {
+        this.txCache.set(tx.id, tx);
+      }
+      const merged = new Map<string, Transaction>(this.txCache);
+      for (const tx of data) merged.set(tx.id, tx);
+      return Array.from(merged.values());
+    } catch {
+      const res = await this.listActivity({ page: 1 });
+      const merged = new Map<string, Transaction>(this.txCache);
+      for (const tx of res.data) merged.set(tx.id, tx);
+      return Array.from(merged.values());
+    }
   }
   listNotifications(id: string) {
     return this.http.get<MemberNotification[]>(`/members/${id}/notifications`);

@@ -17,7 +17,7 @@ import { downloadReceiptPdf } from "../components/TransactionParts";
 
 export function PaymentResultPage() {
   const { result } = useContributionDraft();
-  const { session } = useAuth();
+  const { session, updateMember } = useAuth();
   const { repos } = useServices();
   const toast = useToast();
   const reduce = useReducedMotion();
@@ -28,6 +28,7 @@ export function PaymentResultPage() {
 
   const [verifying, setVerifying] = useState(Boolean(urlRef && !result));
   const [verifiedData, setVerifiedData] = useState<VerifiedContribution | null>(null);
+  const [unlockedThisPayment, setUnlockedThisPayment] = useState(false);
 
   useEffect(() => {
     if (!urlRef || result) return;
@@ -47,6 +48,18 @@ export function PaymentResultPage() {
       active = false;
     };
   }, [urlRef, result, repos]);
+
+  useEffect(() => {
+    if (verifying || !member) return;
+    const tx = verifiedData?.transaction ?? result?.transaction;
+    const isSuccess = verifiedData
+      ? tx?.status === "Successful"
+      : (result?.outcome ?? (urlRef ? "failed" : "success")) === "success";
+    if (isSuccess && member.community === "Locked") {
+      setUnlockedThisPayment(true);
+      updateMember({ ...member, community: "Eligible" });
+    }
+  }, [verifying, verifiedData, result, urlRef, member, updateMember]);
 
   if (!result && !urlRef) {
     return <ButtonLink to={paths.member.home} full>Return to dashboard</ButtonLink>;
@@ -181,8 +194,8 @@ export function PaymentResultPage() {
         </motion.div>
       )}
 
-      {result?.communityUnlocked && (
-        <Card className="flex w-full flex-wrap items-center gap-3 border-[#cdb8f6] bg-linear-to-b from-[#f7f2fe] to-white text-left">
+      {(result?.communityUnlocked || unlockedThisPayment) && o === "success" && (
+        <div className="flex w-full flex-wrap items-center gap-3 rounded-card border border-[#cdb8f6] bg-linear-to-b from-[#f7f2fe] to-white p-4.5 text-left">
           <span className="flex size-10.5 shrink-0 items-center justify-center rounded-input bg-brand-tint text-brand-dark">
             <Users size={20} />
           </span>
@@ -195,7 +208,7 @@ export function PaymentResultPage() {
           <ButtonLink to={env.waCommunityUrl} external size="sm">
             Join
           </ButtonLink>
-        </Card>
+        </div>
       )}
 
       {(o === "success" || o === "failed") && (
