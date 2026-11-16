@@ -4,9 +4,48 @@
  *  - http: calls the backend API — see data/repositories/http
  * The presentation layer never imports data-layer classes directly; it receives these via ServicesContext.
  */
-import type { AdminRole, AdminUser, Allocation, AuditCategory, AuditEntry, Bank, ContributionPaymentMethod, InterestBand, InterestCalcRow, InterestRateMode, InterestScope, InterestWorkflow, InterestYearSummary, Kobo, Member, MemberAccountStatus, MemberNotification, MemberListRow, MemberSummary, MonthIndex, PayoutAccount, PayoutBatch, PayoutDestination, AdminListItem, NotificationSettings, ReferralGroup, Registration, ReportKind, ReportResult, SavingsDashboard, SavingsMonth, SavingsYear, Session, Testimonial, Transaction, WalletEntry, WalletSnapshot, WalletWithdrawal } from '../entities';
-import type { RegistrationDetails } from '../rules/registration';
-import type { PlatformSettings } from '../rules/savings';
+import type {
+  AdminRole,
+  AdminUser,
+  Allocation,
+  AuditCategory,
+  AuditEntry,
+  Bank,
+  ContributionPaymentMethod,
+  InterestBand,
+  InterestCalcRow,
+  InterestRateMode,
+  InterestScope,
+  InterestWorkflow,
+  InterestYearSummary,
+  Kobo,
+  Member,
+  MemberAccountStatus,
+  MemberNotification,
+  MemberListRow,
+  MemberSummary,
+  MonthIndex,
+  PayoutAccount,
+  PayoutBatch,
+  PayoutDestination,
+  AdminListItem,
+  NotificationSettings,
+  ReferralGroup,
+  Registration,
+  ReportKind,
+  ReportResult,
+  SavingsDashboard,
+  SavingsMonth,
+  SavingsYear,
+  Session,
+  Testimonial,
+  Transaction,
+  WalletEntry,
+  WalletSnapshot,
+  WalletWithdrawal,
+} from "../entities";
+import type { RegistrationDetails } from "../rules/registration";
+import type { PlatformSettings } from "../rules/savings";
 
 export interface AuthRepository {
   login(identifier: string, password: string): Promise<LoginResult>;
@@ -14,8 +53,10 @@ export interface AuthRepository {
   requestPasswordReset(identifier: string): Promise<void>;
 }
 
-
-export interface NewRegistration extends RegistrationDetails { nextOfKin: { name: string; relationship: string; phone: string }; password: string }
+export interface NewRegistration extends RegistrationDetails {
+  nextOfKin: { name: string; relationship: string; phone: string };
+  password: string;
+}
 
 /** The signed-in user returned by POST /auth/login. */
 export interface LoginResult {
@@ -28,7 +69,6 @@ export interface LoginResult {
    */
   user: unknown;
 }
-
 
 /** The member created by the API when registration starts. */
 export interface RegisteredUser {
@@ -62,7 +102,7 @@ export interface RegistrationRepository {
   submit(registration: NewRegistration): Promise<Registration>;
 }
 
-export type ChangeField = 'Phone number' | 'Email' | 'Payout account';
+export type ChangeField = "Phone number" | "Email" | "Payout account";
 
 /**
  * Payout-account setup. Kept separate from MemberRepository so the live payout API can be used
@@ -72,7 +112,10 @@ export interface PayoutAccountRepository {
   /** Banks the member can choose for their payout account (GET /payout-account/banks). */
   listBanks(): Promise<Bank[]>;
   /** Saves the signed-in member's payout account (POST /payout-account). */
-  savePayoutAccount(id: string, account: Omit<PayoutAccount, 'accountName' | 'verifiedAt'>): Promise<PayoutAccount>;
+  savePayoutAccount(
+    id: string,
+    account: Omit<PayoutAccount, "accountName" | "verifiedAt">,
+  ): Promise<PayoutAccount>;
   resolveAccountName(bankCode: string, accountNumber: string): Promise<string>;
 }
 
@@ -100,17 +143,32 @@ export interface MemberRepository {
   getMember(id: string): Promise<Member>;
   getSavingsYear(id: string, year: number): Promise<SavingsYear>;
   /** Monthly Savings Target for a month; `applyToFollowing` also makes it the standing target. 0 = clear. */
-  setTarget(id: string, year: number, month: MonthIndex | null, amount: Kobo, applyToFollowing: boolean): Promise<SavingsYear>;
+  setTarget(
+    id: string,
+    year: number,
+    month: MonthIndex | null,
+    amount: Kobo,
+    applyToFollowing: boolean,
+  ): Promise<SavingsYear>;
   /** Member locks the open month early (server checks it has at least the minimum). */
   lockMonth(id: string, year: number, month: MonthIndex): Promise<SavingsYear>;
   markCommunityJoined(id: string): Promise<void>;
   /** Phone, email and payout account are admin-controlled; members request changes. */
-  requestChange(id: string, field: ChangeField, newValue: string, reason: string): Promise<void>;
+  requestChange(
+    id: string,
+    field: ChangeField,
+    newValue: string,
+    reason: string,
+  ): Promise<void>;
   completeOnboarding(id: string): Promise<void>;
   listTransactions(id: string): Promise<Transaction[]>;
   listNotifications(id: string): Promise<MemberNotification[]>;
   /** MEM-18/19: full year-end payout to the verified bank account or the platform wallet (once per member/year). */
-  requestPayout(id: string, year: number, destination: PayoutDestination): Promise<Transaction>;
+  requestPayout(
+    id: string,
+    year: number,
+    destination: PayoutDestination,
+  ): Promise<Transaction>;
   /** Demo helper: mark a bank payout as received so the status page can show the completed state. */
   markPayoutReceived(id: string, transactionId: string): Promise<Transaction>;
 }
@@ -118,27 +176,55 @@ export interface MemberRepository {
 export interface SettingsRepository {
   get(): Promise<PlatformSettings>;
   /** ADM-25: Super Admin updates minimum per payment, cut-off or payout dates (audited). */
-  save(patch: { minimumByYear?: Record<number, Kobo>; cutoffMonth?: MonthIndex; payoutDates?: Record<number, string> }): Promise<PlatformSettings>;
+  save(patch: {
+    minimumByYear?: Record<number, Kobo>;
+    cutoffMonth?: MonthIndex;
+    payoutDates?: Record<number, string>;
+  }): Promise<PlatformSettings>;
 }
 
-export interface ContributionIntent { reference: string; amountKobo: Kobo; platformChargeKobo: Kobo; allocations: Allocation[]; email: string }
-export interface VerifiedContribution { transaction: Transaction; communityUnlocked: boolean }
+export interface ContributionIntent {
+  reference: string;
+  amountKobo: Kobo;
+  platformChargeKobo: Kobo;
+  allocations: Allocation[];
+  email: string;
+}
+export interface VerifiedContribution {
+  transaction: Transaction;
+  communityUnlocked: boolean;
+}
 export interface ContributionRepository {
   /** Server re-plans the allocation (oldest open month) and creates our unique reference BEFORE the gateway opens. */
-  initiate(memberId: string, year: number, amountKobo: Kobo, method?: ContributionPaymentMethod): Promise<ContributionIntent>;
+  initiate(
+    memberId: string,
+    year: number,
+    amountKobo: Kobo,
+    method?: ContributionPaymentMethod,
+  ): Promise<ContributionIntent>;
   /** Server-side verification with Paystack; applies catch-up auto-locks and community unlock. */
   verify(reference: string): Promise<VerifiedContribution>;
   /** Debits the member's wallet and records the contribution atomically; applies the same auto-locks and unlock. */
-  payFromWallet(memberId: string, year: number, amountKobo: Kobo): Promise<VerifiedContribution>;
+  payFromWallet(
+    memberId: string,
+    year: number,
+    amountKobo: Kobo,
+  ): Promise<VerifiedContribution>;
   /**
    * Records a manual bank transfer the member says they have made. The transaction stays Pending (and does not
    * count towards savings) until the team confirms the money arrived.
    */
-  confirmBankTransfer(memberId: string, year: number, amountKobo: Kobo): Promise<VerifiedContribution>;
+  confirmBankTransfer(
+    memberId: string,
+    year: number,
+    amountKobo: Kobo,
+  ): Promise<VerifiedContribution>;
 }
 
-export type GatewayOutcome = 'success' | 'failed' | 'closed';
-export interface PaymentGateway { checkout(intent: ContributionIntent): Promise<GatewayOutcome> }
+export type GatewayOutcome = "success" | "failed" | "closed";
+export interface PaymentGateway {
+  checkout(intent: ContributionIntent): Promise<GatewayOutcome>;
+}
 
 export interface WalletRepository {
   /** Balances derived from the ledger; entries and withdrawals newest first. */
@@ -146,15 +232,24 @@ export interface WalletRepository {
   /** Member-initiated top-up. No gateway yet: demo mode settles it automatically shortly after. */
   requestTopUp(memberId: string, amountKobo: Kobo): Promise<WalletEntry>;
   /** Reserves the amount and targets the member's verified payout account; an admin disburses it later. */
-  requestWithdrawal(memberId: string, amountKobo: Kobo): Promise<WalletWithdrawal>;
+  requestWithdrawal(
+    memberId: string,
+    amountKobo: Kobo,
+  ): Promise<WalletWithdrawal>;
 }
 
 export interface TestimonialRepository {
   listPublished(): Promise<Testimonial[]>;
   /** ADM-28: full list for admins, in display order. */
   listAll(): Promise<Testimonial[]>;
-  save(t: { id?: string; name: string; descriptor: string; quote: string; status: Testimonial['status'] }): Promise<Testimonial>;
-  setStatus(id: string, status: Testimonial['status']): Promise<Testimonial>;
+  save(t: {
+    id?: string;
+    name: string;
+    descriptor: string;
+    quote: string;
+    status: Testimonial["status"];
+  }): Promise<Testimonial>;
+  setStatus(id: string, status: Testimonial["status"]): Promise<Testimonial>;
   move(id: string, direction: -1 | 1): Promise<Testimonial[]>;
   remove(id: string): Promise<void>;
 }
@@ -170,15 +265,15 @@ export interface InterestRulesInput {
 }
 
 /** Baseline (monthly target) bands offered by the admin members filter. */
-export type MemberBaselineRange = '10000-50000' | 'above-50000';
+export type MemberBaselineRange = "10000-50000" | "above-50000";
 
 export interface MemberQuery {
-  tab: 'All' | 'Active' | 'Suspended' | 'NotPaid' | 'Forfeited';
+  tab: "All" | "Active" | "Suspended" | "NotPaid" | "Forfeited";
   search: string;
   page?: number;
   /** Sent to GET /admin/members as `status`. */
   status?: ApiMemberStatus;
-  eligibility?: 'Eligible' | 'Forfeited';
+  eligibility?: "Eligible" | "Forfeited";
   referred?: boolean;
   joinedYear?: string;
   /** Sent to GET /admin/members as `baseline`. */
@@ -215,7 +310,11 @@ export interface ApiMember {
   residential_address: string | null;
   how_heard_about_us: string | null;
   referred_by: string | null;
-  next_of_kin: { name: string | null; relationship: string | null; phone: string | null } | null;
+  next_of_kin: {
+    name: string | null;
+    relationship: string | null;
+    phone: string | null;
+  } | null;
   status: ApiMemberStatus;
   email_verified_at: string | null;
   approved_at: string | null;
@@ -233,55 +332,163 @@ export interface ApiMemberPage {
 }
 
 export interface AdminRepository {
-  dashboard(year: number): Promise<{ members: number; activeSavers: number; totalSavingsKobo: Kobo; pendingPayments: number; monthlyPaid: { month: string; paid: number; due: number }[]; eligible: number; forfeited: number }>;
+  dashboard(year: number): Promise<{
+    year: number;
+    members: number;
+    newThisMonth: number;
+    activeSavers: number;
+    activeSaversPercent: number;
+    totalSavingsKobo: Kobo;
+    pendingPayments: number;
+    currentMonthCompliance?: {
+      month: number;
+      monthName: string;
+      dueDate: string;
+      paid: number;
+      notPaid: number;
+      of: number;
+    };
+    monthlyPaid: {
+      month: number;
+      monthName: string;
+      paid: number;
+      due: number;
+    }[];
+    interestEligibility: {
+      eligible: number | null;
+      forfeited: number | null;
+      latePayments: number;
+      missedMonths: number;
+    };
+    interest: {
+      status: string | null;
+      statusLabel: string;
+      rate: number | null;
+      id: string | null;
+      payoutBatch: string | null;
+    };
+    failedPayments: {
+      member: string;
+      covers: string;
+      amountKobo: Kobo;
+      reason: string;
+    }[];
+    recentActivity: {
+      action: string;
+      record: string;
+      actor: string;
+      type: string;
+      createdAt: string;
+    }[];
+  }>;
   /** Paginated rows for the admin members list. Savings figures may be absent on the live API. */
   listMembers(query: MemberQuery): Promise<MemberListPage>;
-  countMembers(): Promise<Record<MemberQuery['tab'], number>>;
+  countMembers(): Promise<Record<MemberQuery["tab"], number>>;
   listRegistrations(): Promise<Registration[]>;
   /** ADM-12: lists all members from GET /admin/members with server-side search, status filter, and pagination. */
-  listAllMembers(params: { search?: string; status?: ApiMemberStatus; page?: number }): Promise<ApiMemberPage>;
+  listAllMembers(params: {
+    search?: string;
+    status?: ApiMemberStatus;
+    page?: number;
+  }): Promise<ApiMemberPage>;
   /** POST /admin/members/:id/approve */
   approveMember(id: string): Promise<ApiMember>;
   /** POST /admin/members/:id/reject */
   rejectMember(id: string, reason: string): Promise<ApiMember>;
   /** ADM-12: approve (opens the member account) or reject (reason required) a registration. */
-  decideRegistration(id: string, decision: 'Approved' | 'Rejected', reason?: string): Promise<Registration>;
+  decideRegistration(
+    id: string,
+    decision: "Approved" | "Rejected",
+    reason?: string,
+  ): Promise<Registration>;
   /** ADM-13: per-member savings rows plus members-saving-per-month counts for the chart. */
-  savingsOverview(year: number): Promise<{ rows: MemberSummary[]; monthly: { month: string; members: number }[] }>;
+  savingsOverview(
+    year: number,
+  ): Promise<{
+    rows: MemberSummary[];
+    monthly: { month: string; members: number }[];
+  }>;
   /** ADM-14: every contribution and payout (server-side verified). */
   listTransactions(): Promise<Transaction[]>;
   /** ADM-15 to ADM-17: one interest configuration per savings year; 8-stage maker-checker workflow. */
   listInterest(): Promise<InterestYearSummary[]>;
-  getInterest(year: number): Promise<{ workflow: InterestWorkflow; preview: InterestCalcRow[] }>;
-  saveInterestPeriod(year: number, period: { start: string; end: string; close: string }): Promise<InterestWorkflow>;
-  saveInterestRules(year: number, rules: InterestRulesInput): Promise<InterestWorkflow>;
+  getInterest(
+    year: number,
+  ): Promise<{ workflow: InterestWorkflow; preview: InterestCalcRow[] }>;
+  saveInterestPeriod(
+    year: number,
+    period: { start: string; end: string; close: string },
+  ): Promise<InterestWorkflow>;
+  saveInterestRules(
+    year: number,
+    rules: InterestRulesInput,
+  ): Promise<InterestWorkflow>;
   /** Removes members from the payout preview/batch (pass `[]` to restore everyone). */
-  setInterestExclusions(year: number, memberIds: string[]): Promise<InterestWorkflow>;
+  setInterestExclusions(
+    year: number,
+    memberIds: string[],
+  ): Promise<InterestWorkflow>;
   runInterestCalculation(year: number): Promise<InterestWorkflow>;
-  submitInterest(year: number, note: string, by: string): Promise<InterestWorkflow>;
+  submitInterest(
+    year: number,
+    note: string,
+    by: string,
+  ): Promise<InterestWorkflow>;
   /** `role` identifies the checker: only a Super Admin may approve — including their own maker request. */
-  decideInterest(year: number, decision: 'Approved' | 'Returned', opts: { by: string; role?: AdminRole; reason?: string }): Promise<InterestWorkflow>;
+  decideInterest(
+    year: number,
+    decision: "Approved" | "Returned",
+    opts: { by: string; role?: AdminRole; reason?: string },
+  ): Promise<InterestWorkflow>;
   createPayoutBatch(year: number, by: string): Promise<PayoutBatch>;
   notifyInterest(year: number, by: string): Promise<InterestWorkflow>;
   /** ADM-18 to ADM-20: year-end payout batches. */
   listPayoutBatches(): Promise<PayoutBatch[]>;
   getPayoutBatch(id: string): Promise<PayoutBatch>;
-  decideBatch(id: string, decision: 'Approved' | 'Returned', opts: { by: string; role?: AdminRole; reason?: string }): Promise<PayoutBatch>;
+  decideBatch(
+    id: string,
+    decision: "Approved" | "Returned",
+    opts: { by: string; role?: AdminRole; reason?: string },
+  ): Promise<PayoutBatch>;
   resubmitBatch(id: string, by: string): Promise<PayoutBatch>;
   startDisbursement(id: string, by: string): Promise<PayoutBatch>;
   retryPayout(id: string, memberId: string, by: string): Promise<PayoutBatch>;
-  markPayoutPaid(id: string, memberId: string, opts: { method: string; proof: string; note: string; by: string }): Promise<PayoutBatch>;
+  markPayoutPaid(
+    id: string,
+    memberId: string,
+    opts: { method: string; proof: string; note: string; by: string },
+  ): Promise<PayoutBatch>;
   /** ADM-21: filtered report preview (exported client-side to CSV). */
-  runReport(kind: ReportKind, year: number, month?: number | 'all', status?: string): Promise<ReportResult>;
+  runReport(
+    kind: ReportKind,
+    year: number,
+    month?: number | "all",
+    status?: string,
+  ): Promise<ReportResult>;
   /** ADM-22: referrer → referred members and pending registrations. */
   referralGroups(): Promise<ReferralGroup[]>;
   /** ADM-23: every privileged and financial action. Entries are append-only. */
   listAuditLog(): Promise<AuditEntry[]>;
-  logAudit(e: { at: string; actor: string; role: string; action: string; entity: string; change: string; category: AuditCategory }): Promise<AuditEntry>;
+  logAudit(e: {
+    at: string;
+    actor: string;
+    role: string;
+    action: string;
+    entity: string;
+    change: string;
+    category: AuditCategory;
+  }): Promise<AuditEntry>;
   /** ADM-24/26: admin users (Super Admin manages). */
   listAdmins(): Promise<AdminListItem[]>;
-  inviteAdmin(input: { name: string; email: string; role: AdminRole }): Promise<AdminListItem>;
-  setAdminStatus(id: string, status: AdminListItem['status']): Promise<AdminListItem>;
+  inviteAdmin(input: {
+    name: string;
+    email: string;
+    role: AdminRole;
+  }): Promise<AdminListItem>;
+  setAdminStatus(
+    id: string,
+    status: AdminListItem["status"],
+  ): Promise<AdminListItem>;
   /** ADM-27: member notification preferences matrix. */
   getNotifications(): Promise<NotificationSettings>;
   saveNotifications(s: NotificationSettings): Promise<NotificationSettings>;
@@ -289,7 +496,16 @@ export interface AdminRepository {
 }
 
 export interface Repositories {
-  auth: AuthRepository; registration: RegistrationRepository; member: MemberRepository; payout: PayoutAccountRepository;
-  savingsTarget: SavingsTargetRepository; savingsDashboard: SavingsDashboardRepository; contribution: ContributionRepository;
-  settings: SettingsRepository; testimonials: TestimonialRepository; admin: AdminRepository; gateway: PaymentGateway; wallet: WalletRepository;
+  auth: AuthRepository;
+  registration: RegistrationRepository;
+  member: MemberRepository;
+  payout: PayoutAccountRepository;
+  savingsTarget: SavingsTargetRepository;
+  savingsDashboard: SavingsDashboardRepository;
+  contribution: ContributionRepository;
+  settings: SettingsRepository;
+  testimonials: TestimonialRepository;
+  admin: AdminRepository;
+  gateway: PaymentGateway;
+  wallet: WalletRepository;
 }

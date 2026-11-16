@@ -67,10 +67,6 @@ export function RegisterPage() {
   const [otpRequireEmail, setOtpRequireEmail] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
   const [pwError, setPwError] = useState<string | null>(null);
-  const [otpError, setOtpError] = useState<string | null>(null);
-  const [otpErrorCodes, setOtpErrorCodes] = useState<string[]>([]);
-  const [resendBlocked, setResendBlocked] = useState(false);
-  const [resendBlockedSeconds, setResendBlockedSeconds] = useState(0);
   const [policy, setPolicy] = useState<PolicyKey | null>(null);
   const [busy, setBusy] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -120,11 +116,6 @@ export function RegisterPage() {
       setStarted(true);
       setStep(2);
       setOtpOpen(true);
-      setOtpRequireEmail(false);
-      setOtpError(null);
-      setOtpErrorCodes([]);
-      setResendBlocked(false);
-      setResendBlockedSeconds(0);
       if (result.verification?.resendAvailableInSeconds) {
         setResendSeconds(result.verification.resendAvailableInSeconds);
       }
@@ -366,7 +357,10 @@ export function RegisterPage() {
             <button
               type="button"
               className="self-start text-sm font-semibold text-brand hover:underline"
-              onClick={() => { setOtpRequireEmail(true); setOtpOpen(true); }}
+              onClick={() => {
+                setOtpRequireEmail(true);
+                setOtpOpen(true);
+              }}
             >
               Have you received a code already?
             </button>
