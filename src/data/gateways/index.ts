@@ -2,12 +2,30 @@ import type { ContributionIntent, GatewayOutcome, PaymentGateway } from '@/domai
 
 /** Production: Paystack Inline (loaded on demand, no npm dependency). The server still verifies every payment. */
 export class PaystackInlineGateway implements PaymentGateway {
-  constructor(private readonly publicKey: string) {}
+  constructor(
+    private readonly publicKey: string,
+    private readonly fallback?: PaymentGateway | null,
+  ) {}
   private load(): Promise<void> {
     if ((window as unknown as { PaystackPop?: unknown }).PaystackPop) return Promise.resolve();
     return new Promise((resolve, reject) => { const s = document.createElement('script'); s.src = 'https://js.paystack.co/v2/inline.js'; s.onload = () => resolve(); s.onerror = () => reject(new Error('Could not load Paystack.')); document.head.appendChild(s); });
   }
   async checkout(intent: ContributionIntent): Promise<GatewayOutcome> {
+    if (intent.accessCode) {
+      await this.load();
+      type Popup = new () => {
+        resumeTransaction(accessCode: string, callbacks?: Record<string, unknown>): void;
+      };
+      const Pop = (window as unknown as { PaystackPop: Popup }).PaystackPop;
+      return new Promise(resolve => new Pop().resumeTransaction(intent.accessCode!, {
+        onSuccess: () => resolve('success'),
+        onCancel: () => resolve('closed'),
+        onError: () => resolve('failed'),
+      }));
+    }
+    if (!this.publicKey && this.fallback) {
+      return this.fallback.checkout(intent);
+    }
     await this.load();
     type Popup = new () => { newTransaction(o: Record<string, unknown>): void };
     const Pop = (window as unknown as { PaystackPop: Popup }).PaystackPop;

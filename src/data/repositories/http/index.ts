@@ -34,10 +34,13 @@ import type {
   Session,
   Testimonial,
   Transaction,
+  TransactionStatus,
 } from "@/domain/entities";
 import type { PlatformSettings } from "@/domain/rules";
-import { naira } from "@/domain/rules";
+import { MONTHS, naira } from "@/domain/rules";
 import type {
+  ActivityPageResult,
+  ActivityQuery,
   AdminRepository,
   AuthRepository,
   ChangeField,
@@ -624,7 +627,106 @@ export class HttpSavingsDashboardRepository implements SavingsDashboardRepositor
   }
 }
 
+interface ApiActivityItem {
+  kind?: string;
+  created_at?: string;
+  data?: {
+    id?: string;
+    reference?: string;
+    amount?: string;
+    platform_charge?: string;
+    net_amount?: string;
+    channel?: string;
+    status?: string;
+    status_label?: string;
+    gateway_reference?: string;
+    confirmed_at?: string | null;
+    savings_month?: {
+      id?: string;
+      period?: string;
+      month_name?: string;
+      status?: string;
+    };
+    created_at?: string;
+  };
+}
+
+function mapActivityItem(item: ApiActivityItem): Transaction {
+  const d =
+    item.data ?? (item as unknown as NonNullable<ApiActivityItem["data"]>);
+  const kind: Transaction["kind"] =
+    (item.kind ?? "").toLowerCase() === "payout" ? "Payout" : "Contribution";
+
+  const period = d.savings_month?.period ?? "";
+  const periodMatch = /^(\d{4})-(\d{2})$/.exec(period);
+  const createdAt = d.created_at || item.created_at || new Date().toISOString();
+  const year = periodMatch
+    ? Number(periodMatch[1])
+    : new Date(createdAt).getFullYear() || new Date().getFullYear();
+
+  let monthIndex: MonthIndex = 0;
+  if (periodMatch) {
+    monthIndex = Math.max(
+      0,
+      Math.min(11, Number(periodMatch[2]) - 1),
+    ) as MonthIndex;
+  } else if (d.savings_month?.month_name) {
+    const idx = MONTHS.findIndex(
+      (m) => m.toLowerCase() === d.savings_month!.month_name!.toLowerCase(),
+    );
+    if (idx >= 0) monthIndex = idx as MonthIndex;
+  }
+
+  const amountKobo = koboFromApi(d.amount ?? d.net_amount);
+  const platformChargeKobo = koboFromApi(d.platform_charge);
+  const netKobo = koboFromApi(d.net_amount) || amountKobo;
+
+  const statusLower = (d.status ?? "").toLowerCase();
+  let status: TransactionStatus = "Pending";
+  if (["confirmed", "successful", "paid", "completed"].includes(statusLower)) {
+    status = "Successful";
+  } else if (statusLower === "processing") {
+    status = "Processing";
+  } else if (
+    ["failed", "declined", "cancelled", "abandoned"].includes(statusLower)
+  ) {
+    status = "Failed";
+  }
+
+  const channelLower = (d.channel ?? "").toLowerCase();
+  let paymentMethod: ContributionPaymentMethod = "Online";
+  if (channelLower === "wallet") paymentMethod = "Wallet";
+  else if (
+    channelLower === "bank" ||
+    channelLower === "bank_transfer" ||
+    channelLower === "bank account"
+  ) {
+    paymentMethod = "Bank Account";
+  }
+
+  return {
+    id: d.id || d.reference || `TX-${Date.now()}`,
+    reference: d.reference || d.id || "",
+    gatewayReference: d.gateway_reference || undefined,
+    memberId: "",
+    memberName: "",
+    kind,
+    year,
+    allocations:
+      kind === "Contribution"
+        ? [{ month: monthIndex, amountKobo: netKobo }]
+        : [],
+    amountKobo,
+    platformChargeKobo,
+    paymentMethod,
+    status,
+    late: false,
+    createdAt,
+  };
+}
+
 export class HttpMemberRepository implements MemberRepository {
+  private readonly txCache = new Map<string, Transaction>();
   constructor(private readonly http: HttpClient) {}
   getMember(id: string) {
     return this.http.get<Member>(`/members/${id}`);
@@ -668,8 +770,38 @@ export class HttpMemberRepository implements MemberRepository {
   async completeOnboarding(id: string) {
     await this.http.post(`/members/${id}/onboarding/complete`);
   }
-  listTransactions(id: string) {
-    return this.http.get<Transaction[]>(`/members/${id}/transactions`);
+  async listActivity(params: ActivityQuery = {}): Promise<ActivityPageResult> {
+    const p = new URLSearchParams();
+    if (params.filter) p.set("filter", params.filter);
+    if (params.search?.trim()) p.set("search", params.search.trim());
+    if (params.per_page) p.set("per_page", String(params.per_page));
+    if (params.page) p.set("page", String(params.page));
+    const qs = p.toString();
+    const payload = await this.http.get<
+      ApiEnvelope<ApiActivityItem[]> | ApiActivityItem[]
+    >(`/activity${qs ? `?${qs}` : ""}`);
+    const rawItems = unwrapData(payload) ?? [];
+    const data = rawItems.map(mapActivityItem);
+    for (const tx of data) {
+      this.txCache.set(tx.id, tx);
+    }
+    const perPage = params.per_page ?? 15;
+    const page = params.page ?? 1;
+    return {
+      data,
+      meta: readPageMeta(payload, {
+        current_page: page,
+        per_page: perPage,
+        last_page: 1,
+        total: data.length,
+      }),
+    };
+  }
+  async listTransactions(_id: string): Promise<Transaction[]> {
+    const res = await this.listActivity({ page: 1 });
+    const merged = new Map<string, Transaction>(this.txCache);
+    for (const tx of res.data) merged.set(tx.id, tx);
+    return Array.from(merged.values());
   }
   listNotifications(id: string) {
     return this.http.get<MemberNotification[]>(`/members/${id}/notifications`);

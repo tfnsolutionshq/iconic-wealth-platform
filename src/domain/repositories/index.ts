@@ -139,6 +139,18 @@ export interface SavingsDashboardRepository {
   getMonths(year: number): Promise<SavingsMonth[]>;
 }
 
+export interface ActivityQuery {
+  filter?: "contributions" | "payouts" | "pending" | "failed";
+  search?: string;
+  per_page?: number;
+  page?: number;
+}
+
+export interface ActivityPageResult {
+  data: Transaction[];
+  meta: PageMeta;
+}
+
 export interface MemberRepository {
   getMember(id: string): Promise<Member>;
   getSavingsYear(id: string, year: number): Promise<SavingsYear>;
@@ -162,6 +174,7 @@ export interface MemberRepository {
   ): Promise<void>;
   completeOnboarding(id: string): Promise<void>;
   listTransactions(id: string): Promise<Transaction[]>;
+  listActivity(params?: ActivityQuery): Promise<ActivityPageResult>;
   listNotifications(id: string): Promise<MemberNotification[]>;
   /** MEM-18/19: full year-end payout to the verified bank account or the platform wallet (once per member/year). */
   requestPayout(
@@ -189,10 +202,19 @@ export interface ContributionIntent {
   platformChargeKobo: Kobo;
   allocations: Allocation[];
   email: string;
+  authorizationUrl?: string;
+  accessCode?: string;
 }
 export interface VerifiedContribution {
   transaction: Transaction;
   communityUnlocked: boolean;
+  savingsMonth?: {
+    monthName: string;
+    year: number;
+    savedAmount: Kobo;
+    targetAmount: Kobo;
+  };
+  targetMet?: boolean;
 }
 export interface ContributionRepository {
   /** Server re-plans the allocation (oldest open month) and creates our unique reference BEFORE the gateway opens. */
@@ -402,9 +424,7 @@ export interface AdminRepository {
     reason?: string,
   ): Promise<Registration>;
   /** ADM-13: per-member savings rows plus members-saving-per-month counts for the chart. */
-  savingsOverview(
-    year: number,
-  ): Promise<{
+  savingsOverview(year: number): Promise<{
     rows: MemberSummary[];
     monthly: { month: string; members: number }[];
   }>;

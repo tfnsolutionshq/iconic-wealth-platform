@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { Download, List, Search } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight, Download, List, LoaderCircle, Search } from "lucide-react";
 import type { Transaction } from "@/domain/entities";
+import type { ActivityQuery, PageMeta } from "@/domain/repositories";
 import { formatNaira } from "@/domain/rules";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useServices } from "../../../contexts/ServicesContext";
@@ -11,41 +12,72 @@ import { TxRow, describeTx } from "../components/TransactionParts";
 
 type Tab = "All" | "Contributions" | "Payouts" | "Pending" | "Failed";
 
+const PER_PAGE = 15;
+
+const INITIAL_META: PageMeta = {
+  current_page: 1,
+  per_page: PER_PAGE,
+  last_page: 1,
+  total: 0,
+};
+
+const TAB_TO_FILTER: Record<Tab, ActivityQuery["filter"]> = {
+  All: undefined,
+  Contributions: "contributions",
+  Payouts: "payouts",
+  Pending: "pending",
+  Failed: "failed",
+};
+
 /** MEM-12: every contribution and payout with search, filters and a CSV statement download. */
 export function ActivityPage() {
   const { session } = useAuth();
   const { repos } = useServices();
   const toast = useToast();
   const member = session?.kind === "member" ? session.member : null;
-  const [all, setAll] = useState<Transaction[]>([]);
+  const [list, setList] = useState<Transaction[]>([]);
+  const [meta, setMeta] = useState<PageMeta>(INITIAL_META);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("All");
   const [query, setQuery] = useState("");
 
   useEffect(() => {
-    if (member) repos.member.listTransactions(member.id).then(setAll);
-  }, [repos, member]);
-
-  const list = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return [...all]
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .filter(
-        (t) =>
-          tab === "All" ||
-          (tab === "Contributions" && t.kind === "Contribution") ||
-          (tab === "Payouts" && t.kind === "Payout") ||
-          t.status === tab,
-      )
-      .filter(
-        (t) =>
-          !q ||
-          `${t.reference} ${describeTx(t)} ${Math.round(t.amountKobo / 100)}`
-            .toLowerCase()
-            .includes(q),
-      );
-  }, [all, tab, query]);
+    if (!member) return;
+    let active = true;
+    setLoading(true);
+    repos.member
+      .listActivity({
+        filter: TAB_TO_FILTER[tab],
+        search: query.trim() || undefined,
+        per_page: PER_PAGE,
+        page,
+      })
+      .then((res) => {
+        if (!active) return;
+        setList(res.data);
+        setMeta(res.meta);
+      })
+      .catch((err) => {
+        if (!active) return;
+        toast((err as Error).message || "Could not load activity.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [repos, member, tab, query, page, toast]);
 
   if (!member) return <p className="text-mute">Loading…</p>;
+
+  const firstRow =
+    meta.total === 0 ? 0 : (meta.current_page - 1) * meta.per_page + 1;
+  const lastRow =
+    meta.total === 0
+      ? 0
+      : Math.min(meta.total, firstRow + Math.max(0, list.length - 1));
 
   const statement = () => {
     downloadCsv(
@@ -62,6 +94,8 @@ export function ActivityPage() {
     );
     toast("Statement downloaded.");
   };
+
+  const hasFilters = tab !== "All" || query.trim() !== "";
 
   return (
     <div className="mx-auto flex max-w-245 flex-col gap-4">
@@ -81,34 +115,85 @@ export function ActivityPage() {
         <span className="sr-only">Search activity</span>
         <input
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by reference, month or amount"
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setPage(1);
+          }}
+          placeholder="Search by reference, month (e.g. 2026-06) or amount"
           className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-ink outline-none placeholder:text-mute"
         />
       </label>
       <div className="overflow-x-auto">
         <Chips<Tab>
           value={tab}
-          onChange={setTab}
+          onChange={(nextTab) => {
+            setTab(nextTab);
+            setPage(1);
+          }}
           options={(
             ["All", "Contributions", "Payouts", "Pending", "Failed"] as Tab[]
           ).map((t) => ({ value: t, label: t }))}
         />
       </div>
       <Card>
-        {list.length ? (
+        {loading ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex min-h-40 items-center justify-center gap-2 py-8"
+          >
+            <LoaderCircle className="animate-spin text-brand" size={18} />
+            <p className="text-sm font-semibold text-mute">Loading activity…</p>
+          </div>
+        ) : list.length ? (
           list.map((t) => <TxRow key={t.id} t={t} />)
         ) : (
           <EmptyState
             icon={<List size={28} />}
-            title={all.length ? "Nothing here" : "No payments yet"}
+            title={hasFilters ? "Nothing here" : "No payments yet"}
           >
-            {all.length
+            {hasFilters
               ? "Try another filter."
               : "Your contributions will show here with their status."}
           </EmptyState>
         )}
       </Card>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[13px] font-semibold text-mute">
+          {loading
+            ? "Loading activity…"
+            : meta.total === 0
+              ? "No activity found"
+              : `Showing ${firstRow}–${lastRow} of ${meta.total} transactions`}
+        </p>
+        {meta.last_page > 1 && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label="Previous page"
+              icon={<ChevronLeft size={16} />}
+              disabled={loading || meta.current_page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              <span className="sr-only">Previous page</span>
+            </Button>
+            <span className="text-[13px] font-semibold text-mute">
+              Page {meta.current_page} of {meta.last_page}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label="Next page"
+              icon={<ChevronRight size={16} />}
+              disabled={loading || meta.current_page >= meta.last_page}
+              onClick={() => setPage((p) => Math.min(meta.last_page, p + 1))}
+            >
+              <span className="sr-only">Next page</span>
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
