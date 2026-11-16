@@ -14,7 +14,7 @@ import { paths } from "../../../routes/paths";
 import { env } from "@/app/config/env";
 import { downloadReceiptPdf } from "../components/TransactionParts";
 
-/** MEM-11 (v5): success (with target celebration and community unlock), pending ("don't pay again"), failed. */
+
 export function PaymentResultPage() {
   const { result } = useContributionDraft();
   const { session } = useAuth();
