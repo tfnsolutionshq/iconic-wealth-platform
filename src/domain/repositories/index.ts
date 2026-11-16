@@ -163,7 +163,12 @@ export interface MemberRepository {
     applyToFollowing: boolean,
   ): Promise<SavingsYear>;
   /** Member locks the open month early (server checks it has at least the minimum). */
-  lockMonth(id: string, year: number, month: MonthIndex): Promise<SavingsYear>;
+  lockMonth(
+    id: string,
+    year: number,
+    month: MonthIndex,
+    monthId?: string | null,
+  ): Promise<SavingsYear>;
   markCommunityJoined(id: string): Promise<void>;
   /** Phone, email and payout account are admin-controlled; members request changes. */
   requestChange(

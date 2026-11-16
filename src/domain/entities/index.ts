@@ -90,15 +90,27 @@ export interface SavingsMonth {
   contributionsCount: number;
   closeNote: string;
   deadline: string;                    // ISO date-time
+  isCatchUp?: boolean;
 }
 
 /** One savings period returned by the member dashboard endpoint. */
 export interface SavingsPeriod {
+  id?: string | null;
   year: number;
   month: number;                       // 1-12
   period: string;                      // e.g. "2027-01"
   monthName: string;                   // e.g. "January"
   deadline: string;                    // ISO date-time
+  isCatchUp?: boolean;
+  targetAmount?: Kobo | null;
+  savedAmount?: Kobo;
+  remainingAmount?: Kobo;
+  progressPercentage?: number | null;
+  targetMet?: boolean;
+  status?: string;
+  statusLabel?: string;
+  closeNote?: string;
+  contributionsCount?: number;
 }
 
 export interface PayoutJourneyStep {
@@ -111,6 +123,7 @@ export interface PayoutJourneyStep {
 
 /** The signed-in member's dashboard from GET /savings. */
 export interface SavingsDashboard {
+  isCatchUp?: boolean;
   activeMonth: SavingsPeriod | null;
   nextPeriod: SavingsPeriod | null;
   summary: {
@@ -151,6 +164,12 @@ export interface Transaction {
   late: boolean;
   failureReason?: string;
   createdAt: string;
+  savingsMonth?: {
+    id: string;
+    period: string;
+    monthName: string;
+    status: string;
+  };
 }
 
 export interface Registration {
