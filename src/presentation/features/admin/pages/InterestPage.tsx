@@ -2,22 +2,17 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LoaderCircle, Plus } from "lucide-react";
 import type { InterestWorkflow, InterestYearSummary } from "@/domain/entities";
-import { formatNaira, interestWizardProgress } from "@/domain/rules";
+import {
+  formatNaira,
+  INTEREST_WIZARD_LABELS,
+  interestWizardProgress,
+} from "@/domain/rules";
 import { useServices } from "../../../contexts/ServicesContext";
 import { Button, Card, DataTable, Modal, Pill } from "../../../design-system";
 import { AdminPageHeader } from "../../../layouts/AdminLayout";
 import { paths } from "../../../routes/paths";
 
-export const INTEREST_STAGES = [
-  "Period setup",
-  "Rule configuration",
-  "Calculation",
-  "Review",
-  "Approval",
-  "Payout",
-  "Notification",
-  "History",
-];
+export const INTEREST_STAGES: string[] = [...INTEREST_WIZARD_LABELS];
 const STATUS_TONE = {
   "Not started": "mute",
   Draft: "info",

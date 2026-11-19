@@ -404,6 +404,12 @@ export interface InterestStage {
   status: InterestStageStatus;
   completedAt: string | null;
 }
+/** One of the eight wizard steps returned by the config detail endpoint. */
+export interface InterestWizardStage extends InterestStage {
+  step: number;
+}
+/** Notification channels accepted by `POST /admin/interest/{id}/notify`. */
+export type InterestNotifyChannel = "in_app" | "email" | "sms" | "whatsapp";
 /** A user attached to an interest workflow milestone (created by / submitted by / reviewed by). */
 export interface InterestActor {
   id: string;
@@ -435,6 +441,8 @@ export interface InterestWorkflow extends InterestYearSummary {
   completedStages: string[];
   /** Ordered milestones with their own status and completion timestamp. */
   stages: InterestStage[];
+  /** Authoritative 8-step wizard display states from `wizard_stages`. */
+  wizardStages?: InterestWizardStage[];
   calculationRunAt: string | null;
   createdBy: InterestActor | null;
   submittedBy: InterestActor | null;

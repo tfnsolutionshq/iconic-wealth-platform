@@ -214,6 +214,9 @@ All amounts in kobo. Auth: `Authorization: Bearer <token>`. Implemented in `src/
 | POST | `/admin/interest/{interestConfigId}/approve` | Approve an interest configuration; checker comes from the authenticated session |
 | POST | `/admin/interest/{interestConfigId}/reject` | Return an interest configuration to the maker (`{ note }`) |
 | GET | `/admin/interest/{interestConfigId}/payouts` | Member payout rows and totals for the approved configuration's year-end batch |
+| POST | `/admin/interest/{interestConfigId}/payouts` | Creates the year-end payout batch from the approved configuration |
+| POST | `/admin/interest/{interestConfigId}/notify` | Notify eligible members (`{ channels: ["in_app", "email", "sms", "whatsapp"] }`) |
+| GET | `/admin/interest/{interestConfigId}/history` | Workflow event log for the History step |
 
 Extend the ports in `domain/repositories` first, then both adapters (mock and http), for every new endpoint.
 

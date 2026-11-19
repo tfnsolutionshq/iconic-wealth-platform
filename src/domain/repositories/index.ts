@@ -15,6 +15,7 @@ import type {
   InterestBand,
   InterestCalcRow,
   InterestCalculationEntries,
+  InterestNotifyChannel,
   InterestRateMode,
   InterestScope,
   InterestWorkflow,
@@ -517,6 +518,10 @@ export interface AdminRepository {
     interestConfigId: number | string,
     batch?: { id?: string; year?: number; month?: string },
   ): Promise<PayoutBatch>;
+  /** Creates the year-end payout batch (`POST /admin/interest/{id}/payouts`). */
+  createInterestPayouts(
+    interestConfigId: number | string,
+  ): Promise<PayoutBatch>;
   submitInterest(
     year: number,
     note: string,
@@ -534,7 +539,19 @@ export interface AdminRepository {
     opts: { by: string; role?: AdminRole; reason?: string },
   ): Promise<InterestWorkflow>;
   createPayoutBatch(year: number, by: string): Promise<PayoutBatch>;
-  notifyInterest(year: number, by: string): Promise<InterestWorkflow>;
+  /**
+   * `POST /admin/interest/{interestConfigId}/notify` with `{ channels }`.
+   * `by` is only used for the local audit/history actor, not in the request.
+   */
+  notifyInterest(
+    interestConfigId: number | string,
+    channels: InterestNotifyChannel[],
+    by: string,
+  ): Promise<InterestWorkflow>;
+  /** `GET /admin/interest/{interestConfigId}/history` as [at, event, actor] rows. */
+  getInterestHistory(
+    interestConfigId: number | string,
+  ): Promise<[string, string, string][]>;
   /** ADM-18 to ADM-20: year-end payout batches. */
   listPayoutBatches(): Promise<PayoutBatch[]>;
   getPayoutBatch(id: string): Promise<PayoutBatch>;

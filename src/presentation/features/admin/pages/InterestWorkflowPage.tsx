@@ -20,6 +20,7 @@ import type {
   InterestBand,
   InterestCalcRow,
   InterestCalculationEntries,
+  InterestNotifyChannel,
   InterestRateMode,
   InterestScope,
   InterestWorkflow,
@@ -28,6 +29,7 @@ import type {
 import {
   formatNaira,
   interestWizardProgress,
+  interestWizardSteps,
   parseNairaInput,
 } from "@/domain/rules";
 import { useServices } from "../../../contexts/ServicesContext";
@@ -51,7 +53,6 @@ import {
 } from "../../../design-system";
 import { AdminPageHeader } from "../../../layouts/AdminLayout";
 import { paths } from "../../../routes/paths";
-import { INTEREST_STAGES } from "./InterestPage";
 import { downloadCsv } from "../../../utils/csv";
 
 const STATUS_TONE = {
@@ -65,6 +66,13 @@ const STATUS_TONE = {
 } as const;
 const LOCKED = ["Submitted", "Pending approval", "Approved", "Paid out"];
 const MIN_BAND_KOBO = parseNairaInput("10000");
+/** UI checkbox keys mapped to the API's notification channel values. */
+const NOTIFY_CHANNELS = {
+  InApp: "in_app",
+  Email: "email",
+  Sms: "sms",
+  WhatsApp: "whatsapp",
+} as const satisfies Record<string, InterestNotifyChannel>;
 
 /** Both calculation responses are cached together, under one config key. */
 type InterestCalculationCache = {
@@ -276,9 +284,10 @@ export function InterestWorkflowPage() {
   const [reason, setReason] = useState("");
   const [approveOpen, setApproveOpen] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
-  const [channels, setChannels] = useState({
+  const [channels, setChannels] = useState<Record<keyof typeof NOTIFY_CHANNELS, boolean>>({
     InApp: true,
     Email: true,
+    Sms: true,
     WhatsApp: true,
   });
   const [q, setQ] = useState("");
@@ -295,6 +304,11 @@ export function InterestWorkflowPage() {
   const [membersBusy, setMembersBusy] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  /** Event log loaded from GET /admin/interest/{id}/history for step 8. */
+  const [interestHistory, setInterestHistory] = useState<
+    [string, string, string][]
+  >([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   /** Guards against refetching the same calculation on repeated renders. */
   const calculationFetchRef = useRef<string | null>(null);
 
@@ -543,6 +557,24 @@ export function InterestWorkflowPage() {
       live = false;
     };
   }, [stage, members.length, repos.admin]);
+
+  useEffect(() => {
+    if (stage !== 8) return;
+    let live = true;
+    setHistoryLoading(true);
+    repos.admin
+      .getInterestHistory(interestConfigIdValue)
+      .then((rows) => {
+        if (live) setInterestHistory(rows);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (live) setHistoryLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [stage, interestConfigIdValue, repos.admin]);
 
   const openPicker = async () => {
     setPickerOpen(true);
@@ -1018,22 +1050,28 @@ export function InterestWorkflowPage() {
       },
       "Returned to maker.",
     );
-  const notify = () =>
-    run(
+  const notify = () => {
+    const selectedChannels = (
+      Object.keys(channels) as (keyof typeof channels)[]
+    )
+      .filter((key) => channels[key])
+      .map((key) => NOTIFY_CHANNELS[key]);
+    return run(
       () =>
-        repos.admin
-          .notifyInterest(interestConfigIdValue, adminName)
-          .then(() =>
-            audit(
-              "Notified members of interest",
-              `Interest ${interestConfigIdValue}`,
-              `${w.eligible} eligible`,
-              "Financial",
-            ),
-          ),
-      () => {},
+        repos.admin.notifyInterest(
+          interestConfigIdValue,
+          selectedChannels,
+          adminName,
+        ),
+      () => setStage(8),
       `Sent to ${w.eligible.toLocaleString()} members.`,
     );
+  };
+
+  // `wizard_stages` drives the stepper's labels and pending/current/completed
+  // state; local navigation may still move the current marker forward.
+  const wizardSteps = interestWizardSteps(w);
+  const historyRows = interestHistory.length ? interestHistory : w.history;
 
   return (
     <>
@@ -1051,24 +1089,26 @@ export function InterestWorkflowPage() {
       />
       <div className="flex flex-col gap-5 px-4 py-5 sm:px-8 sm:py-6">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-8">
-          {INTEREST_STAGES.map((s, i) => {
-            const n = i + 1;
-            const openable =
-              n <= w.done + 1 || n <= stage || (n === 7 && batchCreated);
+          {wizardSteps.map((s) => {
+            const n = s.step;
+            const completed = s.status === "completed";
+            const current =
+              !completed && (s.status === "current" || n === stage);
+            const openable = completed || current || (n === 7 && batchCreated);
             return (
               <button
-                key={s}
+                key={s.key || n}
                 disabled={!openable}
-                title={openable ? s : "Finish the earlier stages first"}
+                title={openable ? s.label : "Finish the earlier stages first"}
                 onClick={() => goToStage(n)}
-                className={`flex flex-col items-start gap-1.5 rounded-2xl border-[1.5px] p-2.5 text-left text-xs font-bold transition ${n === stage ? "border-brand bg-[#faf7fe] text-ink" : "border-line bg-white text-mute"} ${!openable ? "cursor-not-allowed opacity-50" : ""}`}
+                className={`flex flex-col items-start gap-1.5 rounded-2xl border-[1.5px] p-2.5 text-left text-xs font-bold transition ${current ? "border-brand bg-[#faf7fe] text-ink" : "border-line bg-white text-mute"} ${!openable ? "cursor-not-allowed opacity-50" : ""}`}
               >
                 <span
-                  className={`flex size-6 items-center justify-center rounded-full text-xs font-extrabold ${n <= w.done ? "bg-brand text-white" : n === stage ? "bg-gold text-[#2a1a00]" : "bg-soft text-mute"}`}
+                  className={`flex size-6 items-center justify-center rounded-full text-xs font-extrabold ${completed ? "bg-brand text-white" : current ? "bg-gold text-[#2a1a00]" : "bg-soft text-mute"}`}
                 >
-                  {n <= w.done ? <Check size={12} /> : n}
+                  {completed ? <Check size={12} /> : n}
                 </span>
-                {s}
+                {s.label}
               </button>
             );
           })}
@@ -1747,10 +1787,20 @@ export function InterestWorkflowPage() {
                 {w.status === "Approved" && (
                   <Button
                     size="md"
-                    onClick={() => {
-                      setPayoutBatchCreated(true);
-                      setStage(7);
-                    }}
+                    disabled={busy}
+                    onClick={() =>
+                      run(
+                        () =>
+                          repos.admin.createInterestPayouts(
+                            interestConfigIdValue,
+                          ),
+                        () => {
+                          setPayoutBatchCreated(true);
+                          setStage(7);
+                        },
+                        "Payout batch created.",
+                      )
+                    }
                   >
                     Create payout batch
                   </Button>
@@ -1786,7 +1836,7 @@ export function InterestWorkflowPage() {
                   checked={channels[c]}
                   onChange={(v) => setChannels({ ...channels, [c]: v })}
                 >
-                  {c === "InApp" ? "In-app" : c}
+                  {c === "InApp" ? "In-app" : c === "Sms" ? "SMS" : c}
                 </Checkbox>
               ))}
             </div>
@@ -1807,10 +1857,14 @@ export function InterestWorkflowPage() {
         {stage === 8 && (
           <Card className="flex max-w-2xl flex-col gap-2">
             <h2 className="text-base font-extrabold">History</h2>
-            {w.history.length === 0 ? (
+            {historyLoading && interestHistory.length === 0 ? (
+              <p className="text-sm font-semibold text-mute">
+                Loading history…
+              </p>
+            ) : historyRows.length === 0 ? (
               <p className="text-sm font-semibold text-mute">No events yet.</p>
             ) : (
-              w.history.map(([at, ev, who], i) => (
+              historyRows.map(([at, ev, who], i) => (
                 <div
                   key={i}
                   className="flex items-center gap-3 border-b border-line py-2.5 text-sm last:border-b-0"

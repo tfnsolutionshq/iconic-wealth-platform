@@ -9,6 +9,8 @@ import type {
   InterestBand,
   InterestCalcRow,
   InterestCalculationEntries,
+  InterestNotifyChannel,
+  InterestWizardStage,
   InterestWorkflow,
   Kobo,
   MonthIndex,
@@ -60,6 +62,7 @@ import {
   deadlineFor,
   formatNaira,
   formatShortDate,
+  interestWizardSteps,
   minimumFor,
   monthState,
   monthTotal,
@@ -892,6 +895,15 @@ const resetInterestStagesFrom = (w: InterestWorkflow, key: string) => {
   w.currentStage = key;
   w.statusLabel = w.status;
 };
+/** Mirrors the `wizard_stages` array returned by the config detail endpoint. */
+const buildInterestWizardStages = (
+  w: InterestWorkflow,
+): InterestWizardStage[] =>
+  interestWizardSteps(w).map((s) => ({
+    ...s,
+    completedAt: s.status === "completed" ? "2026-11-16T13:56:52+00:00" : null,
+  }));
+
 const rateForContribution = (
   amountKobo: Kobo,
   w: InterestWorkflow,
@@ -1264,7 +1276,10 @@ export class MockAdminRepository implements AdminRepository {
   async getInterest(interestConfigId: number) {
     const w = interestOf(interestConfigId);
     return delay(
-      { workflow: w, preview: hasRateConfig(w) ? calcPreview(w) : [] },
+      {
+        workflow: { ...w, wizardStages: buildInterestWizardStages(w) },
+        preview: hasRateConfig(w) ? calcPreview(w) : [],
+      },
       120,
     );
   }
@@ -1550,13 +1565,29 @@ export class MockAdminRepository implements AdminRepository {
     ]);
     return delay(batch);
   }
-  async notifyInterest(year: number, by: string) {
-    const w = interestOf(year);
+  async notifyInterest(
+    interestConfigId: number | string,
+    channels: InterestNotifyChannel[],
+    by: string,
+  ) {
+    const w = interestOf(
+      Math.trunc(Number(String(interestConfigId).match(/\d{4}/)?.[0] ?? 0)),
+    );
     w.notified = true;
     w.done = 8;
     w.stage = 8;
-    w.history.push([new Date().toISOString(), "Notified members", by]);
+    w.history.push([
+      new Date().toISOString(),
+      `Notified members via ${channels.join(", ") || "no channels"}`,
+      by,
+    ]);
     return delay(w);
+  }
+  async getInterestHistory(interestConfigId: number | string) {
+    const w = interestOf(
+      Math.trunc(Number(String(interestConfigId).match(/\d{4}/)?.[0] ?? 0)),
+    );
+    return delay(w.history.slice());
   }
   async getInterestPayouts(
     interestConfigId: number | string,
@@ -1603,6 +1634,25 @@ export class MockAdminRepository implements AdminRepository {
       } satisfies PayoutBatch,
       120,
     );
+  }
+  async createInterestPayouts(interestConfigId: number | string) {
+    const year =
+      Math.trunc(Number(String(interestConfigId).match(/\d{4}/)?.[0] ?? 0)) ||
+      new Date().getFullYear();
+    const batch = await this.getInterestPayouts(interestConfigId, { year });
+    if (!payoutBatches.some((x) => x.id === batch.id)) {
+      payoutBatches.unshift(batch);
+    }
+    const w = interestOf(year);
+    if (!w.batchId) {
+      const at = new Date().toISOString();
+      w.batchId = batch.id;
+      completeInterestStage(w, "disburse", at);
+      w.done = Math.max(w.done, 6);
+      w.stage = 7;
+      w.history.push([at, `Created payout batch ${batch.id}`, w.maker ?? "Administrator"]);
+    }
+    return batch;
   }
   async listPayoutBatches() {
     return delay(payoutBatches, 120);

@@ -72,7 +72,7 @@ describe('MockAdminRepository interest → payout flow', () => {
     }
     const done = await admin.getPayoutBatch(batch.id);
     expect(done.status).toBe('Completed');
-    const notified = await admin.notifyInterest(2026, 'Adaeze Okafor');
+    const notified = await admin.notifyInterest(2026, ['in_app', 'email', 'sms', 'whatsapp'], 'Adaeze Okafor');
     expect(notified.notified).toBe(true);
     expect(notified.done).toBe(8);
   });

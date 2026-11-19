@@ -17,9 +17,11 @@ import type {
   InterestCalculationSummary,
   InterestRateMode,
   InterestScope,
+  InterestNotifyChannel,
   InterestStage,
   InterestStageStatus,
   InterestStatus,
+  InterestWizardStage,
   InterestWorkflow,
   InterestYearSummary,
   Kobo,
@@ -827,6 +829,21 @@ function mapInterestStage(raw: unknown): InterestStage | null {
   };
 }
 
+function mapInterestWizardStage(
+  raw: unknown,
+  fallbackStep: number,
+): InterestWizardStage | null {
+  const stage = mapInterestStage(raw);
+  if (!stage) return null;
+  const r = asRecord(raw);
+  return {
+    ...stage,
+    step: Math.trunc(
+      readNumber(r.step, r.step_number, r.position) ?? fallbackStep,
+    ),
+  };
+}
+
 function mapInterestActor(raw: unknown): InterestActor | null {
   if (raw == null) return null;
   const name = readPersonName(raw);
@@ -888,6 +905,9 @@ function mapInterestWorkflow(raw: unknown, fallbackYear = 0): InterestWorkflow {
   const stages = readArray(r.stages)
     .map(mapInterestStage)
     .filter((stage): stage is InterestStage => stage != null);
+  const wizardStages = readArray(r.wizard_stages ?? r.wizardStages)
+    .map((stage, i) => mapInterestWizardStage(stage, i + 1))
+    .filter((stage): stage is InterestWizardStage => stage != null);
   const currentStage =
     readString(r.current_stage, r.currentStage) ??
     stages.find((stage) => stage.status === "current")?.key ??
@@ -968,6 +988,7 @@ function mapInterestWorkflow(raw: unknown, fallbackYear = 0): InterestWorkflow {
     currentStage,
     completedStages,
     stages,
+    ...(wizardStages.length ? { wizardStages } : {}),
     calculationRunAt: readString(r.calculation_run_at, r.calculationRunAt) ?? null,
     createdBy: mapInterestActor(r.created_by ?? r.createdBy),
     submittedBy: mapInterestActor(r.submitted_by ?? r.submittedBy),
@@ -2597,6 +2618,18 @@ export class HttpAdminRepository implements AdminRepository {
         };
       });
   }
+  createInterestPayouts(interestConfigId: number | string) {
+    return this.http
+      .post<unknown>(
+        `/admin/interest/${encodeURIComponent(String(interestConfigId))}/payouts`,
+      )
+      .then((payload) => ({
+        ...readPayoutBatchPayload(payload),
+        // Keep the config id for the "savings year" link even when the
+        // creation response omits it.
+        interestConfigId: String(interestConfigId),
+      }));
+  }
   submitInterest(year: number, note: string, by: string) {
     return this.http
       .post<unknown>(`/admin/interest/${year}/submit`, { note, by })
@@ -2622,10 +2655,29 @@ export class HttpAdminRepository implements AdminRepository {
       .post<unknown>(`/admin/interest/${year}/batch`, { by })
       .then(readPayoutBatchPayload);
   }
-  notifyInterest(year: number, by: string) {
+  notifyInterest(
+    interestConfigId: number | string,
+    channels: InterestNotifyChannel[],
+  ) {
     return this.http
-      .post<unknown>(`/admin/interest/${year}/notify`, { by })
-      .then((payload) => readInterestWorkflow(payload, year));
+      .post<unknown>(
+        `/admin/interest/${encodeURIComponent(String(interestConfigId))}/notify`,
+        { channels },
+      )
+      .then((payload) =>
+        readInterestWorkflow(payload, Number(interestConfigId) || 0),
+      );
+  }
+  getInterestHistory(interestConfigId: number | string) {
+    return this.http
+      .get<unknown>(
+        `/admin/interest/${encodeURIComponent(String(interestConfigId))}/history`,
+      )
+      .then((payload) =>
+        readRecordList(payload, ["history", "events", "activities", "timeline"])
+          .map(mapInterestHistoryEntry)
+          .filter((entry): entry is [string, string, string] => entry !== null),
+      );
   }
   listPayoutBatches() {
     return this.http

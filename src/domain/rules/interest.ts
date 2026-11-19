@@ -1,4 +1,16 @@
-import type { InterestWorkflow } from "../entities";
+import type { InterestStageStatus, InterestWorkflow } from "../entities";
+
+/** The eight wizard step labels shown in the admin interest workflow UI. */
+export const INTEREST_WIZARD_LABELS = [
+  "Period setup",
+  "Rule configuration",
+  "Calculation",
+  "Review",
+  "Approval",
+  "Payout",
+  "Notification",
+  "History",
+] as const;
 
 /**
  * Frontend wizard steps mapped to the stage keys returned by the backend.
@@ -14,6 +26,14 @@ export const INTEREST_STAGE_STEPS = [
 ] as const;
 
 export type InterestStageKey = (typeof INTEREST_STAGE_STEPS)[number]["key"];
+
+/** A single wizard step prepared for display in the workflow stepper. */
+export interface InterestWizardStepView {
+  step: number;
+  key: string;
+  label: string;
+  status: InterestStageStatus;
+}
 
 /** Returns the last wizard step unlocked by completing a backend stage. */
 export function interestWizardStageFor(
@@ -34,6 +54,20 @@ export function interestWizardProgress(w: InterestWorkflow): {
   done: number;
   stage: number;
 } {
+  // `wizard_stages` is authoritative for the eight-step display: use its
+  // completed steps and its current step directly when the endpoint provides it.
+  if (w.wizardStages?.length) {
+    const completedSteps = w.wizardStages
+      .filter((s) => s.status === "completed")
+      .map((s) => s.step);
+    const currentStep = w.wizardStages.find((s) => s.status === "current")?.step;
+    const done = completedSteps.length ? Math.max(...completedSteps) : 0;
+    return {
+      done: Math.min(8, done),
+      stage: Math.max(1, Math.min(8, currentStep ?? done + 1)),
+    };
+  }
+
   const completed = new Set(w.completedStages);
   for (const stage of w.stages) {
     if (stage.status === "completed") completed.add(stage.key);
@@ -70,4 +104,32 @@ export function interestWizardProgress(w: InterestWorkflow): {
     Math.min(8, Math.min(fallback, interestWizardStageFor(current) ?? fallback)),
   );
   return { done: Math.min(8, done), stage };
+}
+
+/**
+ * Builds the eight wizard steps for the workflow stepper. Labels and the
+ * pending/current/completed state come from the server's `wizard_stages` when
+ * available; older responses and demo data fall back to derived progress.
+ */
+export function interestWizardSteps(
+  w: InterestWorkflow,
+): InterestWizardStepView[] {
+  if (w.wizardStages?.length) {
+    return [...w.wizardStages]
+      .sort((a, b) => a.step - b.step)
+      .map((s) => ({
+        step: s.step,
+        key: s.key,
+        label: s.label,
+        status: s.status,
+      }));
+  }
+
+  const { done, stage } = interestWizardProgress(w);
+  return INTEREST_WIZARD_LABELS.map((label, i) => {
+    const step = i + 1;
+    const status: InterestStageStatus =
+      step <= done ? "completed" : step === stage ? "current" : "pending";
+    return { step, key: `step-${step}`, label, status };
+  });
 }
