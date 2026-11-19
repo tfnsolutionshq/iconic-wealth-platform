@@ -836,7 +836,7 @@ export class MockContributionRepository implements ContributionRepository {
 }
 
 const notifications: NotificationSettings = {
-  channels: ["In-app", "Email", "SMS", "WhatsApp"],
+  channels: ["In-app", "Email", "WhatsApp"],
   events: [
     { key: "due", label: "Payment due reminder" },
     { key: "ok", label: "Payment received" },
@@ -846,12 +846,12 @@ const notifications: NotificationSettings = {
     { key: "ann", label: "Year-end announcement" },
   ],
   matrix: {
-    due: { "In-app": true, Email: true, SMS: true, WhatsApp: false },
-    ok: { "In-app": true, Email: true, SMS: false, WhatsApp: false },
-    fail: { "In-app": true, Email: true, SMS: true, WhatsApp: false },
-    pay: { "In-app": true, Email: true, SMS: true, WhatsApp: true },
-    reg: { "In-app": true, Email: true, SMS: false, WhatsApp: false },
-    ann: { "In-app": true, Email: true, SMS: false, WhatsApp: false },
+    due: { "In-app": true, Email: true, WhatsApp: false },
+    ok: { "In-app": true, Email: true, WhatsApp: false },
+    fail: { "In-app": true, Email: true, WhatsApp: false },
+    pay: { "In-app": true, Email: true, WhatsApp: true },
+    reg: { "In-app": true, Email: true, WhatsApp: false },
+    ann: { "In-app": true, Email: true, WhatsApp: false },
   },
   reminderDays: 3,
 };

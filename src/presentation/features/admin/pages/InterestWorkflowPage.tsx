@@ -70,7 +70,6 @@ const MIN_BAND_KOBO = parseNairaInput("10000");
 const NOTIFY_CHANNELS = {
   InApp: "in_app",
   Email: "email",
-  Sms: "sms",
   WhatsApp: "whatsapp",
 } as const satisfies Record<string, InterestNotifyChannel>;
 
@@ -220,6 +219,33 @@ const formatApprovalDate = (value?: string | null) => {
         year: "numeric",
       });
 };
+
+/** Human labels for the event keys returned by GET /admin/interest/{id}/history. */
+const INTEREST_HISTORY_ACTIONS: Record<string, string> = {
+  "interest.config.created": "Interest configuration created",
+  "interest.config.calculated": "Interest configuration calculated",
+  "interest.config.submitted": "Interest configuration submitted",
+  "interest.config.approved": "Interest configuration approved",
+  "interest.payout.batch-created": "Payout batch created",
+  "interest.config.members-notified": "Members notified",
+};
+const historyAction = (event: string) =>
+  INTEREST_HISTORY_ACTIONS[event] ?? event;
+
+/** e.g. 2026-11-19T09:46:55+00:00 -> 19 Nov 2026 • 09:46. */
+const formatHistoryDate = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  })} • ${date.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })}`;
+};
 function BandSummary({ bands }: { bands: InterestBand[] }) {
   if (!bands.length) return null;
   return (
@@ -287,7 +313,6 @@ export function InterestWorkflowPage() {
   const [channels, setChannels] = useState<Record<keyof typeof NOTIFY_CHANNELS, boolean>>({
     InApp: true,
     Email: true,
-    Sms: true,
     WhatsApp: true,
   });
   const [q, setQ] = useState("");
@@ -1094,6 +1119,7 @@ export function InterestWorkflowPage() {
             const completed = s.status === "completed";
             const current =
               !completed && (s.status === "current" || n === stage);
+            const viewing = n === stage;
             const openable = completed || current || (n === 7 && batchCreated);
             return (
               <button
@@ -1101,7 +1127,7 @@ export function InterestWorkflowPage() {
                 disabled={!openable}
                 title={openable ? s.label : "Finish the earlier stages first"}
                 onClick={() => goToStage(n)}
-                className={`flex flex-col items-start gap-1.5 rounded-2xl border-[1.5px] p-2.5 text-left text-xs font-bold transition ${current ? "border-brand bg-[#faf7fe] text-ink" : "border-line bg-white text-mute"} ${!openable ? "cursor-not-allowed opacity-50" : ""}`}
+                className={`flex flex-col items-start gap-1.5 rounded-2xl p-2.5 text-left text-xs font-bold transition ${viewing ? "border-2 border-brand bg-[#faf7fe] text-ink" : current ? "border-[1.5px] border-brand bg-[#faf7fe] text-ink" : "border-[1.5px] border-line bg-white text-mute"} ${!openable ? "cursor-not-allowed opacity-50" : ""}`}
               >
                 <span
                   className={`flex size-6 items-center justify-center rounded-full text-xs font-extrabold ${completed ? "bg-brand text-white" : current ? "bg-gold text-[#2a1a00]" : "bg-soft text-mute"}`}
@@ -1119,7 +1145,7 @@ export function InterestWorkflowPage() {
         )}
 
         {stage === 1 && (
-          <Card className="flex max-w-2xl flex-col gap-4">
+          <Card className="flex w-full flex-col gap-4">
             <h2 className="text-base font-extrabold">Period setup</h2>
             <div className="grid gap-4 md:grid-cols-3">
               <TextField
@@ -1161,7 +1187,7 @@ export function InterestWorkflowPage() {
         )}
 
         {stage === 2 && (
-          <Card className="flex max-w-2xl flex-col gap-4">
+          <Card className="flex w-full flex-col gap-4">
             <h2 className="text-base font-extrabold">Rule configuration</h2>
             <div className="grid gap-4 md:grid-cols-3"></div>
             <div className="flex flex-col gap-2">
@@ -1711,7 +1737,7 @@ export function InterestWorkflowPage() {
         )}
 
         {stage === 5 && (
-          <Card className="flex max-w-2xl flex-col items-start gap-3">
+          <Card className="flex w-full flex-col items-start gap-3">
             <h2 className="text-base font-extrabold">Approval</h2>
             {w.status === "Approved" ? (
               <Banner tone="info" icon={<Check size={20} />}>
@@ -1776,7 +1802,7 @@ export function InterestWorkflowPage() {
         )}
 
         {stage === 6 && (
-          <Card className="flex max-w-2xl flex-col items-start gap-3">
+          <Card className="flex w-full flex-col items-start gap-3">
             <h2 className="text-base font-extrabold">Payout batch</h2>
             {!batchCreated ? (
               <>
@@ -1821,7 +1847,7 @@ export function InterestWorkflowPage() {
         )}
 
         {stage === 7 && (
-          <Card className="flex max-w-2xl flex-col gap-3">
+          <Card className="flex w-full flex-col gap-3">
             <h2 className="text-base font-extrabold">Notify members</h2>
             <Card tone="soft">
               <p className="text-sm font-semibold leading-relaxed">
@@ -1836,7 +1862,7 @@ export function InterestWorkflowPage() {
                   checked={channels[c]}
                   onChange={(v) => setChannels({ ...channels, [c]: v })}
                 >
-                  {c === "InApp" ? "In-app" : c === "Sms" ? "SMS" : c}
+                  {c === "InApp" ? "In-app" : c}
                 </Checkbox>
               ))}
             </div>
@@ -1855,7 +1881,7 @@ export function InterestWorkflowPage() {
         )}
 
         {stage === 8 && (
-          <Card className="flex max-w-2xl flex-col gap-2">
+          <Card className="flex w-full flex-col gap-2">
             <h2 className="text-base font-extrabold">History</h2>
             {historyLoading && interestHistory.length === 0 ? (
               <p className="text-sm font-semibold text-mute">
@@ -1872,9 +1898,14 @@ export function InterestWorkflowPage() {
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-tint text-brand-dark">
                     <Check size={14} />
                   </span>
-                  <span className="flex-1 font-semibold">{ev}</span>
-                  <span className="text-xs font-semibold text-mute">
-                    {who} · {at.slice(0, 16).replace("T", " ")}
+                  <span className="flex flex-1 flex-col gap-0.5">
+                    <span className="font-semibold">{historyAction(ev)}</span>
+                    <span className="text-xs font-semibold text-mute">
+                      {who}
+                    </span>
+                  </span>
+                  <span className="whitespace-nowrap text-xs font-semibold text-mute">
+                    {formatHistoryDate(at)}
                   </span>
                 </div>
               ))
