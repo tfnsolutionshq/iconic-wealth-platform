@@ -1724,86 +1724,143 @@ export class MockAdminRepository implements AdminRepository {
     month?: number | "all",
     status?: string,
   ): Promise<ReportResult> {
-    void year;
     const money = (kobo: number) => formatNaira(kobo);
-    if (kind === "collections") {
-      const rows = MONTHS_SHORT.map((m, i) => {
-        const txs = transactions.filter(
-          (t) =>
-            t.kind === "Contribution" &&
-            t.status === "Successful" &&
-            new Date(t.createdAt).getMonth() === i,
-        );
-        return [
-          m,
-          String(txs.length),
-          money(txs.reduce((s, t) => s + t.amountKobo, 0)),
-        ];
+    const reportDate = (iso: string) =>
+      new Date(iso).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
       });
-      return delay(
-        { headers: ["Month", "Payments", "Total saved"], rows },
-        120,
-      );
-    }
-    if (kind === "charges") {
-      const rows = transactions
-        .filter(
-          (t) =>
-            t.platformChargeKobo > 0 &&
-            (month === undefined ||
-              month === "all" ||
-              new Date(t.createdAt).getMonth() === month),
-        )
-        .map((t) => [
-          t.createdAt.slice(0, 10),
-          t.memberName,
-          money(t.amountKobo),
-          money(t.platformChargeKobo),
-        ]);
-      return delay(
-        { headers: ["Date", "Member", "Amount", "Platform charge"], rows },
-        120,
-      );
-    }
+    const matches = (value: string) =>
+      !status ||
+      status === "All" ||
+      (kind === "payout" ? value.startsWith(status) : value === status);
+    const monthLabel =
+      month === undefined || month === "all" ? "" : MONTHS[month] ?? "";
+    const period = monthLabel ? `${monthLabel} ${year}` : String(year);
+
     if (kind === "eligibility") {
-      const rows = memberSummaries
-        .filter((m) => !status || status === "All" || m.eligibility === status)
-        .map((m) => [
-          m.name,
-          money(m.savedKobo),
-          `${m.monthsPaid} of 11`,
-          m.eligibility,
-          m.forfeitReason ?? "—",
-        ]);
       return delay(
         {
-          headers: ["Member", "Saved", "Months saved", "Status", "Reason"],
-          rows,
+          headers: ["Member ID", "Member", "Eligibility", "Reason"],
+          rows: memberSummaries
+            .filter((m) => matches(m.eligibility))
+            .map((m) => [
+              m.id,
+              m.name,
+              m.eligibility,
+              m.forfeitReason ?? "—",
+            ]),
         },
         120,
       );
     }
-    const rows = memberSummaries
-      .filter((m) => !status || status === "All" || m.eligibility === status)
-      .map((m) => [
-        m.name,
-        m.id,
-        `${m.monthsPaid} of 11`,
-        money(m.savedKobo),
-        m.currentMonthStatus,
-        m.eligibility,
-      ]);
+    if (kind === "charges") {
+      return delay(
+        {
+          headers: [
+            "Date",
+            "Member",
+            "Contribution",
+            "Platform charge",
+            "Total paid",
+            "Status",
+          ],
+          rows: transactions
+            .filter(
+              (t) =>
+                t.kind === "Contribution" &&
+                t.platformChargeKobo > 0 &&
+                (month === undefined ||
+                  month === "all" ||
+                  new Date(t.createdAt).getMonth() === month) &&
+                matches(t.status),
+            )
+            .map((t) => [
+              reportDate(t.createdAt),
+              t.memberName,
+              money(t.amountKobo),
+              money(t.platformChargeKobo),
+              money(t.amountKobo + t.platformChargeKobo),
+              t.status,
+            ]),
+        },
+        120,
+      );
+    }
+    if (kind === "payout") {
+      return delay(
+        {
+          headers: [
+            "Member ID",
+            "Member",
+            "Savings",
+            "Interest",
+            "Payout",
+            "Status",
+          ],
+          rows: memberSummaries
+            .filter((m) => matches(m.currentMonthStatus))
+            .map((m) => [
+              m.id,
+              m.name,
+              money(m.savedKobo),
+              "—",
+              money(m.savedKobo),
+              m.currentMonthStatus,
+            ]),
+        },
+        120,
+      );
+    }
+    if (kind === "late") {
+      return delay(
+        {
+          headers: ["Member ID", "Member", "For", "Paid on", "Impact"],
+          rows: transactions
+            .filter((t) => t.late && String(t.year) === String(year))
+            .map((t) => [
+              t.memberId,
+              t.memberName,
+              period,
+              reportDate(t.createdAt),
+              "Interest forfeited",
+            ]),
+        },
+        120,
+      );
+    }
+    if (kind === "savings") {
+      return delay(
+        {
+          headers: [
+            "Member ID",
+            "Member",
+            "Monthly target",
+            "Months saved",
+            "Saved",
+            "September",
+          ],
+          rows: memberSummaries
+            .filter((m) => matches(m.currentMonthStatus))
+            .map((m) => [
+              m.id,
+              m.name,
+              money(m.targetKobo),
+              `${m.monthsPaid} of 11`,
+              money(m.savedKobo),
+              m.currentMonthStatus,
+            ]),
+        },
+        120,
+      );
+    }
     return delay(
       {
-        headers: [
-          "Member",
-          "Member ID",
-          "Months saved",
-          "Saved",
-          "September",
-          "Interest",
-        ],
-        rows,
+        headers: ["Member ID", "Member", "Month", "Status"],
+        rows: memberSummaries
+          .filter((m) => matches(m.currentMonthStatus))
+          .map((m) => [m.id, m.name, period, m.currentMonthStatus]),
       },
       120,
     );

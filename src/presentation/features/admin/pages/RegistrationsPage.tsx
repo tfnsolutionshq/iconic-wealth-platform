@@ -266,7 +266,7 @@ export function RegistrationsPage() {
 
           {/* Detail */}
           {selected && (
-            <Card className="flex w-full flex-1 flex-col gap-4 p-6 h-full flex-1 min-h-0 overflow-y-auto">
+            <Card className="flex w-full flex-1 flex-col gap-4 p-6 h-full min-h-0 overflow-y-auto">
               <div className="flex items-center gap-3">
                 <span className="flex size-10 items-center justify-center rounded-full bg-[#e4d7fb] text-sm font-extrabold text-[#3b1580]">
                   {initials(selected)}

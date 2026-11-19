@@ -28,7 +28,7 @@ describe('MockAdminRepository savings, reports, referrals, audit', () => {
     expect(d.monthly).toHaveLength(12);
   });
   it('runs each report kind', async () => {
-    for (const kind of ['compliance', 'collections', 'eligibility', 'charges'] as const) {
+    for (const kind of ['compliance', 'eligibility', 'charges', 'payout', 'late', 'savings'] as const) {
       const r = await admin.runReport(kind, 2026, 'all', 'All');
       expect(r.headers.length).toBeGreaterThan(0);
       expect(r.rows.length).toBeGreaterThan(0);

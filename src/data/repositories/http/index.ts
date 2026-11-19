@@ -49,7 +49,12 @@ import type {
   TransactionStatus,
 } from "@/domain/entities";
 import type { PlatformSettings } from "@/domain/rules";
-import { interestWizardProgress, MONTHS, naira } from "@/domain/rules";
+import {
+  formatNaira,
+  interestWizardProgress,
+  MONTHS,
+  naira,
+} from "@/domain/rules";
 import type {
   ActivityPageResult,
   ActivityQuery,
@@ -1284,6 +1289,212 @@ function readPayoutBatchPayload(payload: unknown): PayoutBatch {
   return mapPayoutBatch(
     record.batch ?? record.payout ?? record.payout_batch ?? data,
   );
+}
+
+function formatReportDate(value?: string, fallback = "—"): string {
+  if (!value) return fallback;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+}
+
+/** Reads a naira amount from the API, preferring a server-formatted string. */
+function readReportMoney(
+  record: Record<string, unknown>,
+  keys: string[],
+  amount?: number,
+): string {
+  const formatted = readString(...keys.map((key) => `${key}_formatted`));
+  // The prototype's N() renders whole naira; sample API values carry a trailing .00.
+  if (formatted) return formatted.replace(/\.00$/, "");
+  const raw =
+    amount ?? readNumber(...keys.map((key) => record[key])) ?? undefined;
+  return raw == null ? "—" : formatNaira(naira(raw));
+}
+
+/**
+ * GET /admin/reports returns one platform payload (summary + filtered members).
+ * Each prototype report is a different projection of those member rows.
+ */
+function mapPlatformReport(
+  payload: unknown,
+  kind: ReportKind,
+  year: number,
+  month?: number | "all",
+): ReportResult {
+  const data = asRecord(unwrapData<unknown>(payload));
+  const filters = asRecord(data.filters);
+  const members = readArray(data.members ?? data.rows).map(asRecord);
+  const reportYear = Math.trunc(readNumber(filters.year) ?? year);
+  const rawFilterMonth = readNumber(filters.month);
+  const filterMonthIndex =
+    rawFilterMonth != null && rawFilterMonth >= 1 && rawFilterMonth <= 12
+      ? Math.trunc(rawFilterMonth) - 1
+      : -1;
+  const monthIndex =
+    month !== undefined && month !== "all" ? month : filterMonthIndex;
+  const monthName =
+    monthIndex >= 0 && monthIndex < MONTHS.length
+      ? MONTHS[monthIndex]
+      : (readString(filters.month_name) ?? "");
+  const period = monthName ? `${monthName} ${reportYear}` : String(reportYear);
+
+  const memberId = (m: Record<string, unknown>) =>
+    readString(
+      m.member_id,
+      m.memberId,
+      asRecord(m.member).member_id,
+      asRecord(m.member).id,
+    ) ?? readString(m.id) ?? "—";
+  const memberName = (m: Record<string, unknown>) =>
+    readPersonName(m.member ?? m.name ?? m.member_name ?? m.user) ?? "—";
+  const monthStatus = (m: Record<string, unknown>) => {
+    const value = readString(m.month_status, m.status_label, m.status) ?? "";
+    return value ? value.charAt(0).toUpperCase() + value.slice(1) : "—";
+  };
+  const eligibility = (m: Record<string, unknown>) => {
+    const value =
+      readString(m.interest) ??
+      readString(m.interest_status, m.eligibility) ??
+      "";
+    return value
+      ? value.charAt(0).toUpperCase() + value.slice(1)
+      : "—";
+  };
+  const reason = (m: Record<string, unknown>) =>
+    readString(m.forfeiture_reason, m.forfeit_reason, m.reason) ?? "—";
+  const monthsSaved = (m: Record<string, unknown>) =>
+    readString(m.months_saved_label) ??
+    (readNumber(m.months_saved, m.monthsPaid) != null
+      ? `${Math.trunc(readNumber(m.months_saved, m.monthsPaid) ?? 0)} of ${Math.trunc(readNumber(m.total_months, 11) ?? 11)}`
+      : "—");
+  const savedKeys = [
+    "total_saved",
+    "saved_amount",
+    "savings_amount",
+    "savings",
+    "contributions",
+  ];
+  const saved = (m: Record<string, unknown>) => readReportMoney(m, savedKeys);
+  const savedAmount = (m: Record<string, unknown>) =>
+    readNumber(...savedKeys.map((key) => m[key]));
+  const chargeKeys = ["platform_charge", "platform_charge_amount", "charge", "fee"];
+  const chargeAmount = (m: Record<string, unknown>) =>
+    readNumber(...chargeKeys.map((key) => m[key]));
+  const interestKeys = [
+    "interest_amount",
+    "interest_earned",
+    "interest_payable",
+    "interest_value",
+  ];
+  const payoutKeys = [
+    "total_payout",
+    "payout_amount",
+    "payout_total",
+    "total_paid",
+  ];
+
+  switch (kind) {
+    case "eligibility":
+      return {
+        headers: ["Member ID", "Member", "Eligibility", "Reason"],
+        rows: members.map((m) => [memberId(m), memberName(m), eligibility(m), reason(m)]),
+      };
+    case "charges":
+      return {
+        headers: [
+          "Date",
+          "Member",
+          "Contribution",
+          "Platform charge",
+          "Total paid",
+          "Status",
+        ],
+        rows: members.map((m) => {
+          const contribution = savedAmount(m);
+          const charge = chargeAmount(m);
+          const total =
+            readNumber(m.total_paid, m.total_paid_amount, m.total) ??
+            (contribution != null && charge != null
+              ? contribution + charge
+              : undefined);
+          return [
+            formatReportDate(
+              readString(m.paid_at, m.paid_on, m.date, m.created_at),
+              period,
+            ),
+            memberName(m),
+            saved(m),
+            readReportMoney(m, chargeKeys),
+            readReportMoney(m, [...payoutKeys, "total"], total),
+            monthStatus(m),
+          ];
+        }),
+      };
+    case "payout":
+      return {
+        headers: [
+          "Member ID",
+          "Member",
+          "Savings",
+          "Interest",
+          "Payout",
+          "Status",
+        ],
+        rows: members.map((m) => [
+          memberId(m),
+          memberName(m),
+          saved(m),
+          readReportMoney(m, interestKeys),
+          readReportMoney(m, payoutKeys),
+          monthStatus(m),
+        ]),
+      };
+    case "late":
+      return {
+        headers: ["Member ID", "Member", "For", "Paid on", "Impact"],
+        rows: members.map((m) => [
+          memberId(m),
+          memberName(m),
+          period,
+          formatReportDate(
+            readString(m.paid_at, m.paid_on, m.date, m.created_at),
+            "—",
+          ),
+          reason(m),
+        ]),
+      };
+    case "savings":
+      return {
+        headers: [
+          "Member ID",
+          "Member",
+          "Monthly target",
+          "Months saved",
+          "Saved",
+          "September",
+        ],
+        rows: members.map((m) => [
+          memberId(m),
+          memberName(m),
+          readReportMoney(m, ["monthly_target", "target_amount", "baseline"]),
+          monthsSaved(m),
+          saved(m),
+          monthStatus(m),
+        ]),
+      };
+    case "compliance":
+    default:
+      return {
+        headers: ["Member ID", "Member", "Month", "Status"],
+        rows: members.map((m) => [memberId(m), memberName(m), period, monthStatus(m)]),
+      };
+  }
 }
 
 /** Raw shape of the login response data from the API. */
@@ -2686,13 +2897,19 @@ export class HttpAdminRepository implements AdminRepository {
     month?: number | "all",
     status?: string,
   ) {
+    // The repository uses 0-based month indexes (like the prototype select);
+    // the reports API echoes calendar months, e.g. 11 = November.
+    const apiMonth = typeof month === "number" ? month + 1 : month;
     const p = new URLSearchParams({
-      kind,
       year: String(year),
-      ...(month !== undefined ? { month: String(month) } : {}),
-      ...(status ? { status } : {}),
+      ...(apiMonth !== undefined ? { month: String(apiMonth) } : {}),
+      ...(status && status !== "All" && kind === "eligibility"
+        ? { eligibility: status.toLowerCase() }
+        : {}),
     });
-    return this.http.get<ReportResult>(`/admin/reports?${p}`);
+    return this.http
+      .get<unknown>(`/admin/reports?${p}`)
+      .then((payload) => mapPlatformReport(payload, kind, year, month));
   }
   referralGroups() {
     return this.http.get<ReferralGroup[]>("/admin/referrals");

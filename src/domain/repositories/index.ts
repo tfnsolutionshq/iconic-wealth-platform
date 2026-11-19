@@ -551,7 +551,7 @@ export interface AdminRepository {
     memberId: string,
     opts: { method: string; proof: string; note: string; by: string },
   ): Promise<PayoutBatch>;
-  /** ADM-21: filtered report preview (exported client-side to CSV). */
+  /** ADM-21: filtered report preview from `GET /admin/reports` (exported client-side to CSV). */
   runReport(
     kind: ReportKind,
     year: number,

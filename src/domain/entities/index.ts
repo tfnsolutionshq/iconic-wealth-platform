@@ -488,9 +488,11 @@ export interface PayoutBatch {
 
 export type ReportKind =
   | "compliance"
-  | "collections"
   | "eligibility"
-  | "charges";
+  | "charges"
+  | "payout"
+  | "late"
+  | "savings";
 export interface ReportResult {
   headers: string[];
   rows: string[][];
