@@ -55,6 +55,8 @@ import type {
   MemberListPage,
   MemberRepository,
   NewRegistration,
+  NotificationListPage,
+  NotificationQuery,
   PageMeta,
   PayoutAccountRepository,
   RegistrationRepository,
@@ -1071,6 +1073,76 @@ function mapActivityItem(item: ApiActivityItem): Transaction {
   };
 }
 
+interface ApiNotification {
+  id?: string;
+  event?: string;
+  category?: string;
+  title?: string;
+  message?: string;
+  body?: string;
+  data?: Record<string, unknown> | null;
+  is_read?: boolean;
+  read?: boolean;
+  read_at?: string | null;
+  created_at?: string;
+  createdAt?: string;
+  link?: string;
+}
+
+function mapNotification(n: ApiNotification): MemberNotification {
+  const event = (n.event ?? "").toLowerCase();
+  const category = (n.category ?? "").toLowerCase();
+  const titleLower = (n.title ?? "").toLowerCase();
+
+  let tone: MemberNotification["tone"] = "neutral";
+  if (
+    event.includes("fail") ||
+    event.includes("declined") ||
+    event.includes("rejected") ||
+    event.includes("forfeit") ||
+    titleLower.includes("failed")
+  ) {
+    tone = "fail";
+  } else if (
+    category === "wallet" ||
+    category === "payout" ||
+    event.includes("payout") ||
+    event.includes("withdraw")
+  ) {
+    tone = "gold";
+  } else if (
+    event.includes("payment") ||
+    event.includes("approved") ||
+    event.includes("received") ||
+    event.includes("verified")
+  ) {
+    tone = "brand";
+  }
+
+  let link = n.link || "/member/home";
+  if (!n.link) {
+    if (category === "wallet") link = "/member/wallet";
+    else if (category === "payout") link = "/member/payout";
+    else if (category === "savings" || category === "contribution") {
+      link = "/member/savings";
+    } else if (category === "profile") link = "/member/profile";
+  }
+
+  return {
+    id: n.id ?? "",
+    title: n.title ?? "Notification",
+    body: n.message ?? n.body ?? "",
+    createdAt: n.created_at ?? n.createdAt ?? new Date().toISOString(),
+    read: Boolean(n.is_read ?? n.read ?? n.read_at),
+    readAt: n.read_at ?? null,
+    event: n.event,
+    category: n.category,
+    data: n.data ?? null,
+    link,
+    tone,
+  };
+}
+
 export class HttpMemberRepository implements MemberRepository {
   private readonly txCache = new Map<string, Transaction>();
   constructor(private readonly http: HttpClient) {}
@@ -1187,8 +1259,76 @@ export class HttpMemberRepository implements MemberRepository {
       return res.data;
     }
   }
-  listNotifications(id: string) {
-    return this.http.get<MemberNotification[]>(`/members/${id}/notifications`);
+  async listNotifications(_id: string): Promise<MemberNotification[]> {
+    const page = await this.listNotificationsPage({ page: 1, per_page: 15 });
+    return page.data;
+  }
+
+  async listNotificationsPage(
+    query: NotificationQuery = {},
+  ): Promise<NotificationListPage> {
+    const p = new URLSearchParams();
+    if (query.page) p.set("page", String(query.page));
+    if (query.per_page) p.set("per_page", String(query.per_page));
+    const qs = p.toString();
+    const payload = await this.http.get<
+      ApiEnvelope<ApiNotification[]> | ApiNotification[]
+    >(`/notifications${qs ? `?${qs}` : ""}`);
+    const raw = unwrapData(payload) ?? [];
+    const data = raw.map(mapNotification);
+    const baseMeta = readPageMeta(payload, {
+      current_page: query.page ?? 1,
+      per_page: query.per_page ?? 15,
+      last_page: 1,
+      total: data.length,
+    });
+    const metaRecord = readMetaRecord(payload);
+    const rawUnread = metaRecord?.unread_count;
+    const unreadCount =
+      typeof rawUnread === "number" && Number.isFinite(rawUnread)
+        ? rawUnread
+        : typeof rawUnread === "string" &&
+            rawUnread.trim() !== "" &&
+            Number.isFinite(Number(rawUnread))
+          ? Number(rawUnread)
+          : data.filter((n) => !n.read).length;
+    return {
+      data,
+      meta: {
+        ...baseMeta,
+        unread_count: unreadCount,
+      },
+    };
+  }
+
+  async markNotificationRead(
+    notificationId: string,
+  ): Promise<MemberNotification> {
+    const payload = await this.http.post<
+      ApiEnvelope<ApiNotification> | ApiNotification
+    >(`/notifications/${encodeURIComponent(notificationId)}/read`);
+    const item = unwrapData(payload);
+    if (!item) {
+      return {
+        id: notificationId,
+        title: "Notification",
+        body: "",
+        createdAt: new Date().toISOString(),
+        read: true,
+        readAt: new Date().toISOString(),
+        link: "/member/home",
+        tone: "neutral",
+      };
+    }
+    return mapNotification(item);
+  }
+
+  async markAllNotificationsRead(): Promise<{ markedCount: number }> {
+    const payload = await this.http.post<
+      ApiEnvelope<{ marked_count?: number }> | { marked_count?: number }
+    >("/notifications/read-all");
+    const data = unwrapData(payload);
+    return { markedCount: Number(data?.marked_count ?? 0) };
   }
   requestPayout(id: string, year: number, destination: PayoutDestination) {
     return this.http.post<Transaction>(`/members/${id}/payouts`, {

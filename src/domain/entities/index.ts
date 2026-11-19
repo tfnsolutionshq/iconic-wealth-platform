@@ -191,7 +191,19 @@ export interface Registration {
   memberId?: MemberId;
 }
 
-export interface MemberNotification { id: string; title: string; body: string; createdAt: string; read: boolean; link: string; tone: 'brand' | 'gold' | 'fail' | 'neutral' }
+export interface MemberNotification {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: string;
+  read: boolean;
+  readAt?: string | null;
+  event?: string;
+  category?: string;
+  data?: Record<string, unknown> | null;
+  link: string;
+  tone: 'brand' | 'gold' | 'fail' | 'neutral';
+}
 
 export interface Testimonial { id: string; name: string; descriptor: string; quote: string; status: 'Published' | 'Draft'; order: number }
 

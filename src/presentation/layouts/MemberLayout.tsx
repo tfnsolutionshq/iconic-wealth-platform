@@ -17,6 +17,10 @@ import {
 import type { Member } from "@/domain/entities";
 import { useAuth } from "../contexts/AuthContext";
 import { ContributionDraftProvider } from "../contexts/ContributionDraftContext";
+import {
+  NotificationProvider,
+  useNotificationUnread,
+} from "../contexts/NotificationContext";
 import { Logo, cn } from "../design-system";
 import { paths } from "../routes/paths";
 import { OnboardingModal } from "../features/member/components/OnboardingModal";
@@ -41,7 +45,8 @@ export function MemberLayout() {
   const m = session.member;
   return (
     <ContributionDraftProvider>
-      <div className="min-h-screen bg-soft lg:flex lg:items-start">
+      <NotificationProvider>
+        <div className="min-h-screen bg-soft lg:flex lg:items-start">
         <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-line bg-white px-3.5 py-6 lg:flex">
           <Logo to={paths.member.home} className="h-13.5 w-auto" />
           <MemberNav />
@@ -92,25 +97,39 @@ export function MemberLayout() {
               <Menu size={20} />
             </button>
             <Logo to={paths.member.home} className="h-9 w-auto" />
-            <NavLink
-              to={paths.member.notifications}
-              aria-label="Notifications"
-              className="ml-auto flex size-11 shrink-0 items-center justify-center rounded-full border-[1.5px] border-line"
-            >
-              <Bell size={20} />
-            </NavLink>
+            <MobileBellLink />
           </header>
           <main className="px-5 pt-5 pb-10 lg:px-10 lg:pt-8 lg:pb-14">
             <Outlet />
           </main>
         </div>
         <OnboardingModal />
-      </div>
+        </div>
+      </NotificationProvider>
     </ContributionDraftProvider>
   );
 }
 
+function MobileBellLink() {
+  const { unreadCount } = useNotificationUnread();
+  return (
+    <NavLink
+      to={paths.member.notifications}
+      aria-label="Notifications"
+      className="relative ml-auto flex size-11 shrink-0 items-center justify-center rounded-full border-[1.5px] border-line"
+    >
+      <Bell size={20} />
+      {unreadCount > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-gold px-1 text-[10px] font-extrabold text-ink">
+          {unreadCount}
+        </span>
+      )}
+    </NavLink>
+  );
+}
+
 function MemberNav({ onNavigate }: { onNavigate?: () => void }) {
+  const { unreadCount } = useNotificationUnread();
   return (
     <nav className="mt-6 flex flex-col gap-1" aria-label="Member navigation">
       {SIDE.map(([Icon, label, to]) => (
@@ -129,7 +148,12 @@ function MemberNav({ onNavigate }: { onNavigate?: () => void }) {
           }
         >
           <Icon size={20} />
-          {label}
+          <span>{label}</span>
+          {to === paths.member.notifications && unreadCount > 0 && (
+            <span className="ml-auto flex h-5.5 min-w-5.5 items-center justify-center rounded-full bg-gold px-1.5 text-xs font-extrabold text-ink">
+              {unreadCount}
+            </span>
+          )}
         </NavLink>
       ))}
     </nav>
