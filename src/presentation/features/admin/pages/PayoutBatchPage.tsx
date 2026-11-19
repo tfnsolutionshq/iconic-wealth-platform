@@ -191,8 +191,12 @@ export function PayoutBatchPage() {
 
   const failed = b.rows.filter((r) => r.status === "Failed").length;
   const isMaker = b.maker === adminName;
-  /** ADM-19/20: a Super Admin checks — including their own batch; only non-Super Admins are blocked from approving. */
-  const canCheck = isSuper;
+  /** ADM-19/20: a different Super Admin checks. Makers never check their own batch. */
+  const canCheck = isSuper && !isMaker;
+  const assertCanCheck = () => {
+    if (!isSuper) throw new Error("Only a Super Admin can approve a batch.");
+    if (isMaker) throw new Error("You can’t approve or return a batch you prepared.");
+  };
   const count = (t: Tab) =>
     t === "All"
       ? b.rows.length
@@ -323,16 +327,16 @@ export function PayoutBatchPage() {
         }
       />
       <div className="flex flex-col gap-5 px-4 py-5 sm:px-8 sm:py-6">
-        {b.status === "Awaiting approval" && !canCheck && (
+        {b.status === "Awaiting approval" && !canCheck && !isMaker && (
           <Banner tone="neutral">
             Prepared by {b.maker}. To approve, switch to Super Admin from the
             top-right menu.
           </Banner>
         )}
-        {b.status === "Awaiting approval" && canCheck && isMaker && (
-          <Banner tone="info">
-            You prepared this batch — as a Super Admin you can approve it
-            yourself.
+        {b.status === "Awaiting approval" && isMaker && (
+          <Banner tone="neutral">
+            You prepared this batch. Another Super Admin must approve or return
+            it — makers cannot check their own work.
           </Banner>
         )}
         {b.status === "Returned to maker" && (
@@ -553,12 +557,19 @@ export function PayoutBatchPage() {
               Cancel
             </Button>
             <Button
-              disabled={!reviewed || busy}
-              title={reviewed ? undefined : "Tick the review box first"}
+              disabled={!reviewed || busy || !canCheck}
+              title={
+                !canCheck
+                  ? "A different Super Admin must approve this batch"
+                  : reviewed
+                    ? undefined
+                    : "Tick the review box first"
+              }
               onClick={() =>
                 act(
-                  () =>
-                    repos.admin
+                  () => {
+                    assertCanCheck();
+                    return repos.admin
                       .decideBatch(b.id, "Approved", {
                         by: adminName,
                         role: admin?.role,
@@ -570,7 +581,8 @@ export function PayoutBatchPage() {
                           `${formatNaira(b.savingsKobo + b.interestKobo)} · ${b.count} members`,
                         );
                         return nb;
-                      }),
+                      });
+                  },
                   "Batch approved. Start disbursement.",
                   () => setApproveOpen(false),
                 )
@@ -601,11 +613,12 @@ export function PayoutBatchPage() {
             </Button>
             <Button
               variant="danger"
-              disabled={!reason.trim() || busy}
+              disabled={!reason.trim() || busy || !canCheck}
               onClick={() =>
                 act(
-                  () =>
-                    repos.admin
+                  () => {
+                    assertCanCheck();
+                    return repos.admin
                       .decideBatch(b.id, "Returned", {
                         by: adminName,
                         role: admin?.role,
@@ -614,7 +627,8 @@ export function PayoutBatchPage() {
                       .then((nb) => {
                         audit("Returned payout batch", b.id, reason);
                         return nb;
-                      }),
+                      });
+                  },
                   `Batch returned to ${b.maker}.`,
                   () => {
                     setRejectOpen(false);

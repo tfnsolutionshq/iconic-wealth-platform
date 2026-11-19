@@ -494,14 +494,33 @@ export interface PayoutBatch {
   history: [string, string, string][];
 }
 
-export type ReportKind =
+/** Report sections rendered by `#/admin/reports`. */
+export type AdminReportKey =
   | "compliance"
-  | "collections"
   | "eligibility"
-  | "charges";
+  | "charges"
+  | "payout"
+  | "late"
+  | "savings";
+/** `collections` is kept as a legacy alias for the charges report. */
+export type ReportKind = AdminReportKey | "collections";
 export interface ReportResult {
   headers: string[];
   rows: string[][];
+}
+/** `GET /admin/reports` accepts only these filters — there is no `kind` param. */
+export interface AdminReportsQuery {
+  year: number;
+  /** Sent for month-based reports (compliance and charges). */
+  month?: number | "all";
+  /** Sent when a status filter is active; the API names this `eligibility`. */
+  eligibility?: string;
+}
+export interface AdminReports {
+  year: number;
+  month?: number | "all";
+  eligibility?: string;
+  reports: Record<AdminReportKey, ReportResult>;
 }
 
 export type ReferralStatus = "Saving" | "Pending" | "Inactive" | "Not started";
