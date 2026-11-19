@@ -29,6 +29,7 @@ import type {
   MonthIndex,
   PayoutAccount,
   PayoutBatch,
+  PayoutBatchStatus,
   PayoutDestination,
   AdminListItem,
   NotificationSettings,
@@ -343,6 +344,32 @@ export interface TransactionQuery {
   search?: string;
 }
 
+/** Counts returned alongside GET /admin/payouts, keyed by API status slug. */
+export interface PayoutBatchCounts {
+  all: number;
+  awaiting_approval: number;
+  returned: number;
+  processing: number;
+  partial: number;
+  completed: number;
+}
+
+export interface PayoutBatchPageMeta extends PageMeta {
+  counts: PayoutBatchCounts;
+  availableYears: number[];
+}
+
+export interface PayoutBatchListPage {
+  data: PayoutBatch[];
+  meta: PayoutBatchPageMeta;
+}
+
+export interface PayoutBatchQuery {
+  page?: number;
+  status?: "All" | PayoutBatchStatus;
+  year?: number | "All";
+}
+
 /** Raw member status returned by GET /admin/members, and accepted by its `status` filter. */
 export type ApiMemberStatus = MemberAccountStatus;
 
@@ -552,8 +579,9 @@ export interface AdminRepository {
   getInterestHistory(
     interestConfigId: number | string,
   ): Promise<[string, string, string][]>;
-  /** ADM-18 to ADM-20: year-end payout batches. */
+  /** ADM-18 to ADM-20: year-end payout batches. Passing a query returns a page. */
   listPayoutBatches(): Promise<PayoutBatch[]>;
+  listPayoutBatches(query: PayoutBatchQuery): Promise<PayoutBatchListPage>;
   getPayoutBatch(id: string): Promise<PayoutBatch>;
   decideBatch(
     id: string,

@@ -16,6 +16,7 @@ import type {
   MonthIndex,
   NotificationSettings,
   PayoutBatch,
+  PayoutBatchStatus,
   PayoutDestination,
   Registration,
   ReportKind,
@@ -39,6 +40,9 @@ import type {
   NewRegistration,
   InterestRulesInput,
   PayoutAccountRepository,
+  PayoutBatchCounts,
+  PayoutBatchListPage,
+  PayoutBatchQuery,
   RegistrationRepository,
   RegistrationStarted,
   SavingsDashboardRepository,
@@ -1654,8 +1658,52 @@ export class MockAdminRepository implements AdminRepository {
     }
     return batch;
   }
-  async listPayoutBatches() {
-    return delay(payoutBatches, 120);
+  listPayoutBatches(): Promise<PayoutBatch[]>;
+  listPayoutBatches(query: PayoutBatchQuery): Promise<PayoutBatchListPage>;
+  async listPayoutBatches(
+    query?: PayoutBatchQuery,
+  ): Promise<PayoutBatch[] | PayoutBatchListPage> {
+    if (!query) return delay(payoutBatches, 120);
+    const perPage = 15;
+    const page = Math.max(1, query.page ?? 1);
+    const countFor = (status: PayoutBatchStatus) =>
+      payoutBatches.filter((b) => b.status === status).length;
+    const counts: PayoutBatchCounts = {
+      all: payoutBatches.length,
+      awaiting_approval: countFor("Awaiting approval"),
+      returned: countFor("Returned to maker"),
+      processing: countFor("Processing"),
+      partial: countFor("Partial"),
+      completed: countFor("Completed"),
+    };
+    const filtered = payoutBatches.filter(
+      (b) =>
+        (!query.status || query.status === "All" || b.status === query.status) &&
+        (!query.year || query.year === "All" || b.year === Number(query.year)),
+    );
+    const total = filtered.length;
+    const lastPage = Math.max(1, Math.ceil(total / perPage));
+    const currentPage = Math.min(page, lastPage);
+    const data = filtered.slice(
+      (currentPage - 1) * perPage,
+      currentPage * perPage,
+    );
+    return delay(
+      {
+        data,
+        meta: {
+          current_page: currentPage,
+          per_page: perPage,
+          last_page: lastPage,
+          total,
+          counts,
+          availableYears: [...new Set(payoutBatches.map((b) => b.year))].sort(
+            (a, b) => b - a,
+          ),
+        },
+      },
+      120,
+    );
   }
   async getPayoutBatch(id: string) {
     return delay(batchOf(id), 120);

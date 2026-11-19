@@ -478,6 +478,8 @@ export interface PayoutRow {
 }
 export interface PayoutBatch {
   id: string;
+  /** Human-readable batch code (`batch_code` in the API), e.g. PB-2026-12. */
+  batchCode?: string;
   /** Interest configuration this batch was generated from; use it for detail links. */
   interestConfigId?: string;
   year: number;

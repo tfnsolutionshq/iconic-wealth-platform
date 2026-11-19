@@ -67,6 +67,10 @@ import type {
   NewRegistration,
   PageMeta,
   PayoutAccountRepository,
+  PayoutBatchCounts,
+  PayoutBatchListPage,
+  PayoutBatchPageMeta,
+  PayoutBatchQuery,
   RegistrationRepository,
   RegistrationStarted,
   SavingsDashboardRepository,
@@ -438,6 +442,47 @@ function readTransactionPageMeta(
     late: readMetaNumber(counts.late, 0),
   };
   return { ...meta, counts: transactionCounts };
+}
+
+/** Reads pagination, status counts and available years from GET /admin/payouts. */
+function readPayoutBatchPageMeta(
+  payload: unknown,
+  fallback: PageMeta,
+): PayoutBatchPageMeta {
+  const meta = readPageMeta(payload, fallback);
+  const rawMeta = readMetaRecord(payload) ?? {};
+  const rawCounts =
+    rawMeta.counts && typeof rawMeta.counts === "object"
+      ? (rawMeta.counts as Record<string, unknown>)
+      : {};
+  const counts: PayoutBatchCounts = {
+    all: readMetaNumber(rawCounts.all, meta.total),
+    awaiting_approval: readMetaNumber(rawCounts.awaiting_approval, 0),
+    returned: readMetaNumber(rawCounts.returned, 0),
+    processing: readMetaNumber(rawCounts.processing, 0),
+    partial: readMetaNumber(rawCounts.partial, 0),
+    completed: readMetaNumber(rawCounts.completed, 0),
+  };
+  const availableYears = readArray(
+    rawMeta.available_years ?? rawMeta.availableYears,
+  )
+    .map((value) => Math.trunc(readMetaNumber(value, 0)))
+    .filter((value) => value > 0);
+  return { ...meta, counts, availableYears };
+}
+
+/** Map a domain payout status to the slug accepted by GET /admin/payouts. */
+function payoutStatusParam(status: PayoutBatchQuery["status"]): string | null {
+  if (!status || status === "All") return null;
+  const slugs: Record<Exclude<PayoutBatchStatus, "All">, string> = {
+    "Awaiting approval": "awaiting_approval",
+    "Returned to maker": "returned",
+    Approved: "approved",
+    Processing: "processing",
+    Partial: "partial",
+    Completed: "completed",
+  };
+  return slugs[status] ?? null;
 }
 
 /** Reads the pagination metadata from an API envelope, falling back to the request page. */
@@ -1257,11 +1302,15 @@ function mapPayoutBatch(raw: unknown): PayoutBatch {
     asRecord(r.interest_config).id,
     asRecord(r.interestConfiguration).id,
   );
+  const id = readString(r.id, r.batch_id, r.batchId, r.reference) ?? "";
+  const batchCode = readString(r.batch_code, r.batchCode, r.code);
   return {
-    id: readString(r.id, r.batch_id, r.batchId, r.reference) ?? "",
+    id,
+    ...(batchCode ? { batchCode } : {}),
     ...(interestConfigId ? { interestConfigId } : {}),
     year: Math.trunc(readNumber(r.year, r.savings_year) ?? 0),
-    month: readString(r.month, r.month_name, r.period) ?? "",
+    month:
+      readString(r.month, r.month_name, r.period, r.disbursement) ?? "",
     status: readPayoutBatchStatus(r.status ?? r.status_label),
     count: Math.trunc(
       readNumber(
@@ -2679,14 +2728,35 @@ export class HttpAdminRepository implements AdminRepository {
           .filter((entry): entry is [string, string, string] => entry !== null),
       );
   }
-  listPayoutBatches() {
-    return this.http
-      .get<unknown>("/admin/payouts")
-      .then((payload) =>
-        readRecordList(payload, ["batches", "payouts", "payout_batches"]).map(
-          mapPayoutBatch,
-        ),
-      );
+  listPayoutBatches(): Promise<PayoutBatch[]>;
+  listPayoutBatches(query: PayoutBatchQuery): Promise<PayoutBatchListPage>;
+  async listPayoutBatches(
+    query?: PayoutBatchQuery,
+  ): Promise<PayoutBatch[] | PayoutBatchListPage> {
+    const p = new URLSearchParams();
+    const status = payoutStatusParam(query?.status);
+    if (status) p.set("status", status);
+    if (query?.year && query.year !== "All") p.set("year", String(query.year));
+    if (query?.page && query.page > 1) p.set("page", String(query.page));
+    const qs = p.toString();
+    const payload = await this.http.get<unknown>(
+      `/admin/payouts${qs ? `?${qs}` : ""}`,
+    );
+    const data = readRecordList(payload, [
+      "batches",
+      "payouts",
+      "payout_batches",
+    ]).map(mapPayoutBatch);
+    if (!query) return data;
+    return {
+      data,
+      meta: readPayoutBatchPageMeta(payload, {
+        current_page: query.page ?? 1,
+        per_page: 15,
+        last_page: Math.max(1, Math.ceil(data.length / 15)),
+        total: data.length,
+      }),
+    };
   }
   getPayoutBatch(id: string) {
     return this.http
