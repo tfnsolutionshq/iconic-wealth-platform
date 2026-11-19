@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Check, Download, LoaderCircle, Search } from "lucide-react";
-import type { AuditCategory, PayoutBatch, PayoutRow } from "@/domain/entities";
+import type {
+  AuditCategory,
+  PayoutBatch,
+  PayoutBatchStatus,
+  PayoutRow,
+} from "@/domain/entities";
 import { formatNaira } from "@/domain/rules";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
@@ -16,6 +21,7 @@ import {
   Kpi,
   Modal,
   Pill,
+  type Tone,
   Select,
   SelectField,
 } from "../../../design-system";
@@ -30,18 +36,50 @@ const ROW_TONE = {
   Retrying: "info",
   Pending: "mute",
 } as const;
+const BATCH_TONE: Record<PayoutBatchStatus, Tone> = {
+  "Awaiting approval": "pending",
+  "Returned to maker": "fail",
+  Approved: "info",
+  Processing: "info",
+  Partial: "gold",
+  Completed: "ok",
+};
 type Tab = "All" | "Paid" | "Failed" | "Pending";
 type Sort = "failed" | "name" | "amount";
 
 /** ADM-19, ADM-20: payout batch detail with maker-checker approval and disbursement. */
 export function PayoutBatchPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const { repos, clock } = useServices();
   const toast = useToast();
   const { session } = useAuth();
   const admin = session?.kind === "admin" ? session.admin : null;
   const adminName = admin?.name ?? "You";
   const isSuper = admin?.role === "SuperAdmin";
+
+  /** The workflow links to this page with the config id; list links use the legacy batch lookup. */
+  const interestConfig = searchParams.get("interestConfig");
+  const yearParam = searchParams.get("year");
+  const monthParam = searchParams.get("month");
+  const yearFromId = Number(id?.match(/^PB-(\d{4})-/)?.[1]);
+  const year = (yearParam ? Number(yearParam) : yearFromId) || undefined;
+  const monthNames = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  const monthFromId = monthNames[Number(id?.match(/-(\d{2})$/)?.[1]) - 1];
+  const month = monthParam ?? monthFromId;
 
   const [b, setB] = useState<PayoutBatch | null>(null);
   const [missing, setMissing] = useState(false);
@@ -60,12 +98,20 @@ export function PayoutBatchPage() {
 
   const reload = async () => {
     if (!id) return;
-    setB(await repos.admin.getPayoutBatch(id));
+    setB(
+      interestConfig
+        ? await repos.admin.getInterestPayouts(interestConfig, {
+            id,
+            ...(year ? { year } : {}),
+            ...(month ? { month } : {}),
+          })
+        : await repos.admin.getPayoutBatch(id),
+    );
   };
   useEffect(() => {
     reload().catch(() => setMissing(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repos, id]);
+  }, [repos, id, interestConfig, year, month]);
 
   const audit = (
     action: string,
@@ -191,22 +237,30 @@ export function PayoutBatchPage() {
     <>
       <AdminPageHeader
         title={`Payout batch ${b.id}`}
-        sub={`${b.month} ${b.year} disbursement · ${b.status}`}
+        sub={
+          <span className="flex items-center gap-2">
+            {b.month} {b.year} disbursement ·{" "}
+            <Pill tone={BATCH_TONE[b.status]} icon={false}>
+              {b.status}
+            </Pill>
+          </span>
+        }
         back={paths.admin.payouts}
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="md"
-              icon={<Download size={18} />}
-              onClick={exportCsv}
-            >
-              Export
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
             {b.status === "Awaiting approval" && canCheck && (
               <>
                 <Button
-                  size="md"
+                  size="sm"
+                  onClick={() => {
+                    setApproveOpen(true);
+                    setReviewed(false);
+                  }}
+                >
+                  Approve batch
+                </Button>
+                <Button
+                  size="sm"
                   variant="outline"
                   className="text-fail"
                   onClick={() => {
@@ -216,20 +270,14 @@ export function PayoutBatchPage() {
                 >
                   Reject
                 </Button>
-                <Button
-                  size="md"
-                  onClick={() => {
-                    setApproveOpen(true);
-                    setReviewed(false);
-                  }}
-                >
-                  Approve batch
-                </Button>
               </>
+            )}
+            {b.status === "Awaiting approval" && !canCheck && (
+              <Pill tone="pending">Waiting for a Super Admin</Pill>
             )}
             {b.status === "Returned to maker" && !isSuper && (
               <Button
-                size="md"
+                size="sm"
                 disabled={busy}
                 onClick={() =>
                   act(
@@ -251,7 +299,7 @@ export function PayoutBatchPage() {
             )}
             {b.status === "Approved" && (
               <Button
-                size="md"
+                size="sm"
                 disabled={busy}
                 onClick={() =>
                   act(
@@ -263,16 +311,22 @@ export function PayoutBatchPage() {
                 Start disbursement
               </Button>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<Download size={18} />}
+              onClick={exportCsv}
+            >
+              Export
+            </Button>
           </div>
         }
       />
       <div className="flex flex-col gap-5 px-4 py-5 sm:px-8 sm:py-6">
         {b.status === "Awaiting approval" && !canCheck && (
           <Banner tone="neutral">
-            Prepared by {b.maker}.{" "}
-            {isMaker
-              ? "You prepared this batch — a Super Admin must approve it."
-              : "Only a Super Admin can approve. Switch role from the header in demo mode."}
+            Prepared by {b.maker}. To approve, switch to Super Admin from the
+            top-right menu.
           </Banner>
         )}
         {b.status === "Awaiting approval" && canCheck && isMaker && (
@@ -305,14 +359,20 @@ export function PayoutBatchPage() {
           <Kpi
             label="Members in batch"
             value={b.count.toLocaleString()}
-            note={`${b.rows.length.toLocaleString()} of ${b.count.toLocaleString()}`}
+            note={`Sample of ${b.rows.length.toLocaleString()} shown`}
           />
           <Kpi label="Savings" value={formatNaira(b.savingsKobo)} />
           <Kpi label="Interest" value={formatNaira(b.interestKobo)} />
           <Kpi
             label="Total payout"
             value={formatNaira(b.savingsKobo + b.interestKobo)}
-            note={b.status === "Completed" ? "All paid" : `${failed} failed`}
+            note={
+              b.status === "Completed"
+                ? "All paid"
+                : failed
+                  ? `${failed} failed`
+                  : undefined
+            }
             tone={
               b.status === "Completed" ? "good" : failed ? "warn" : undefined
             }
@@ -394,7 +454,9 @@ export function PayoutBatchPage() {
                   header: "Status",
                   render: (r) => (
                     <span className="flex flex-col items-start gap-1">
-                      <Pill tone={ROW_TONE[r.status]}>{r.status}</Pill>
+                      <Pill tone={ROW_TONE[r.status]} icon={false}>
+                        {r.status}
+                      </Pill>
                       {r.status === "Failed" && r.reason && (
                         <span className="text-xs font-semibold text-fail">
                           {r.reason}
@@ -471,7 +533,9 @@ export function PayoutBatchPage() {
         <p className="text-[13px] font-semibold text-mute">
           Interest approved in{" "}
           <Link
-            to={paths.admin.interestYear(b.year)}
+            to={paths.admin.interestConfig(
+              interestConfig || b.interestConfigId || b.year,
+            )}
             className="font-bold text-brand underline underline-offset-2"
           >
             savings year {b.year}

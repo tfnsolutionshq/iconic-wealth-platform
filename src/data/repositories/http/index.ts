@@ -10,7 +10,16 @@ import type {
   AuditEntry,
   Bank,
   ContributionPaymentMethod,
+  InterestActor,
+  InterestBand,
   InterestCalcRow,
+  InterestCalculationEntries,
+  InterestCalculationSummary,
+  InterestRateMode,
+  InterestScope,
+  InterestStage,
+  InterestStageStatus,
+  InterestStatus,
   InterestWorkflow,
   InterestYearSummary,
   Kobo,
@@ -22,7 +31,10 @@ import type {
   NotificationSettings,
   PayoutAccount,
   PayoutBatch,
+  PayoutBatchStatus,
   PayoutDestination,
+  PayoutRow,
+  PayoutRowStatus,
   ReferralGroup,
   Registration,
   ReportKind,
@@ -37,7 +49,7 @@ import type {
   TransactionStatus,
 } from "@/domain/entities";
 import type { PlatformSettings } from "@/domain/rules";
-import { MONTHS, naira } from "@/domain/rules";
+import { interestWizardProgress, MONTHS, naira } from "@/domain/rules";
 import type {
   ActivityPageResult,
   ActivityQuery,
@@ -148,14 +160,16 @@ interface ApiAdminTransaction {
   paystack_reference?: string;
   member_id?: string;
   member_name?: string;
-  member?: string | {
-    id?: string;
-    member_id?: string;
-    full_name?: string;
-    name?: string;
-    first_name?: string;
-    last_name?: string;
-  };
+  member?:
+    | string
+    | {
+        id?: string;
+        member_id?: string;
+        full_name?: string;
+        name?: string;
+        first_name?: string;
+        last_name?: string;
+      };
   user?: {
     id?: string;
     member_id?: string;
@@ -268,8 +282,7 @@ function mapAdminTransaction(raw: ApiAdminTransaction): Transaction {
     monthIndex = toMonthIndex(Number(raw.month) - 1);
   } else if (raw.savings_month?.month_name) {
     const idx = MONTHS.findIndex(
-      (m) =>
-        m.toLowerCase() === raw.savings_month!.month_name!.toLowerCase(),
+      (m) => m.toLowerCase() === raw.savings_month!.month_name!.toLowerCase(),
     );
     if (idx >= 0) monthIndex = idx as MonthIndex;
   }
@@ -329,9 +342,7 @@ function mapAdminTransaction(raw: ApiAdminTransaction): Transaction {
     id: raw.id ?? raw.reference ?? `TX-${createdAt}`,
     reference: raw.reference ?? raw.id ?? "",
     gatewayReference:
-      raw.gatewayReference ??
-      raw.gateway_reference ??
-      raw.paystack_reference,
+      raw.gatewayReference ?? raw.gateway_reference ?? raw.paystack_reference,
     memberId,
     memberName: memberName || memberId || "—",
     kind,
@@ -448,6 +459,831 @@ function readPageMeta(payload: unknown, fallback: PageMeta): PageMeta {
     last_page: read("last_page", fallback.last_page),
     total: read("total", fallback.total),
   };
+}
+
+/* ---------------- Interest configuration (ADM-15 to ADM-20) ---------------- */
+
+/** Coerces an API value (numeric strings included) to a number. */
+function readNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (value === null || value === undefined || value === "") continue;
+    const n = typeof value === "number" ? value : Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
+/** Reads the first non-empty string (or number) from a list of candidates. */
+function readString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim() !== "") return value.trim();
+    if (typeof value === "number" && Number.isFinite(value))
+      return String(value);
+  }
+  return undefined;
+}
+
+/** Reads a display name from a name string or a nested user/member object. */
+function readPersonName(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim() !== "") return value.trim();
+  const record = asRecord(value);
+  const name = readString(record.name, record.full_name, record.fullName);
+  if (name) return name;
+  const joined = [
+    record.first_name ?? record.firstName,
+    record.last_name ?? record.lastName,
+  ]
+    .filter(
+      (part): part is string => typeof part === "string" && part.trim() !== "",
+    )
+    .join(" ")
+    .trim();
+  return joined || readString(record.email);
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function readArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+/** Reads a boolean-ish API value (`true`, `1`, `"yes"`, `"active"`). */
+function readBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  const text = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (!text) return undefined;
+  if (["false", "no", "0", "off"].includes(text)) return false;
+  return true;
+}
+
+/**
+ * Money from the API: `*_kobo` fields already hold kobo, every other money
+ * field is a naira amount (the backend's convention).
+ */
+function readApiKobo(
+  record: Record<string, unknown>,
+  keys: string[],
+): Kobo | undefined {
+  for (const key of keys) {
+    const raw = record[key];
+    if (raw === null || raw === undefined || raw === "") continue;
+    const n = typeof raw === "number" ? raw : Number(raw);
+    if (!Number.isFinite(n)) continue;
+    return (
+      key.toLowerCase().includes("kobo") ? Math.round(n) : koboFromApi(n)
+    ) as Kobo;
+  }
+  return undefined;
+}
+
+/** Members may be sent as ids or as objects with an id. */
+function readIdList(value: unknown): string[] {
+  return readArray(value)
+    .map((item) => {
+      if (typeof item === "string" || typeof item === "number")
+        return String(item);
+      const record = asRecord(item);
+      return readString(
+        record.id,
+        record.member_id,
+        record.memberId,
+        record.code,
+      );
+    })
+    .filter((id): id is string => Boolean(id));
+}
+
+/** Finds a list inside an envelope, a paginator or a named collection. */
+function readRecordList(payload: unknown, keys: string[]): unknown[] {
+  const data = unwrapData<unknown>(payload);
+  if (Array.isArray(data)) return data;
+  const record = asRecord(data);
+  for (const key of [...keys, "data", "items", "records", "list"]) {
+    if (Array.isArray(record[key])) return record[key] as unknown[];
+  }
+  const nested = asRecord(record.data);
+  for (const key of [...keys, "data", "items"]) {
+    if (Array.isArray(nested[key])) return nested[key] as unknown[];
+  }
+  return [];
+}
+
+const INTEREST_STATUS_VALUES: readonly InterestStatus[] = [
+  "Not started",
+  "Draft",
+  "Submitted",
+  "Pending approval",
+  "Returned",
+  "Approved",
+  "Paid out",
+];
+
+function readInterestStatus(value: unknown): InterestStatus {
+  const exact = INTEREST_STATUS_VALUES.find((status) => status === value);
+  if (exact) return exact;
+  const text = String(value ?? "")
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .trim();
+  if (!text) return "Not started";
+  if (text.includes("not started") || text.includes("new") || text === "none") {
+    return "Not started";
+  }
+  if (
+    text.includes("paid") ||
+    text.includes("disburs") ||
+    text.includes("complete")
+  ) {
+    return "Paid out";
+  }
+  if (text.includes("return") || text.includes("reject")) return "Returned";
+  if (text.includes("submit")) return "Submitted";
+  if (text.includes("pending") || text.includes("awaiting"))
+    return "Pending approval";
+  if (text.includes("approv")) return "Approved";
+  if (
+    text.includes("draft") ||
+    text.includes("progress") ||
+    text.includes("active")
+  ) {
+    return "Draft";
+  }
+  return "Not started";
+}
+
+function readInterestRateMode(value: unknown): InterestRateMode {
+  const text = String(value ?? "").toLowerCase();
+  return text.includes("range") ||
+    text.includes("band") ||
+    text.includes("tier") ||
+    text.includes("contrib")
+    ? "Contribution ranges"
+    : "Fixed rate";
+}
+
+function readInterestScope(value: unknown): InterestScope {
+  const text = String(value ?? "").toLowerCase();
+  return text.includes("selected") ||
+    text.includes("specific") ||
+    text.includes("manual") ||
+    text.includes("custom")
+    ? "Selected members"
+    : "All members";
+}
+
+function readEligibility(value: unknown): boolean | undefined {
+  const flag = readBoolean(value);
+  if (flag === undefined) return undefined;
+  const text = String(value ?? "").toLowerCase();
+  if (text.includes("forfeit") || text.includes("ineligib")) return false;
+  return flag;
+}
+
+function mapInterestBand(raw: unknown): InterestBand {
+  const r = asRecord(raw);
+  const minKobo =
+    readApiKobo(r, [
+      "minKobo",
+      "min_kobo",
+      "min",
+      "min_contribution",
+      "min_amount",
+      "from_amount",
+      "minimum",
+      "from",
+      "lower_bound",
+    ]) ?? 0;
+  const maxKobo =
+    readApiKobo(r, [
+      "maxKobo",
+      "max_kobo",
+      "max",
+      "max_contribution",
+      "max_amount",
+      "to_amount",
+      "maximum",
+      "to",
+      "upper_bound",
+    ]) ?? null;
+  return {
+    minKobo,
+    maxKobo: maxKobo != null && maxKobo > 0 ? maxKobo : null,
+    rate: readNumber(r.rate, r.interest_rate, r.percentage) ?? 0,
+  };
+}
+
+function mapInterestHistoryEntry(
+  raw: unknown,
+): [string, string, string] | null {
+  if (Array.isArray(raw)) {
+    return [String(raw[0] ?? ""), String(raw[1] ?? ""), String(raw[2] ?? "")];
+  }
+  const r = asRecord(raw);
+  if (Object.keys(r).length === 0) return null;
+  return [
+    readString(r.at, r.created_at, r.date, r.timestamp) ?? "",
+    readString(r.event, r.action, r.description, r.title) ?? "",
+    readPersonName(r.actor ?? r.by ?? r.user) ??
+      readString(r.actor_name, r.performed_by) ??
+      "",
+  ];
+}
+
+function mapInterestYearSummary(raw: unknown): InterestYearSummary {
+  const r = asRecord(raw);
+  const money = { ...asRecord(r.totals ?? r.summary), ...r };
+  const bands = readArray(
+    r.bands ?? r.contribution_ranges ?? r.ranges ?? r.tiers,
+  ).map(mapInterestBand);
+  const rateModeValue = r.rateMode ?? r.rate_mode ?? r.rate_type;
+  const rateMode =
+    rateModeValue == null
+      ? bands.length > 0
+        ? "Contribution ranges"
+        : undefined
+      : readInterestRateMode(rateModeValue);
+  // The list endpoint exposes the checker through `reviewed_by` and the
+  // approval timestamp on the completed `approve` stage, not as top-level
+  // `checker` / `approved_at` fields.
+  const approveStage = readArray(r.stages).find(
+    (stage) => asRecord(stage).key === "approve",
+  );
+  const approvedAt =
+    readString(
+      approveStage &&
+        readString(
+          asRecord(approveStage).completed_at,
+          asRecord(approveStage).completedAt,
+        ),
+      r.approvedAt,
+      r.approved_at,
+      r.approved_on,
+      r.reviewed_at,
+      r.reviewedAt,
+    ) ?? undefined;
+  const batchId =
+    readString(r.batchId, r.batch_id) ??
+    readString(asRecord(r.batch).id, asRecord(r.batch).batch_id);
+  const summary: InterestYearSummary = {
+    id:
+      readString(r.id, r.config_id, r.interest_config_id, r.configuration_id) ??
+      undefined,
+    year: Math.trunc(
+      readNumber(r.year, r.savings_year, r.config_year, r.interest_year) ?? 0,
+    ),
+    status: readInterestStatus(r.status ?? r.status_label ?? r.state),
+    rate: readNumber(r.rate, r.interest_rate, r.percentage) ?? null,
+    eligible: Math.trunc(
+      readNumber(
+        r.eligible,
+        r.eligible_count,
+        r.eligible_members,
+        r.eligibleMembers,
+      ) ?? 0,
+    ),
+    forfeited: Math.trunc(
+      readNumber(
+        r.forfeited,
+        r.forfeited_count,
+        r.forfeited_members,
+        r.forfeitedMembers,
+      ) ?? 0,
+    ),
+    contributionsKobo:
+      readApiKobo(money, [
+        "contributionsKobo",
+        "contributions_kobo",
+        "total_contributions",
+        "contributions_total",
+        "contributions",
+        "total_savings",
+        "savings_kobo",
+        "savings",
+      ]) ?? 0,
+    interestKobo:
+      readApiKobo(money, [
+        "interestKobo",
+        "interest_kobo",
+        "total_interest",
+        "interest_total",
+        "interest",
+        "payout_kobo",
+      ]) ?? 0,
+  };
+  if (rateMode) summary.rateMode = rateMode;
+  const maker = readPersonName(r.maker ?? r.prepared_by ?? r.created_by);
+  const checker = readPersonName(
+    r.reviewed_by ?? r.reviewedBy ?? r.checker ?? r.approved_by ?? r.approver,
+  );
+  if (maker) summary.maker = maker;
+  if (checker) summary.checker = checker;
+  if (approvedAt) summary.approvedAt = approvedAt;
+  if (batchId) summary.batchId = batchId;
+  return summary;
+}
+
+/** Reads a list of stage keys, which may arrive as strings or `{ key }` records. */
+function readStringList(...values: unknown[]): string[] {
+  for (const value of values) {
+    const items = Array.isArray(value)
+      ? value
+      : typeof value === "string" && value.trim()
+        ? value.split(",")
+        : [];
+    if (items.length === 0) continue;
+    const strings = items
+      .map((item) =>
+        readString(item, asRecord(item).key, asRecord(item).id, asRecord(item).name),
+      )
+      .filter((item): item is string => Boolean(item));
+    if (strings.length > 0) return [...new Set(strings)];
+  }
+  return [];
+}
+
+function readInterestStageStatus(value: unknown): InterestStageStatus {
+  const text = readString(value)?.toLowerCase() ?? "";
+  if (["completed", "complete", "done", "approved"].includes(text)) return "completed";
+  if (["current", "active", "in_progress", "in-progress"].includes(text)) return "current";
+  return "pending";
+}
+
+function mapInterestStage(raw: unknown): InterestStage | null {
+  const r = asRecord(raw);
+  const key = readString(r.key, r.stage, r.stage_key, r.name);
+  if (!key) return null;
+  return {
+    key,
+    label: readString(r.label, r.title, r.name) ?? key,
+    status: readInterestStageStatus(r.status ?? r.state),
+    completedAt: readString(r.completed_at, r.completedAt) ?? null,
+  };
+}
+
+function mapInterestActor(raw: unknown): InterestActor | null {
+  if (raw == null) return null;
+  const name = readPersonName(raw);
+  if (!name) return null;
+  const r = asRecord(raw);
+  return {
+    id: readString(r.id, r.admin_id, r.user_id, r.member_id) ?? "",
+    name,
+  };
+}
+
+/**
+ * Calculation endpoints echo the run's totals and configuration instead of the
+ * workflow's own progress fields. Treat that shape as a finished `calculate`
+ * milestone so the wizard advances from the response itself.
+ */
+function hasInterestCalculationResult(r: Record<string, unknown>): boolean {
+  const hasTotal =
+    r.total_interest != null ||
+    r.interest_total != null ||
+    r.totalInterest != null;
+  const hasCounts = r.eligible != null || r.forfeited != null;
+  const hasRunConfig =
+    r.period != null || r.ranges != null || r.applies_to != null;
+  return hasTotal && hasCounts && hasRunConfig;
+}
+
+/** Splits API ranges such as `2026-01-01 – 2026-11-30` into two dates. */
+function readInterestPeriod(value: unknown): { start: string; end: string } {
+  const text = readString(value) ?? "";
+  if (!text) return { start: "", end: "" };
+  const parts = text
+    .split(/\s*(?:[–—―]|\bto\b|\s+-\s+)\s*/i)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return { start: parts[0] ?? "", end: parts[1] ?? "" };
+}
+
+function mapInterestWorkflow(raw: unknown, fallbackYear = 0): InterestWorkflow {
+  const r = asRecord(raw);
+  const summary = mapInterestYearSummary(raw);
+  const bands = readArray(
+    r.bands ?? r.contribution_ranges ?? r.ranges ?? r.tiers,
+  ).map(mapInterestBand);
+  const rateMode =
+    summary.rateMode ??
+    (bands.length > 0 ? "Contribution ranges" : "Fixed rate");
+  const hasCalculationResult = hasInterestCalculationResult(r);
+  const serverCompletedStages = readStringList(
+    r.completed_stages,
+    r.completedStages,
+  );
+  const completedStages = hasCalculationResult
+    ? [...new Set([...serverCompletedStages, "calculate"])]
+    : serverCompletedStages;
+  const period = readInterestPeriod(
+    r.period ?? r.period_range ?? r.calculation_period,
+  );
+  const stages = readArray(r.stages)
+    .map(mapInterestStage)
+    .filter((stage): stage is InterestStage => stage != null);
+  const currentStage =
+    readString(r.current_stage, r.currentStage) ??
+    stages.find((stage) => stage.status === "current")?.key ??
+    (hasCalculationResult ? "submit" : null);
+  const statusLabel = readString(r.status_label, r.statusLabel) ?? summary.status;
+  const numericDone = Math.trunc(readNumber(r.done, r.stages_done) ?? 0);
+  // Some responses only expose the workflow status, so derive the milestone it
+  // implies instead of reporting a started configuration as "Not started".
+  const statusDone =
+    summary.status === "Submitted" || summary.status === "Pending approval"
+      ? 4
+      : summary.status === "Approved"
+        ? 5
+        : summary.status === "Paid out"
+          ? 8
+          : 0;
+  const numericStage = Math.trunc(
+    readNumber(r.stage, r.stage_index) ??
+      Math.min(8, Math.max(numericDone, statusDone) + 1),
+  );
+  const selectedMemberIds = readIdList(
+    r.selectedMemberIds ?? r.selected_member_ids ?? r.selected_members,
+  );
+  const scopeValue = r.scope ?? r.member_scope ?? r.applies_to;
+  const rejectReason = readString(
+    r.rejectReason,
+    r.reject_reason,
+    r.return_reason,
+    r.returnReason,
+  );
+  const workflow: InterestWorkflow = {
+    ...summary,
+    year: summary.year || fallbackYear,
+    rateMode,
+    closed:
+      readBoolean(r.closed ?? r.is_closed ?? r.locked ?? r.read_only) ??
+      summary.status === "Paid out",
+    stage: Math.max(1, Math.min(8, numericStage)),
+    done: Math.max(0, Math.min(8, Math.max(numericDone, statusDone))),
+    start:
+      readString(r.start, r.period_start, r.start_date, r.savings_start) ??
+      period.start,
+    end:
+      readString(r.end, r.period_end, r.end_date, r.savings_end) ?? period.end,
+    close:
+      readString(r.close, r.close_date, r.deadline, r.contribution_close) ?? "",
+    rounding:
+      readString(r.rounding, r.rounding_mode, r.rounding_rule) ??
+      "Nearest naira",
+    bands,
+    scope:
+      scopeValue == null && selectedMemberIds.length > 0
+        ? "Selected members"
+        : readInterestScope(scopeValue),
+    selectedMemberIds,
+    excludedMemberIds: readIdList(
+      r.excludedMemberIds ??
+        r.excluded_member_ids ??
+        r.excluded_members ??
+        r.exclusions,
+    ),
+    calc:
+      readBoolean(
+        r.calc ??
+          r.calculated ??
+          r.has_calculations ??
+          r.is_calculated ??
+          r.calculation_run_at,
+      ) ?? hasCalculationResult,
+    note: readString(r.note, r.maker_note, r.remarks) ?? "",
+    ...(rejectReason ? { rejectReason } : {}),
+    notified:
+      readBoolean(r.notified ?? r.is_notified ?? r.notification_sent) ?? false,
+    history: readArray(r.history ?? r.events ?? r.activities ?? r.timeline)
+      .map(mapInterestHistoryEntry)
+      .filter((entry): entry is [string, string, string] => entry !== null),
+    statusLabel,
+    currentStage,
+    completedStages,
+    stages,
+    calculationRunAt: readString(r.calculation_run_at, r.calculationRunAt) ?? null,
+    createdBy: mapInterestActor(r.created_by ?? r.createdBy),
+    submittedBy: mapInterestActor(r.submitted_by ?? r.submittedBy),
+    reviewedBy: mapInterestActor(r.reviewed_by ?? r.reviewedBy),
+    submittedAt: readString(r.submitted_at, r.submittedAt) ?? null,
+    reviewedAt: readString(r.reviewed_at, r.reviewedAt) ?? null,
+  };
+  const progress = interestWizardProgress(workflow);
+  workflow.done = progress.done;
+  workflow.stage = progress.stage;
+  return workflow;
+}
+
+function mapInterestCalcRow(raw: unknown): InterestCalcRow {
+  const r = asRecord(raw);
+  const member = asRecord(r.member ?? r.user);
+  const memberId =
+    readString(r.memberId, r.member_id, member.member_id, member.id) ?? "";
+  const contributionsKobo =
+    readApiKobo({ ...asRecord(r.totals ?? r.summary), ...r }, [
+      "contributionsKobo",
+      "contributions_kobo",
+      "total_contributions",
+      "contributions",
+      "savingsKobo",
+      "savings_kobo",
+      "savings",
+    ]) ?? 0;
+  const interestKobo =
+    readApiKobo({ ...asRecord(r.totals ?? r.summary), ...r }, [
+      "interestKobo",
+      "interest_kobo",
+      "interest",
+      "interest_amount",
+      "total_interest",
+    ]) ?? 0;
+  const reason = readString(
+    r.reason,
+    r.forfeiture_reason,
+    r.ineligible_reason,
+    r.note,
+  );
+  const eligible =
+    readEligibility(r.eligible ?? r.is_eligible ?? r.eligibility ?? r.status) ??
+    !reason;
+  const rate = readNumber(
+    r.rate,
+    r.applied_rate,
+    r.interest_rate,
+    r.percentage,
+  );
+  return {
+    memberId,
+    memberName:
+      readPersonName(r.memberName ?? r.member_name ?? r.name ?? member) ||
+      memberId ||
+      "—",
+    contributionsKobo,
+    sharePct:
+      readNumber(r.sharePct, r.share_percent, r.share_pct, r.share, r.percentage) ??
+      0,
+    interestKobo,
+    eligible,
+    ...(reason ? { reason } : {}),
+    ...(rate != null ? { rate } : {}),
+  };
+}
+
+function mapInterestCalculationSummary(
+  raw: unknown,
+): InterestCalculationSummary {
+  const r = asRecord(raw);
+  return {
+    eligible: Math.trunc(
+      readNumber(r.eligible, r.eligible_count, r.eligible_members) ?? 0,
+    ),
+    forfeited: Math.trunc(
+      readNumber(r.forfeited, r.forfeited_count, r.forfeited_members) ?? 0,
+    ),
+    eligibleContributionsKobo:
+      readApiKobo(r, [
+        "eligible_contributions_kobo",
+        "eligibleContributionsKobo",
+        "eligible_contributions",
+        "contributionsKobo",
+        "contributions_kobo",
+        "contributions",
+      ]) ?? 0,
+    interestKobo:
+      readApiKobo(r, [
+        "interest_kobo",
+        "interestKobo",
+        "total_interest",
+        "interest",
+      ]) ?? 0,
+  };
+}
+
+/** Reads GET /admin/interest/:interestConfigId/entries. */
+function mapInterestEntriesPayload(payload: unknown): InterestCalculationEntries {
+  const data = unwrapData<unknown>(payload);
+  const record = asRecord(data);
+  return {
+    summary: mapInterestCalculationSummary(record.summary ?? record.totals ?? data),
+    entries: readArray(
+      record.entries ?? record.rows ?? record.preview ?? record.calculations,
+    ).map(mapInterestCalcRow),
+  };
+}
+
+/** Reads `{ workflow, preview }` from whichever shape the API returns. */
+function mapInterestDetail(
+  payload: unknown,
+  fallbackYear = 0,
+): { workflow: InterestWorkflow; preview: InterestCalcRow[] } {
+  const unwrapped = unwrapData<unknown>(payload);
+  // Some endpoints return the configuration inside a one-item `data` array.
+  const data = Array.isArray(unwrapped) ? unwrapped[0] ?? null : unwrapped;
+  const record = asRecord(data);
+  const workflowRaw =
+    record.workflow ??
+    record.interest ??
+    record.configuration ??
+    record.config ??
+    data;
+  const previewRaw =
+    record.preview ??
+    record.calculations ??
+    record.calc_rows ??
+    record.calculation_rows ??
+    record.rows ??
+    record.members;
+  return {
+    workflow: mapInterestWorkflow(workflowRaw, fallbackYear),
+    preview: readArray(previewRaw).map(mapInterestCalcRow),
+  };
+}
+
+/** Reads a workflow from an envelope, a `{ workflow }` wrapper or a bare payload. */
+function readInterestWorkflow(payload: unknown, fallbackYear = 0) {
+  const unwrapped = unwrapData<unknown>(payload);
+  const data = Array.isArray(unwrapped) ? unwrapped[0] ?? null : unwrapped;
+  const record = asRecord(data);
+  const workflowRaw =
+    record.workflow ?? record.interest ?? record.configuration ?? data;
+  return mapInterestWorkflow(workflowRaw, fallbackYear);
+}
+
+function readPayoutBatchStatus(value: unknown): PayoutBatchStatus {
+  const text = String(value ?? "")
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .trim();
+  if (text.includes("return")) return "Returned to maker";
+  if (text.includes("partial")) return "Partial";
+  if (text.includes("process") || text.includes("disburs")) return "Processing";
+  if (text.includes("complete") || text.includes("paid")) return "Completed";
+  if (text.includes("approv")) return "Approved";
+  return "Awaiting approval";
+}
+
+function readPayoutRowStatus(value: unknown): PayoutRowStatus {
+  const text = String(value ?? "")
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .trim();
+  if (text.includes("manual")) return "Paid manually";
+  if (text.includes("retry") || text.includes("retrying")) return "Retrying";
+  if (text.includes("fail") || text.includes("declin")) return "Failed";
+  if (
+    text.includes("paid") ||
+    text.includes("success") ||
+    text.includes("complete")
+  ) {
+    return "Paid";
+  }
+  return "Pending";
+}
+
+function mapPayoutRow(raw: unknown): PayoutRow {
+  const r = asRecord(raw);
+  const member = asRecord(r.member ?? r.user);
+  const memberId =
+    readString(r.memberId, r.member_id, member.member_id, member.id) ?? "";
+  const money = { ...asRecord(r.totals ?? r.summary), ...r };
+  const savingsKobo =
+    readApiKobo(money, [
+      "savingsKobo",
+      "savings_kobo",
+      "savings",
+      "savings_amount",
+      "contributionsKobo",
+      "contributions_kobo",
+      "contributions",
+    ]) ?? 0;
+  const interestKobo =
+    readApiKobo(money, [
+      "interestKobo",
+      "interest_kobo",
+      "interest",
+      "interest_amount",
+    ]) ?? 0;
+  const totalKobo =
+    readApiKobo(money, [
+      "totalKobo",
+      "total_kobo",
+      "total",
+      "total_payout",
+      "amount",
+    ]) ?? savingsKobo + interestKobo;
+  const account =
+    readString(
+      r.account,
+      r.payout_account_snapshot,
+      r.account_number,
+      r.accountNumber,
+      r.destination,
+      r.bank_account,
+    ) ??
+    [
+      readString(r.bank, r.bank_name, member.bank_name),
+      readString(r.account_number, r.accountNumber, member.account_number),
+    ]
+      .filter(Boolean)
+      .join(" ");
+  const reason = readString(r.reason, r.failure_reason, r.failureReason);
+  return {
+    memberId,
+    memberName:
+      readPersonName(r.memberName ?? r.member_name ?? r.name ?? member) ||
+      memberId ||
+      "—",
+    savingsKobo,
+    interestKobo,
+    totalKobo,
+    account,
+    status: readPayoutRowStatus(r.status ?? r.status_label),
+    ...(reason ? { reason } : {}),
+    reference:
+      readString(r.reference, r.gateway_reference, r.gatewayReference, r.id) ??
+      "",
+    ...(readString(r.proof, r.proof_reference, r.proof_url, r.receipt)
+      ? { proof: readString(r.proof, r.proof_reference, r.proof_url, r.receipt) }
+      : {}),
+  };
+}
+
+function mapPayoutBatch(raw: unknown): PayoutBatch {
+  const r = asRecord(raw);
+  const money = { ...asRecord(r.totals ?? r.summary), ...r };
+  const rows = readArray(r.rows ?? r.payouts ?? r.recipients ?? r.items).map(
+    mapPayoutRow,
+  );
+  const checker = readPersonName(r.checker ?? r.approved_by ?? r.approver);
+  const returnReason = readString(
+    r.returnReason,
+    r.return_reason,
+    r.rejectReason,
+    r.reject_reason,
+  );
+  const interestConfigId = readString(
+    r.interestConfigId,
+    r.interest_config_id,
+    r.config_id,
+    r.configuration_id,
+    asRecord(r.interest_config).id,
+    asRecord(r.interestConfiguration).id,
+  );
+  return {
+    id: readString(r.id, r.batch_id, r.batchId, r.reference) ?? "",
+    ...(interestConfigId ? { interestConfigId } : {}),
+    year: Math.trunc(readNumber(r.year, r.savings_year) ?? 0),
+    month: readString(r.month, r.month_name, r.period) ?? "",
+    status: readPayoutBatchStatus(r.status ?? r.status_label),
+    count: Math.trunc(
+      readNumber(
+        r.count,
+        r.members_in_batch,
+        r.total_members,
+        r.members_count,
+      ) ?? rows.length,
+    ),
+    savingsKobo:
+      readApiKobo(money, [
+        "savingsKobo",
+        "savings_kobo",
+        "total_savings",
+        "savings",
+        "contributionsKobo",
+        "contributions_kobo",
+        "contributions",
+      ]) ?? 0,
+    interestKobo:
+      readApiKobo(money, [
+        "interestKobo",
+        "interest_kobo",
+        "total_interest",
+        "interest",
+      ]) ?? 0,
+    maker: readPersonName(r.maker ?? r.prepared_by ?? r.created_by) ?? "",
+    ...(checker ? { checker } : {}),
+    createdAt: readString(r.createdAt, r.created_at, r.date) ?? "",
+    ...(returnReason ? { returnReason } : {}),
+    rows,
+    history: readArray(r.history ?? r.events ?? r.activities ?? r.timeline)
+      .map(mapInterestHistoryEntry)
+      .filter((entry): entry is [string, string, string] => entry !== null),
+  };
+}
+
+function readPayoutBatchPayload(payload: unknown): PayoutBatch {
+  const data = unwrapData<unknown>(payload);
+  const record = asRecord(data);
+  return mapPayoutBatch(
+    record.batch ?? record.payout ?? record.payout_batch ?? data,
+  );
 }
 
 /** Raw shape of the login response data from the API. */
@@ -1637,101 +2473,212 @@ export class HttpAdminRepository implements AdminRepository {
     };
   }
   listInterest() {
-    return this.http.get<InterestYearSummary[]>("/admin/interest");
+    return this.http.get<unknown>("/admin/interest").then((payload) =>
+      readRecordList(payload, ["years", "interest_years", "interestYears"])
+        .map(mapInterestYearSummary)
+        .filter((year) => year.year > 0),
+    );
   }
-  getInterest(year: number) {
-    return this.http.get<{
-      workflow: InterestWorkflow;
-      preview: InterestCalcRow[];
-    }>(`/admin/interest/${year}`);
+  getInterest(interestConfigId: number | string) {
+    return this.http
+      .get<unknown>(
+        `/admin/interest/${encodeURIComponent(String(interestConfigId))}`,
+      )
+      .then((payload) =>
+        mapInterestDetail(payload, Number(interestConfigId) || 0),
+      );
+  }
+  createInterestConfig(payload: {
+    year: number;
+    savings_start: string;
+    savings_end: string;
+    contribution_close: string;
+    rate: number;
+    rounding: string;
+    applies_to: string;
+    proportional_basis: boolean;
+    rate_type?: "fixed" | "range";
+    ranges?: {
+      from_amount: number | null;
+      to_amount: number | null;
+      rate: number;
+    }[];
+    member_ids?: string[];
+  }) {
+    return this.http
+      .post<unknown>("/admin/interest", payload)
+      .then((response) => {
+        const data = unwrapData<unknown>(response);
+        const record = asRecord(data);
+        const workflowRaw =
+          record.workflow ?? record.interest ?? record.configuration ?? data;
+        return mapInterestWorkflow(workflowRaw, payload.year);
+      });
   }
   saveInterestPeriod(
     year: number,
     period: { start: string; end: string; close: string },
   ) {
-    return this.http.put<InterestWorkflow>(
-      `/admin/interest/${year}/period`,
-      period,
-    );
+    return this.http
+      .put<unknown>(`/admin/interest/${year}/period`, period)
+      .then((payload) => readInterestWorkflow(payload, year));
   }
   saveInterestRules(year: number, rules: InterestRulesInput) {
-    return this.http.put<InterestWorkflow>(
-      `/admin/interest/${year}/rules`,
-      rules,
-    );
+    return this.http
+      .put<unknown>(`/admin/interest/${year}/rules`, rules)
+      .then((payload) => readInterestWorkflow(payload, year));
+  }
+  saveInterestConfig(
+    interestConfigId: number | string,
+    config: {
+      savings_start: string;
+      savings_end: string;
+      contribution_close: string;
+      rate: number;
+      rounding: string;
+      applies_to: string;
+      proportional_basis: boolean;
+    },
+  ) {
+    return this.http
+      .patch<unknown>(
+        `/admin/interest/${encodeURIComponent(String(interestConfigId))}`,
+        config,
+      )
+      .then((payload) =>
+        readInterestWorkflow(payload, Number(interestConfigId) || 0),
+      );
   }
   setInterestExclusions(year: number, memberIds: string[]) {
-    return this.http.put<InterestWorkflow>(
-      `/admin/interest/${year}/exclusions`,
-      { memberIds },
-    );
+    return this.http
+      .put<unknown>(`/admin/interest/${year}/exclusions`, { memberIds })
+      .then((payload) => readInterestWorkflow(payload, year));
   }
-  runInterestCalculation(year: number) {
-    return this.http.post<InterestWorkflow>(
-      `/admin/interest/${year}/calculate`,
-    );
+  runInterestCalculation(interestConfigId: number | string) {
+    return this.http
+      .post<unknown>(
+        `/admin/interest/${encodeURIComponent(String(interestConfigId))}/calculate`,
+      )
+      .then((payload) =>
+        readInterestWorkflow(payload, Number(interestConfigId) || 0),
+      );
+  }
+  getInterestEntries(interestConfigId: number | string) {
+    return this.http
+      .get<unknown>(
+        `/admin/interest/${encodeURIComponent(String(interestConfigId))}/entries`,
+      )
+      .then(mapInterestEntriesPayload);
+  }
+  getInterestPayouts(
+    interestConfigId: number | string,
+    batch: { id?: string; year?: number; month?: string } = {},
+  ) {
+    return this.http
+      .get<unknown>(
+        `/admin/interest/${encodeURIComponent(String(interestConfigId))}/payouts`,
+      )
+      .then((payload) => {
+        const data = asRecord(unwrapData<unknown>(payload));
+        const year =
+          batch.year ??
+          Math.trunc(readNumber(data.year, data.savings_year) ?? 0);
+        return {
+          ...mapPayoutBatch({
+            ...data,
+            id:
+              batch.id ?? readString(data.id, data.batch_id, data.batchId) ?? "",
+            year,
+            month: batch.month ?? readString(data.month, data.month_name) ?? "",
+          }),
+          // This endpoint is keyed by the config, so keep that id for the
+          // "savings year" link even when the payload omits it.
+          interestConfigId: String(interestConfigId),
+        };
+      });
   }
   submitInterest(year: number, note: string, by: string) {
-    return this.http.post<InterestWorkflow>(`/admin/interest/${year}/submit`, {
-      note,
-      by,
-    });
+    return this.http
+      .post<unknown>(`/admin/interest/${year}/submit`, { note, by })
+      .then((payload) => readInterestWorkflow(payload, year));
   }
   decideInterest(
-    year: number,
+    interestConfigId: number | string,
     decision: "Approved" | "Returned",
     opts: { by: string; role?: AdminRole; reason?: string },
   ) {
-    return this.http.post<InterestWorkflow>(
-      `/admin/interest/${year}/decision`,
-      { decision, ...opts },
-    );
+    const id = encodeURIComponent(String(interestConfigId));
+    const action = decision === "Approved" ? "approve" : "reject";
+    const body: { note?: string } = {};
+    if (opts.reason?.trim()) body.note = opts.reason.trim();
+    return this.http
+      .post<unknown>(`/admin/interest/${id}/${action}`, body)
+      .then((payload) =>
+        readInterestWorkflow(payload, Number(interestConfigId) || 0),
+      );
   }
   createPayoutBatch(year: number, by: string) {
-    return this.http.post<PayoutBatch>(`/admin/interest/${year}/batch`, { by });
+    return this.http
+      .post<unknown>(`/admin/interest/${year}/batch`, { by })
+      .then(readPayoutBatchPayload);
   }
   notifyInterest(year: number, by: string) {
-    return this.http.post<InterestWorkflow>(`/admin/interest/${year}/notify`, {
-      by,
-    });
+    return this.http
+      .post<unknown>(`/admin/interest/${year}/notify`, { by })
+      .then((payload) => readInterestWorkflow(payload, year));
   }
   listPayoutBatches() {
-    return this.http.get<PayoutBatch[]>("/admin/payouts");
+    return this.http
+      .get<unknown>("/admin/payouts")
+      .then((payload) =>
+        readRecordList(payload, ["batches", "payouts", "payout_batches"]).map(
+          mapPayoutBatch,
+        ),
+      );
   }
   getPayoutBatch(id: string) {
-    return this.http.get<PayoutBatch>(`/admin/payouts/${id}`);
+    return this.http
+      .get<unknown>(`/admin/payouts/${id}`)
+      .then(readPayoutBatchPayload);
   }
   decideBatch(
     id: string,
     decision: "Approved" | "Returned",
     opts: { by: string; role?: AdminRole; reason?: string },
   ) {
-    return this.http.post<PayoutBatch>(`/admin/payouts/${id}/decision`, {
-      decision,
-      ...opts,
-    });
+    return this.http
+      .post<unknown>(`/admin/payouts/${id}/decision`, { decision, ...opts })
+      .then(readPayoutBatchPayload);
   }
   resubmitBatch(id: string, by: string) {
-    return this.http.post<PayoutBatch>(`/admin/payouts/${id}/resubmit`, { by });
+    return this.http
+      .post<unknown>(`/admin/payouts/${id}/resubmit`, { by })
+      .then(readPayoutBatchPayload);
   }
   startDisbursement(id: string, by: string) {
-    return this.http.post<PayoutBatch>(`/admin/payouts/${id}/disburse`, { by });
+    return this.http
+      .post<unknown>(`/admin/payouts/${id}/disburse`, { by })
+      .then(readPayoutBatchPayload);
   }
   retryPayout(id: string, _memberId: string, by: string) {
-    return this.http.post<PayoutBatch>(`/admin/payouts/${id}/retry`, {
-      memberId: _memberId,
-      by,
-    });
+    return this.http
+      .post<unknown>(`/admin/payouts/${id}/retry`, {
+        memberId: _memberId,
+        by,
+      })
+      .then(readPayoutBatchPayload);
   }
   markPayoutPaid(
     id: string,
     memberId: string,
     opts: { method: string; proof: string; note: string; by: string },
   ) {
-    return this.http.post<PayoutBatch>(`/admin/payouts/${id}/mark-paid`, {
-      memberId,
-      ...opts,
-    });
+    return this.http
+      .post<unknown>(`/admin/payouts/${id}/mark-paid`, {
+        memberId,
+        ...opts,
+      })
+      .then(readPayoutBatchPayload);
   }
   runReport(
     kind: ReportKind,

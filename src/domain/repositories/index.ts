@@ -14,6 +14,7 @@ import type {
   ContributionPaymentMethod,
   InterestBand,
   InterestCalcRow,
+  InterestCalculationEntries,
   InterestRateMode,
   InterestScope,
   InterestWorkflow,
@@ -460,11 +461,40 @@ export interface AdminRepository {
   /** ADM-15 to ADM-17: one interest configuration per savings year; 8-stage maker-checker workflow. */
   listInterest(): Promise<InterestYearSummary[]>;
   getInterest(
-    year: number,
+    interestConfigId: number | string,
   ): Promise<{ workflow: InterestWorkflow; preview: InterestCalcRow[] }>;
+  createInterestConfig(payload: {
+    year: number;
+    savings_start: string;
+    savings_end: string;
+    contribution_close: string;
+    rate: number;
+    rounding: string;
+    applies_to: string;
+    proportional_basis: boolean;
+    rate_type?: "fixed" | "range";
+    ranges?: {
+      from_amount: number | null;
+      to_amount: number | null;
+      rate: number;
+    }[];
+    member_ids?: string[];
+  }): Promise<InterestWorkflow>;
   saveInterestPeriod(
     year: number,
     period: { start: string; end: string; close: string },
+  ): Promise<InterestWorkflow>;
+  saveInterestConfig(
+    interestConfigId: number | string,
+    config: {
+      savings_start: string;
+      savings_end: string;
+      contribution_close: string;
+      rate: number;
+      rounding: string;
+      applies_to: string;
+      proportional_basis: boolean;
+    },
   ): Promise<InterestWorkflow>;
   saveInterestRules(
     year: number,
@@ -475,15 +505,31 @@ export interface AdminRepository {
     year: number,
     memberIds: string[],
   ): Promise<InterestWorkflow>;
-  runInterestCalculation(year: number): Promise<InterestWorkflow>;
+  runInterestCalculation(
+    interestConfigId: number | string,
+  ): Promise<InterestWorkflow>;
+  /** Member-level rows and totals produced by the latest calculation. */
+  getInterestEntries(
+    interestConfigId: number | string,
+  ): Promise<InterestCalculationEntries>;
+  /** Payout batch generated from an approved configuration (`GET /admin/interest/{id}/payouts`). */
+  getInterestPayouts(
+    interestConfigId: number | string,
+    batch?: { id?: string; year?: number; month?: string },
+  ): Promise<PayoutBatch>;
   submitInterest(
     year: number,
     note: string,
     by: string,
   ): Promise<InterestWorkflow>;
-  /** `role` identifies the checker: only a Super Admin may approve — including their own maker request. */
+  /**
+   * Approves (`POST /admin/interest/{interestConfigId}/approve`) or returns to
+   * maker (`POST /admin/interest/{interestConfigId}/reject`, `{ note }`).
+   * `role` identifies the checker: only a Super Admin may approve — including
+   * their own maker request.
+   */
   decideInterest(
-    year: number,
+    interestConfigId: number | string,
     decision: "Approved" | "Returned",
     opts: { by: string; role?: AdminRole; reason?: string },
   ): Promise<InterestWorkflow>;

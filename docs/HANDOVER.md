@@ -211,6 +211,9 @@ All amounts in kobo. Auth: `Authorization: Bearer <token>`. Implemented in `src/
 | POST | `/contributions/{reference}/verify` | Server-side verification → `{ transaction, communityUnlocked }`; applies catch-up auto-locks |
 | GET | `/admin/dashboard?year=`, `/admin/members?…`, `/admin/members/counts`, `/admin/registrations`, `/admin/me` | Admin |
 | POST | `/admin/registrations/{id}/decision` | Approve (`{ decision: 'Approved' }` → opens account) or reject (`{ decision: 'Rejected', reason }`) a registration |
+| POST | `/admin/interest/{interestConfigId}/approve` | Approve an interest configuration; checker comes from the authenticated session |
+| POST | `/admin/interest/{interestConfigId}/reject` | Return an interest configuration to the maker (`{ note }`) |
+| GET | `/admin/interest/{interestConfigId}/payouts` | Member payout rows and totals for the approved configuration's year-end batch |
 
 Extend the ports in `domain/repositories` first, then both adapters (mock and http), for every new endpoint.
 

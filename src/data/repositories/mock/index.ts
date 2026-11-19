@@ -8,6 +8,7 @@ import type {
   ContributionPaymentMethod,
   InterestBand,
   InterestCalcRow,
+  InterestCalculationEntries,
   InterestWorkflow,
   Kobo,
   MonthIndex,
@@ -857,6 +858,40 @@ const interestOf = (year: number) => {
   if (!w) throw notFound("Interest configuration");
   return w;
 };
+/** Keeps the server-style progress fields in step with mock workflow transitions. */
+const completeInterestStage = (
+  w: InterestWorkflow,
+  key: string,
+  at = new Date().toISOString(),
+) => {
+  w.stages = w.stages.map((s) =>
+    s.key === key ? { ...s, status: "completed" as const, completedAt: at } : s,
+  );
+  w.completedStages = w.stages
+    .filter((s) => s.status === "completed")
+    .map((s) => s.key);
+  const next = w.stages.find((s) => s.status === "pending");
+  w.currentStage = next?.key ?? null;
+  w.stages = w.stages.map((s) =>
+    next && s.key === next.key ? { ...s, status: "current" as const } : s,
+  );
+  w.statusLabel = w.status;
+};
+const resetInterestStagesFrom = (w: InterestWorkflow, key: string) => {
+  const start = w.stages.findIndex((s) => s.key === key);
+  w.stages = w.stages.map((s, i) =>
+    i < start
+      ? s
+      : i === start
+        ? { ...s, status: "current" as const, completedAt: null }
+        : { ...s, status: "pending" as const, completedAt: null },
+  );
+  w.completedStages = w.stages
+    .filter((s) => s.status === "completed")
+    .map((s) => s.key);
+  w.currentStage = key;
+  w.statusLabel = w.status;
+};
 const rateForContribution = (
   amountKobo: Kobo,
   w: InterestWorkflow,
@@ -927,7 +962,10 @@ const completeBatchIfDone = (b: PayoutBatch) => {
       "System",
     ]);
     const w = interestYears.find((x) => x.year === b.year);
-    if (w) w.status = "Paid out";
+    if (w) {
+      w.status = "Paid out";
+      w.statusLabel = w.status;
+    }
   } else if (b.rows.some((r) => r.status === "Failed")) b.status = "Partial";
 };
 
@@ -1223,8 +1261,8 @@ export class MockAdminRepository implements AdminRepository {
       120,
     );
   }
-  async getInterest(year: number) {
-    const w = interestOf(year);
+  async getInterest(interestConfigId: number) {
+    const w = interestOf(interestConfigId);
     return delay(
       { workflow: w, preview: hasRateConfig(w) ? calcPreview(w) : [] },
       120,
@@ -1239,9 +1277,38 @@ export class MockAdminRepository implements AdminRepository {
     Object.assign(w, period);
     if (w.status === "Not started" || w.status === "Returned")
       w.status = "Draft";
+    w.statusLabel = w.status;
     w.done = Math.max(w.done, 1);
     w.stage = 2;
     w.history.push([new Date().toISOString(), "Saved period setup", "You"]);
+    return delay(w);
+  }
+
+  async saveInterestConfig(interestConfigId: number, config: {
+    savings_start: string;
+    savings_end: string;
+    contribution_close: string;
+    rate: number;
+    rounding: string;
+    applies_to: string;
+    proportional_basis: boolean;
+  }) {
+    const w = interestOf(interestConfigId);
+    if (w.closed) throw new Error("Closed years are read-only.");
+    Object.assign(w, {
+      savings_start: config.savings_start,
+      savings_end: config.savings_end,
+      contribution_close: config.contribution_close,
+      rate: config.rate,
+      rounding: config.rounding,
+      applies_to: config.applies_to,
+      proportional_basis: config.proportional_basis,
+    });
+    if (w.status === "Not started" || w.status === "Returned") w.status = "Draft";
+    w.statusLabel = w.status;
+    w.done = Math.max(w.done, 1);
+    w.stage = 2;
+    w.history.push([new Date().toISOString(), "Saved interest configuration", "You"]);
     return delay(w);
   }
   async saveInterestRules(year: number, rules: InterestRulesInput) {
@@ -1299,6 +1366,8 @@ export class MockAdminRepository implements AdminRepository {
     w.selectedMemberIds = rules.selectedMemberIds;
     if (w.status === "Not started" || w.status === "Returned")
       w.status = "Draft";
+    w.statusLabel = w.status;
+    completeInterestStage(w, "configure");
     w.done = Math.max(w.done, 2);
     w.stage = 3;
     const rateLabel =
@@ -1342,36 +1411,60 @@ export class MockAdminRepository implements AdminRepository {
     ]);
     return delay(w);
   }
-  async runInterestCalculation(year: number) {
-    const w = interestOf(year);
+  async runInterestCalculation(interestConfigId: number | string) {
+    const w = interestOf(Number(interestConfigId));
     if (w.closed) throw new Error("Closed years are read-only.");
     if (!hasRateConfig(w)) throw new Error("Set interest rules first.");
     const preview = calcPreview(w);
     applyPreviewTotals(w, preview);
     w.calc = true;
+    w.calculationRunAt = new Date().toISOString();
+    completeInterestStage(w, "calculate");
     w.done = Math.max(w.done, 3);
     w.stage = 4;
     w.history.push([new Date().toISOString(), "Ran calculation", "You"]);
     return delay(w);
+  }
+  async getInterestEntries(
+    interestConfigId: number | string,
+  ): Promise<InterestCalculationEntries> {
+    const w = interestOf(Number(interestConfigId));
+    const entries = calcPreview(w);
+    return delay({
+      summary: {
+        eligible: entries.filter((p) => p.eligible).length,
+        forfeited: entries.filter((p) => !p.eligible).length,
+        eligibleContributionsKobo: entries.reduce(
+          (s, p) => s + p.contributionsKobo,
+          0,
+        ),
+        interestKobo: entries.reduce((s, p) => s + p.interestKobo, 0),
+      },
+      entries,
+    });
   }
   async submitInterest(year: number, note: string, by: string) {
     const w = interestOf(year);
     if (w.closed) throw new Error("Closed years are read-only.");
     if (!w.calc) throw new Error("Run the calculation first.");
     w.status = "Pending approval";
+    w.statusLabel = w.status;
     w.note = note;
     w.maker = by;
+    w.submittedBy = { id: "", name: by };
+    w.submittedAt = new Date().toISOString();
+    completeInterestStage(w, "submit");
     w.done = Math.max(w.done, 4);
     w.stage = 5;
     w.history.push([new Date().toISOString(), "Submitted for approval", by]);
     return delay(w);
   }
   async decideInterest(
-    year: number,
+    interestConfigId: number | string,
     decision: "Approved" | "Returned",
     opts: { by: string; role?: AdminRole; reason?: string },
   ) {
-    const w = interestOf(year);
+    const w = interestOf(Number(interestConfigId));
     if (w.closed) throw new Error("Closed years are read-only.");
     if (opts.role && opts.role !== "SuperAdmin")
       throw new Error("Only a Super Admin can approve.");
@@ -1381,8 +1474,12 @@ export class MockAdminRepository implements AdminRepository {
       );
     if (decision === "Approved") {
       w.status = "Approved";
+      w.statusLabel = w.status;
       w.checker = opts.by;
       w.approvedAt = new Date().toISOString().slice(0, 10);
+      w.reviewedBy = { id: "", name: opts.by };
+      w.reviewedAt = new Date().toISOString();
+      completeInterestStage(w, "approve");
       w.done = Math.max(w.done, 5);
       w.stage = 6;
       w.history.push([
@@ -1394,9 +1491,13 @@ export class MockAdminRepository implements AdminRepository {
       if (!opts.reason?.trim())
         throw new Error("A reason is required to return to maker.");
       w.status = "Returned";
+      w.statusLabel = w.status;
       w.rejectReason = opts.reason.trim();
       w.checker = opts.by;
+      w.reviewedBy = { id: "", name: opts.by };
+      w.reviewedAt = new Date().toISOString();
       w.calc = false;
+      resetInterestStagesFrom(w, "configure");
       w.done = 1;
       w.stage = 2;
       w.history.push([
@@ -1439,6 +1540,7 @@ export class MockAdminRepository implements AdminRepository {
     };
     payoutBatches.unshift(batch);
     w.batchId = batch.id;
+    completeInterestStage(w, "disburse");
     w.done = Math.max(w.done, 6);
     w.stage = 7;
     w.history.push([
@@ -1455,6 +1557,52 @@ export class MockAdminRepository implements AdminRepository {
     w.stage = 8;
     w.history.push([new Date().toISOString(), "Notified members", by]);
     return delay(w);
+  }
+  async getInterestPayouts(
+    interestConfigId: number | string,
+    batch: { id?: string; year?: number; month?: string } = {},
+  ) {
+    const year =
+      batch.year ??
+      Math.trunc(Number(String(interestConfigId).match(/\d{4}/)?.[0] ?? 0));
+    const id = batch.id ?? `PB-${year}-12`;
+    const existing = payoutBatches.find((x) => x.id === id);
+    if (existing)
+      return delay(
+        { ...existing, interestConfigId: String(interestConfigId) },
+        120,
+      );
+    const w = interestOf(year);
+    const banks = ["GTBank", "Access Bank", "First Bank", "UBA", "Zenith Bank"];
+    const maker = w.maker ?? "Administrator";
+    return delay(
+      {
+        id,
+        interestConfigId: String(interestConfigId),
+        year,
+        month: batch.month ?? "December",
+        status: "Awaiting approval" as const,
+        count: w.eligible,
+        savingsKobo: w.contributionsKobo,
+        interestKobo: w.interestKobo,
+        maker,
+        createdAt: w.submittedAt ?? new Date().toISOString(),
+        rows: calcPreview(w)
+          .filter((p) => p.eligible)
+          .map((p, i) => ({
+            memberId: p.memberId,
+            memberName: p.memberName,
+            savingsKobo: p.contributionsKobo,
+            interestKobo: p.interestKobo,
+            totalKobo: p.contributionsKobo + p.interestKobo,
+            account: `${banks[i % banks.length]} •••• ${(1000 + i * 137).toString().slice(-4)}`,
+            status: "Pending" as const,
+            reference: `IWH-P-${String(year).slice(2)}1218-${(2000 + i * 53).toString(36).toUpperCase().padStart(4, "0")}`,
+          })),
+        history: [[new Date().toISOString(), "Batch created", maker]],
+      } satisfies PayoutBatch,
+      120,
+    );
   }
   async listPayoutBatches() {
     return delay(payoutBatches, 120);
