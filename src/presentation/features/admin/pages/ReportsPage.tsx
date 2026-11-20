@@ -1,53 +1,162 @@
-import { useEffect, useState } from "react";
-import { Download } from "lucide-react";
-import type { ReportKind, ReportResult } from "@/domain/entities";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Banknote,
+  CalendarDays,
+  ChartColumn,
+  Clock3,
+  CreditCard,
+  Download,
+  LoaderCircle,
+  ShieldCheck,
+  type LucideIcon,
+} from "lucide-react";
+import type { AdminReportKey, AdminReports } from "@/domain/entities";
 import { MONTHS } from "@/domain/rules";
+import {
+  ADMIN_REPORT_KEYS,
+  REPORT_STATUS_OPTIONS,
+} from "@/domain/rules/reports";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
 import { useAuth } from "../../../contexts/AuthContext";
-import { Button, Card, DataTable, OpenDecisionTag, Select } from "../../../design-system";
+import {
+  Button,
+  Card,
+  cn,
+  DataTable,
+  OpenDecisionTag,
+  Select,
+} from "../../../design-system";
 import { AdminPageHeader } from "../../../layouts/AdminLayout";
 import { downloadCsv } from "../../../utils/csv";
-import { cn } from "../../../design-system";
 
-const KINDS: { value: ReportKind; name: string; desc: string }[] = [
-  { value: "compliance", name: "Monthly compliance", desc: "Who has paid each month" },
-  { value: "collections", name: "Collections", desc: "Totals collected per month" },
-  { value: "eligibility", name: "Interest eligibility", desc: "Eligible vs forfeited members" },
-  { value: "charges", name: "Platform charges", desc: "Charges collected per payment" },
-];
+const CURRENT_YEAR = new Date().getFullYear();
+const YEAR_OPTIONS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2].map(
+  String,
+);
 
-/** ADM-21: pick a report, filter it and export. */
+/** Matches the six report cards in `#/admin/reports`. */
+const REPORT_META: Record<
+  AdminReportKey,
+  { title: string; description: string; icon: LucideIcon }
+> = {
+  compliance: {
+    title: "Monthly contribution compliance",
+    description: "Member, month, on time / late / missed",
+    icon: CalendarDays,
+  },
+  eligibility: {
+    title: "Interest eligibility",
+    description: "Eligibility and forfeiture reason",
+    icon: ShieldCheck,
+  },
+  charges: {
+    title: "Contribution charges",
+    description: "Platform charge per payment",
+    icon: CreditCard,
+  },
+  payout: {
+    title: "Year-end payout",
+    description: "Member, savings, interest, status",
+    icon: Banknote,
+  },
+  late: {
+    title: "Late contributions",
+    description: "Payments after the 5th",
+    icon: Clock3,
+  },
+  savings: {
+    title: "Savings by member",
+    description: "Baseline, months paid, total saved",
+    icon: ChartColumn,
+  },
+};
+
+/** ADM-21: one `GET /admin/reports` call feeds all six sections. */
 export function ReportsPage() {
   const { repos, clock } = useServices();
   const toast = useToast();
   const { session } = useAuth();
-  const [kind, setKind] = useState<ReportKind>("compliance");
-  const [year, setYear] = useState("2026");
-  const [month, setMonth] = useState<string>("8");
+  const [kind, setKind] = useState<AdminReportKey>("compliance");
+  const [year, setYear] = useState(String(CURRENT_YEAR));
+  const [month, setMonth] = useState<string | undefined>(undefined);
   const [status, setStatus] = useState("All");
-  const [result, setResult] = useState<ReportResult | null>(null);
+  const [data, setData] = useState<AdminReports | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  /** Compliance defaults to August; charges defaults to all months. */
+  const effectiveMonth = useMemo(() => {
+    if (kind === "compliance") return month ?? "8";
+    if (kind === "charges") return month ?? "all";
+    return undefined;
+  }, [kind, month]);
+  const apiMonth: number | "all" | undefined =
+    effectiveMonth === undefined
+      ? undefined
+      : effectiveMonth === "all"
+        ? "all"
+        : Number(effectiveMonth);
+  const query = useMemo(
+    () => ({
+      year: Number(year),
+      month: apiMonth,
+      eligibility: status === "All" ? undefined : status,
+    }),
+    [year, apiMonth, status],
+  );
 
   useEffect(() => {
+    let live = true;
+    setLoading(true);
+    repos.admin
+      .getReports(query)
+      .then((payload) => {
+        if (live) setData(payload);
+      })
+      .catch((error) => {
+        if (live) toast((error as Error).message);
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [repos, query, toast]);
+
+  const result = data?.reports[kind];
+  const statusOptions = REPORT_STATUS_OPTIONS[kind];
+  // The reports API uses 1-based calendar months (e.g. 8 = August).
+  const monthOptions =
+    kind === "charges"
+      ? [
+          { value: "all", label: "All months" },
+          ...MONTHS.map((label, index) => ({
+            value: String(index + 1),
+            label,
+          })),
+        ]
+      : MONTHS.map((label, index) => ({ value: String(index + 1), label }));
+
+  const pickReport = (next: AdminReportKey) => {
+    setKind(next);
     setStatus("All");
-    repos.admin.runReport(kind, Number(year), kind === "compliance" ? Number(month) : kind === "charges" && month !== "all" ? Number(month) : "all",
-      kind === "compliance" || kind === "eligibility" ? "All" : undefined).then(setResult);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repos, kind, year, month]);
-
-  useEffect(() => {
-    if (kind !== "compliance" && kind !== "eligibility") return;
-    repos.admin.runReport(kind, Number(year), "all", status).then(setResult);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status]);
+  };
 
   const exportCsv = async () => {
     if (!result) return;
     downloadCsv(`iwh-report-${kind}-${year}.csv`, result.headers, result.rows);
     if (session?.kind === "admin") {
-      await repos.admin.logAudit({ at: clock.now().toISOString(), actor: session.admin.name,
-        role: session.admin.role === "SuperAdmin" ? "Super Admin" : "Administrator",
-        action: "Exported report", entity: `${KINDS.find((k) => k.value === kind)?.name} ${year}`, change: `CSV, ${result.rows.length} rows`, category: "Access" });
+      await repos.admin.logAudit({
+        at: clock.now().toISOString(),
+        actor: session.admin.name,
+        role:
+          session.admin.role === "SuperAdmin" ? "Super Admin" : "Administrator",
+        action: "Exported report",
+        entity: `${REPORT_META[kind].title} ${year}`,
+        change: `CSV, ${result.rows.length} rows`,
+        category: "Access",
+      });
     }
     toast("Report exported.");
   };
@@ -57,47 +166,122 @@ export function ReportsPage() {
       <AdminPageHeader
         title="Reports"
         sub="Pick a report, filter it and export"
-        actions={<Button size="md" icon={<Download size={18} />} onClick={exportCsv}>Export CSV</Button>}
+        actions={
+          <Button
+            size="sm"
+            icon={<Download size={18} />}
+            disabled={loading || !result}
+            onClick={exportCsv}
+          >
+            Export CSV
+          </Button>
+        }
       />
-      <div className="flex flex-col gap-5 px-4 py-5 sm:px-8 sm:py-6">
-        <div className="grid gap-3 md:grid-cols-4">
-          {KINDS.map((k) => (
-            <button key={k.value} onClick={() => setKind(k.value)}
-              className={cn("flex flex-col items-start gap-1 rounded-card border-[1.5px] p-4 text-left transition",
-                kind === k.value ? "border-brand bg-[#faf7fe]" : "border-line bg-white hover:border-brand")}>
-              <b>{k.name}</b>
-              <span className="text-[13px] font-semibold text-mute">{k.desc}</span>
-            </button>
-          ))}
+      <div className="flex flex-col gap-4 px-4 py-5 sm:px-8 sm:py-6">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {ADMIN_REPORT_KEYS.map((key) => {
+            const meta = REPORT_META[key];
+            const Icon = meta.icon;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => pickReport(key)}
+                aria-pressed={kind === key}
+                className={cn(
+                  "flex flex-col items-start gap-2.5 rounded-card border-[1.5px] p-4 text-left transition",
+                  kind === key
+                    ? "border-brand bg-[#faf7fe]"
+                    : "border-line bg-white hover:border-brand",
+                )}
+              >
+                <span className="flex items-center gap-2.5">
+                  <span className="flex size-9 items-center justify-center rounded-xl bg-soft text-brand">
+                    <Icon size={18} />
+                  </span>
+                  <b>{meta.title}</b>
+                </span>
+                <span className="text-left text-[13px] font-semibold text-mute">
+                  {meta.description}
+                </span>
+              </button>
+            );
+          })}
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Select aria-label="Report year" value={year} onChange={(e) => setYear(e.target.value)} options={["2026", "2025", "2024"]} />
-          {(kind === "compliance" || kind === "charges") && (
-            <Select aria-label="Report month" value={month} onChange={(e) => setMonth(e.target.value)} options={[...(kind === "charges" ? [{ value: "all", label: "All months" }] : []), ...MONTHS.map((m, i) => ({ value: String(i), label: m }))]} />
-          )}
-          {(kind === "compliance" || kind === "eligibility") && (
-            <Select aria-label="Filter by status" value={status} onChange={(e) => setStatus(e.target.value)} options={["All", "Eligible", "Forfeited"]} />
-          )}
-        </div>
-        {result && (
-          <>
-            <DataTable<string[]>
-              rows={result.rows}
-              rowKey={(r) => `${r[0]}|${r[1] ?? ""}`}
-              columns={result.headers.map((h, i) => ({
-                header: h,
-                align: /₦|saved|charge|interest|total|payments|months/i.test(h) ? "right" as const : "left" as const,
-                render: (r) => (i === 0 ? <b>{r[i]}</b> : r[i]),
-              }))}
-              empty="No rows for these filters"
+
+        <Card className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <h3 className="text-lg font-extrabold sm:mr-auto">
+              {REPORT_META[kind].title}
+            </h3>
+            <Select
+              aria-label="Report year"
+              value={year}
+              onChange={(e) => setYear(e.target.value)}
+              options={YEAR_OPTIONS}
             />
-            <div className="flex flex-wrap items-center gap-3">
-              <p className="text-[13px] font-semibold text-mute">{result.rows.length} row(s) · sample data</p>
-              <span className="ml-auto"><OpenDecisionTag code="OD-09">Final report list and export formats</OpenDecisionTag></span>
-            </div>
-          </>
-        )}
-        {result === null && <Card><p className="text-sm font-semibold text-mute">Loading…</p></Card>}
+            {(kind === "compliance" || kind === "charges") && (
+              <Select
+                aria-label="Report month"
+                value={effectiveMonth}
+                onChange={(e) => setMonth(e.target.value)}
+                options={monthOptions}
+              />
+            )}
+            {statusOptions.length > 1 && (
+              <Select
+                aria-label="Filter by status"
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                options={statusOptions}
+              />
+            )}
+          </div>
+
+          {loading || !result ? (
+            <Card
+              role="status"
+              aria-live="polite"
+              className="flex min-h-48 items-center justify-center gap-2"
+            >
+              <LoaderCircle className="animate-spin text-brand" size={18} />
+              <p className="text-sm font-semibold text-mute">
+                Loading reports…
+              </p>
+            </Card>
+          ) : (
+            <>
+              <DataTable<string[]>
+                rows={result.rows}
+                rowKey={(r) => `${r[0] ?? "row"}-${r[1] ?? ""}-${r[2] ?? ""}`}
+                columns={result.headers.map((header, index) => ({
+                  header,
+                  align: result.rows.some((row) => /₦/.test(row[index] ?? ""))
+                    ? ("right" as const)
+                    : ("left" as const),
+                  render: (row) =>
+                    index === 1 ? (
+                      <b>{row[index] ?? "—"}</b>
+                    ) : (
+                      (row[index] ?? "—")
+                    ),
+                }))}
+                empty="No rows for these filters"
+              />
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-[13px] font-semibold text-mute">
+                  {result.rows.length} row
+                  {result.rows.length === 1 ? "" : "s"} · sample data
+                </p>
+                <span className="ml-auto">
+                  <OpenDecisionTag code="OD-09">
+                    Final report list and export formats
+                  </OpenDecisionTag>
+                </span>
+              </div>
+            </>
+          )}
+        </Card>
       </div>
     </>
   );

@@ -46,17 +46,44 @@ const ContentPage = lazy(() => import('../features/admin/pages/ContentPage').the
 
 /** Implemented pages. Any screen in SCREENS without an entry here renders ScaffoldPage. */
 const PAGES: Record<string, ReactElement> = {
-  '/': <HomePage />, '/about': <AboutPage />, '/how-it-works': <HowItWorksPage />, '/savings': <SavingsPage />, '/membership': <MembershipPage />, '/faqs': <FAQPage />, '/contact': <ContactPage />, '/login': <LoginPage />, '/register': <RegisterPage />, '/register/done': <RegistrationDonePage />, '/login/pending': <AwaitingApprovalPage />,
-  '/member': <MemberHomePage />, '/member/savings': <MemberSavingsPage />, '/member/contribute': <ContributePage />, '/member/contribute/review': <ReviewPaymentPage />, '/member/contribute/result': <PaymentResultPage />,
-  '/member/wallet': <WalletPage />,
-  '/member/activity': <ActivityPage />, '/member/activity/:id': <ReceiptPage />, '/member/notifications': <NotificationsPage />,
-  '/member/profile': <ProfilePage />, '/member/support': <SupportPage />, '/member/payout': <PayoutPage />, '/member/payout/payout-day': <PayoutDayPage />,
-  '/admin': <AdminDashboardPage />, '/admin/members': <MembersPage />, '/admin/registrations': <RegistrationsPage />,
-  '/admin/savings': <AdminSavingsPage />, '/admin/transactions': <AdminTransactionsPage />,
-  '/admin/interest': <InterestPage />, '/admin/interest/:year': <InterestWorkflowPage />,
-  '/admin/payouts': <PayoutsPage />, '/admin/payouts/:id': <PayoutBatchPage />,
-  '/admin/reports': <ReportsPage />, '/admin/referrals': <ReferralsPage />, '/admin/audit-log': <AuditLogPage />,
-  '/admin/settings': <SettingsPage />, '/admin/content': <ContentPage />,
+  "/": <HomePage />,
+  "/about": <AboutPage />,
+  "/how-it-works": <HowItWorksPage />,
+  "/savings": <SavingsPage />,
+  "/membership": <MembershipPage />,
+  "/faqs": <FAQPage />,
+  "/contact": <ContactPage />,
+  "/login": <LoginPage />,
+  "/register": <RegisterPage />,
+  "/register/done": <RegistrationDonePage />,
+  "/login/pending": <AwaitingApprovalPage />,
+  "/member": <MemberHomePage />,
+  "/member/savings": <MemberSavingsPage />,
+  "/member/contribute": <ContributePage />,
+  "/member/contribute/review": <ReviewPaymentPage />,
+  "/member/contribute/result": <PaymentResultPage />,
+  "/member/wallet": <WalletPage />,
+  "/member/activity": <ActivityPage />,
+  "/member/activity/:id": <ReceiptPage />,
+  "/member/notifications": <NotificationsPage />,
+  "/member/profile": <ProfilePage />,
+  "/member/support": <SupportPage />,
+  "/member/payout": <PayoutPage />,
+  "/member/payout/payout-day": <PayoutDayPage />,
+  "/admin": <AdminDashboardPage />,
+  "/admin/members": <MembersPage />,
+  "/admin/registrations": <RegistrationsPage />,
+  "/admin/savings": <AdminSavingsPage />,
+  "/admin/transactions": <AdminTransactionsPage />,
+  "/admin/interest": <InterestPage />,
+  "/admin/interest/:interestConfigId": <InterestWorkflowPage />,
+  "/admin/payouts": <PayoutsPage />,
+  "/admin/payouts/:id": <PayoutBatchPage />,
+  "/admin/reports": <ReportsPage />,
+  "/admin/referrals": <ReferralsPage />,
+  "/admin/audit-log": <AuditLogPage />,
+  "/admin/settings": <SettingsPage />,
+  "/admin/content": <ContentPage />,
 };
 /** Member and admin pages load on demand (separate chunks) so website visitors don't download portal code. */
 const element = (path: string) => <Suspense fallback={<LoadingScreen />}>{PAGES[path] ?? <ScaffoldPage path={path} />}</Suspense>;
@@ -64,9 +91,23 @@ const children = (filter: (p: string) => boolean): RouteObject[] => SCREENS.filt
 const AUTH_ONLY = ['/login', '/register'];
 
 export const router = createBrowserRouter([
-  { element: <SiteLayout />, children: children(p => !p.startsWith('/member') && !p.startsWith('/admin') && !AUTH_ONLY.includes(p)) },
-  { element: <AuthLayout />, children: children(p => AUTH_ONLY.includes(p)) },
-  { element: <MemberLayout />, children: children(p => p.startsWith('/member')) },
-  { element: <AdminLayout />, children: children(p => p.startsWith('/admin')) },
-  { path: '*', element: <Navigate to="/" replace /> },
+  {
+    element: <SiteLayout />,
+    children: children(
+      (p) =>
+        !p.startsWith("/member") &&
+        !p.startsWith("/admin") &&
+        !AUTH_ONLY.includes(p),
+    ),
+  },
+  { element: <AuthLayout />, children: children((p) => AUTH_ONLY.includes(p)) },
+  {
+    element: <MemberLayout />,
+    children: children((p) => p.startsWith("/member")),
+  },
+  {
+    element: <AdminLayout />,
+    children: children((p) => p.startsWith("/admin")),
+  },
+  { path: "*", element: <Navigate to="/" replace /> },
 ]);

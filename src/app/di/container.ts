@@ -64,10 +64,6 @@ export function createContainer(): Container {
   // same server base URL in development and production.
   const http = new HttpClient(env.apiBaseUrl, () => token);
 
-  if (import.meta.env.DEV) {
-    console.info(`[iwh] API base URL: ${env.apiBaseUrl}`);
-  }
-
   const repos: Repositories = {
     auth: new HttpAuthRepository(http, setToken),
     // Email verification returns the token needed to finish the profile.

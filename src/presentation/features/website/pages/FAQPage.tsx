@@ -27,7 +27,7 @@ const FAQS: { category: Exclude<Category, "All">; q: string; a: string }[] = [
   {
     category: "Registration",
     q: "How long does approval take?",
-    a: "Usually 1–2 working days. You’ll get an email and SMS as soon as your account opens.",
+    a: "Usually 1–2 working days. You’ll get an email as soon as your account opens.",
   },
   {
     category: "Registration",
