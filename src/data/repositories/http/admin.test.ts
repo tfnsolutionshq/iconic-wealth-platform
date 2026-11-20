@@ -407,5 +407,114 @@ describe('HttpAdminRepository referrals dashboard', () => {
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
 
     expect(url).not.toContain('?');
+/** Shape returned by GET /admin/reports: summary + filters + member rows. */
+const platformReportPayload = {
+  success: true,
+  message: 'Platform report generated successfully.',
+  data: {
+    summary: {
+      monthly_compliance: {
+        month: 8,
+        month_name: 'August',
+        paid: 2,
+        not_paid: 0,
+        total_members: 2,
+        compliance_rate: 100,
+      },
+      collections: { year_total: 351100, month_total: 30900, currency: 'NGN' },
+      interest_eligibility: { eligible: 0, forfeited: 2, total: 2 },
+      platform_charges: { year_total: 2600, month_total: 200, currency: 'NGN' },
+    },
+    filters: {
+      year: 2026,
+      month: 8,
+      month_name: 'August',
+      eligibility: 'all',
+      search: null,
+    },
+    members: [
+      {
+        id: 'm-1',
+        member: 'Test Member A',
+        member_id: 'TEST01',
+        months_saved: 11,
+        total_months: 11,
+        months_saved_label: '11 of 11',
+        total_saved: 188600,
+        total_saved_formatted: '₦188,600.00',
+        month_status: 'Paid',
+        interest: 'Forfeited',
+        interest_status: 'forfeited',
+        forfeiture_reason: 'Paid January to October after the 5th',
+      },
+      {
+        id: 'm-2',
+        member: 'Test Member B',
+        member_id: 'TEST02',
+        months_saved: 11,
+        total_months: 11,
+        months_saved_label: '11 of 11',
+        total_saved: 162500,
+        total_saved_formatted: '₦162,500.00',
+        month_status: 'Paid',
+        interest: 'Forfeited',
+        interest_status: 'forfeited',
+        forfeiture_reason: 'Paid January to October after the 5th',
+      },
+    ],
+  },
+  errors: null,
+  meta: { current_page: 1, per_page: 15, last_page: 1, total: 2 },
+};
+
+describe('HttpAdminRepository reports', () => {
+  it('projects the platform payload into all six report tables', async () => {
+    const fetchMock = stubFetch(200, platformReportPayload);
+
+    const result = await repo().getReports({ year: 2026, month: 8 });
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+
+    expect(url).toContain('year=2026');
+    expect(url).toContain('month=8');
+    expect(result.year).toBe(2026);
+    for (const key of [
+      'compliance',
+      'eligibility',
+      'charges',
+      'payout',
+      'late',
+      'savings',
+    ] as const) {
+      expect(result.reports[key].rows).toHaveLength(2);
+    }
+    expect(result.reports.compliance.rows[0]).toEqual([
+      'TEST01',
+      'Test Member A',
+      'August 2026',
+      'Paid',
+    ]);
+    expect(result.reports.eligibility.rows[0]).toEqual([
+      'TEST01',
+      'Test Member A',
+      'Forfeited',
+      'Paid January to October after the 5th',
+    ]);
+    expect(result.reports.savings.rows[0]).toEqual([
+      'TEST01',
+      'Test Member A',
+      '—',
+      '11 of 11',
+      '₦188,600',
+      'Paid',
+    ]);
+  });
+
+  it('passes the all-months filter to the API', async () => {
+    const fetchMock = stubFetch(200, platformReportPayload);
+
+    await repo().getReports({ year: 2026, month: 'all' });
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+
+    expect(url).toContain('month=all');
   });
 });

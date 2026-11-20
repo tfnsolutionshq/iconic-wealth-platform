@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
-import type { ReportKind, ReportResult } from "@/domain/entities";
+import type { AdminReportKey, AdminReports } from "@/domain/entities";
 import { MONTHS } from "@/domain/rules";
 import {
   ADMIN_REPORT_KEYS,
@@ -38,7 +38,7 @@ const YEAR_OPTIONS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2].map(
 /** Matches the six report cards in `#/admin/reports`. */
 const REPORT_META: Record<
   AdminReportKey,
-  { title: string; description: string; icon: typeof CalendarDays }
+  { title: string; description: string; icon: LucideIcon }
 > = {
   compliance: {
     title: "Monthly contribution compliance",
@@ -63,12 +63,12 @@ const REPORT_META: Record<
   late: {
     title: "Late contributions",
     description: "Payments after the 5th",
-    icon: Clock,
+    icon: Clock3,
   },
   savings: {
     title: "Savings by member",
     description: "Baseline, months paid, total saved",
-    icon: BarChart3,
+    icon: ChartColumn,
   },
 };
 
@@ -90,10 +90,12 @@ export function ReportsPage() {
     if (kind === "charges") return month ?? "all";
     return undefined;
   }, [kind, month]);
-  const apiMonth =
-    effectiveMonth === undefined || effectiveMonth === "all"
-      ? effectiveMonth
-      : Number(effectiveMonth);
+  const apiMonth: number | "all" | undefined =
+    effectiveMonth === undefined
+      ? undefined
+      : effectiveMonth === "all"
+        ? "all"
+        : Number(effectiveMonth);
   const query = useMemo(
     () => ({
       year: Number(year),
@@ -124,16 +126,17 @@ export function ReportsPage() {
 
   const result = data?.reports[kind];
   const statusOptions = REPORT_STATUS_OPTIONS[kind];
+  // The reports API uses 1-based calendar months (e.g. 8 = August).
   const monthOptions =
     kind === "charges"
       ? [
           { value: "all", label: "All months" },
           ...MONTHS.map((label, index) => ({
-            value: String(index),
+            value: String(index + 1),
             label,
           })),
         ]
-      : MONTHS.map((label, index) => ({ value: String(index), label }));
+      : MONTHS.map((label, index) => ({ value: String(index + 1), label }));
 
   const pickReport = (next: AdminReportKey) => {
     setKind(next);
@@ -141,12 +144,8 @@ export function ReportsPage() {
   };
 
   const exportCsv = async () => {
-    if (!visible) return;
-    downloadCsv(
-      `iwh-report-${kind}-${year}.csv`,
-      visible.headers,
-      visible.rows,
-    );
+    if (!result) return;
+    downloadCsv(`iwh-report-${kind}-${year}.csv`, result.headers, result.rows);
     if (session?.kind === "admin") {
       await repos.admin.logAudit({
         at: clock.now().toISOString(),

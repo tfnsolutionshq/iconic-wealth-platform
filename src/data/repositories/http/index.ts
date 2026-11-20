@@ -772,14 +772,26 @@ function mapAdminReports(
   payload: unknown,
   query: AdminReportsQuery,
 ): AdminReports {
-  const data = unwrapData<unknown>(payload) ?? payload;
-  const root = asRecord(data);
+  const root = asRecord(unwrapData<unknown>(payload) ?? payload);
+  // The reports endpoint uses 1-based calendar months; the projection helper
+  // uses the 0-based index into MONTHS.
+  const reportMonth =
+    typeof query.month === "number" ? query.month - 1 : query.month;
   const reports = {} as Record<AdminReportKey, ReportResult>;
   for (const key of ADMIN_REPORT_KEYS) {
-    reports[key] = mapReportResult(findReportSection(payload, key), key);
+    const section = findReportSection(payload, key);
+    // The live endpoint returns a single payload with `members`, not one named
+    // section per report. Each table is a projection of those member rows;
+    // keep the existing mapping for payloads that already carry a section.
+    reports[key] =
+      section !== undefined && readReportRows(section).length > 0
+        ? mapReportResult(section, key)
+        : mapPlatformReport(payload, key, query.year, reportMonth);
   }
   return {
-    year: readNumber(root.year, root.report_year) ?? query.year,
+    year:
+      readNumber(root.year, root.report_year, asRecord(root.filters).year) ??
+      query.year,
     month: query.month,
     eligibility: query.eligibility,
     reports,
@@ -1717,7 +1729,9 @@ function readReportMoney(
   keys: string[],
   amount?: number,
 ): string {
-  const formatted = readString(...keys.map((key) => `${key}_formatted`));
+  const formatted = readString(
+    ...keys.map((key) => record[`${key}_formatted`]),
+  );
   // The prototype's N() renders whole naira; sample API values carry a trailing .00.
   if (formatted) return formatted.replace(/\.00$/, "");
   const raw =
