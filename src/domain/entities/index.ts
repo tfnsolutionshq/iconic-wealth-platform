@@ -593,8 +593,30 @@ export interface AdminReports {
 
 export type ReferralStatus = "Saving" | "Pending" | "Inactive" | "Not started";
 export interface ReferralGroup {
+  /** Referrer id returned by the API, used for `?referral_id=…` lookups. */
+  id?: string;
   referrer: string;
   referred: { name: string; date: string; status: ReferralStatus }[];
+  /** Aggregates supplied by `/admin/referrals-dashboard`, when available. */
+  total?: number;
+  saving?: number;
+  pending?: number;
+  latest?: string;
+}
+export interface ReferralDashboardSummary {
+  totalReferred: number;
+  savingNow: number;
+  pending: number;
+  topReferrer?: string;
+}
+export interface ReferralDashboard {
+  summary: ReferralDashboardSummary;
+  groups: ReferralGroup[];
+}
+/** Optional filters accepted by `GET /admin/referrals-dashboard`. */
+export interface ReferralDashboardQuery {
+  referral_id?: string;
+  search?: string;
 }
 
 export interface AdminListItem {

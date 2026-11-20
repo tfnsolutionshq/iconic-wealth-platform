@@ -18,6 +18,8 @@ import type {
   PayoutBatch,
   PayoutBatchStatus,
   PayoutDestination,
+  ReferralDashboard,
+  ReferralDashboardQuery,
   Registration,
   AdminReportKey,
   AdminReports,
@@ -2182,6 +2184,35 @@ export class MockAdminRepository implements AdminRepository {
       eligibility: status,
     });
     return data.reports[key];
+  }
+  async referralDashboard(
+    query: ReferralDashboardQuery = {},
+  ): Promise<ReferralDashboard> {
+    let groups = await this.referralGroups();
+    const referralId = query.referral_id?.trim();
+    const search = query.search?.trim().toLowerCase();
+    if (referralId) {
+      groups = groups.filter(
+        (g) => g.referrer === referralId || g.referrer.toLowerCase() === referralId.toLowerCase(),
+      );
+    }
+    if (search) {
+      groups = groups.filter(
+        (g) =>
+          g.referrer.toLowerCase().includes(search) ||
+          g.referred.some((r) => r.name.toLowerCase().includes(search)),
+      );
+    }
+    const all = groups.flatMap((g) => g.referred);
+    return {
+      summary: {
+        totalReferred: all.filter((r) => r.status !== "Pending").length,
+        savingNow: all.filter((r) => r.status === "Saving").length,
+        pending: all.filter((r) => r.status === "Pending").length,
+        topReferrer: groups[0]?.referrer,
+      },
+      groups,
+    };
   }
   async referralGroups() {
     const map = new Map<

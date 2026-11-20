@@ -33,6 +33,8 @@ import type {
   PayoutDestination,
   AdminListItem,
   NotificationSettings,
+  ReferralDashboard,
+  ReferralDashboardQuery,
   ReferralGroup,
   Registration,
   AdminReports,
@@ -659,7 +661,14 @@ export interface AdminRepository {
     month?: number | "all",
     status?: string,
   ): Promise<ReportResult>;
-  /** ADM-22: referrer → referred members and pending registrations. */
+  /**
+   * ADM-22: `GET /admin/referrals-dashboard`. Summary plus referrer rows and
+   * their referred members; the page renders both from this single response.
+   */
+  referralDashboard(
+    query?: ReferralDashboardQuery,
+  ): Promise<ReferralDashboard>;
+  /** Legacy referrer → referred members grouping, derived from the dashboard. */
   referralGroups(): Promise<ReferralGroup[]>;
   /** ADM-23: every privileged and financial action. Entries are append-only. */
   listAuditLog(): Promise<AuditEntry[]>;
