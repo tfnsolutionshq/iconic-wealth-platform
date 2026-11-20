@@ -37,7 +37,10 @@ import type {
   PayoutDestination,
   PayoutRow,
   PayoutRowStatus,
+  ReferralDashboard,
+  ReferralDashboardQuery,
   ReferralGroup,
+  ReferralStatus,
   Registration,
   AdminReportKey,
   AdminReports,
@@ -780,6 +783,166 @@ function mapAdminReports(
     month: query.month,
     eligibility: query.eligibility,
     reports,
+  };
+}
+
+/** Normalises the status values used by the referrals dashboard. */
+function readReferralStatus(value: unknown): ReferralStatus {
+  const text = readString(value)
+    ?.toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .trim();
+  if (!text) return "Not started";
+  if (text.includes("sav") || text === "active") return "Saving";
+  if (
+    text.includes("pend") ||
+    text.includes("new") ||
+    text.includes("review")
+  )
+    return "Pending";
+  if (text.includes("inact") || text.includes("suspend")) return "Inactive";
+  return "Not started";
+}
+
+type ReferredMember = ReferralGroup["referred"][number];
+
+function mapReferredMember(value: unknown): ReferredMember | null {
+  const m = asRecord(value);
+  const person = asRecord(m.member ?? m.user);
+  const joined = [m.first_name, m.last_name]
+    .filter((part): part is string => typeof part === "string" && !!part.trim())
+    .join(" ")
+    .trim();
+  const name =
+    readString(m.name, m.member_name, m.full_name, m.member) ??
+    readPersonName(person) ??
+    readString(joined);
+  if (!name) return null;
+  const date = readString(
+    m.date,
+    m.joined_at,
+    m.joined_on,
+    m.created_at,
+    m.submitted_at,
+    m.referred_at,
+  );
+  return {
+    name,
+    date: date ?? "",
+    status: readReferralStatus(
+      m.status ?? m.referral_status ?? m.month_status ?? m.st,
+    ),
+  };
+}
+
+const referrerOf = (m: Record<string, unknown>) =>
+  readPersonName(
+    m.referrer ?? m.referred_by ?? m.referredBy ?? m.referrer_name,
+  ) ?? "";
+
+/** Maps `GET /admin/referrals-dashboard` into the page's view model. */
+function mapReferralDashboard(payload: unknown): ReferralDashboard {
+  const root = asRecord(unwrapData<unknown>(payload) ?? payload);
+  const flat = readArray(root.referred_members ?? root.referredMembers).map(
+    asRecord,
+  );
+  const groups: ReferralGroup[] = [];
+
+  for (const item of readArray(root.referrers).map(asRecord)) {
+    const referrer = referrerOf(item) || readString(item.name) || "";
+    if (!referrer) continue;
+    const id = readString(
+      item.id,
+      item.referral_id,
+      item.referrer_id,
+      item.member_id,
+      item.user_id,
+    );
+    const nested = readArray(
+      item.referred_members ?? item.referredMembers ?? item.referred ?? item.members,
+    ).map(asRecord);
+    const source = nested.length ? nested : flat.filter((m) => referrerOf(m) === referrer);
+    const referred = source
+      .map(mapReferredMember)
+      .filter((m): m is ReferredMember => m !== null);
+    const memberStatusCount = (status: ReferralStatus) =>
+      referred.filter((m) => m.status === status).length;
+    const latest = readString(item.latest, item.latest_date, item.last_referred_at);
+    groups.push({
+      id,
+      referrer,
+      referred,
+      total:
+        readNumber(item.total_referred, item.referred_count, item.total) ??
+        referred.length,
+      saving:
+        readNumber(item.saving_now, item.saving, item.savers) ??
+        memberStatusCount("Saving"),
+      pending:
+        readNumber(item.pending, item.pending_count) ??
+        memberStatusCount("Pending"),
+      latest:
+        latest ??
+        referred
+          .map((m) => m.date)
+          .filter(Boolean)
+          .sort()
+          .pop(),
+    });
+  }
+
+  // When only a flat member list is returned, build the groups from it.
+  if (!groups.length && flat.length) {
+    const byReferrer = new Map<string, ReferredMember[]>();
+    for (const m of flat) {
+      const referrer = referrerOf(m);
+      if (!referrer) continue;
+      const member = mapReferredMember(m);
+      if (!member) continue;
+      byReferrer.set(referrer, [...(byReferrer.get(referrer) ?? []), member]);
+    }
+    for (const [referrer, referred] of byReferrer) {
+      groups.push({
+        referrer,
+        referred,
+        total: referred.length,
+        saving: referred.filter((m) => m.status === "Saving").length,
+        pending: referred.filter((m) => m.status === "Pending").length,
+        latest: referred
+          .map((m) => m.date)
+          .filter(Boolean)
+          .sort()
+          .pop(),
+      });
+    }
+  }
+
+  groups.sort(
+    (a, b) => (b.total ?? b.referred.length) - (a.total ?? a.referred.length),
+  );
+
+  const all = groups.flatMap((g) => g.referred);
+  const summary = asRecord(root.summary);
+  const topRaw = summary.top_referrer ?? summary.topReferrer;
+  const topRecord = asRecord(topRaw);
+  return {
+    summary: {
+      totalReferred:
+        readNumber(summary.total_referred, summary.totalReferred) ??
+        all.filter((m) => m.status !== "Pending").length,
+      savingNow:
+        readNumber(summary.saving_now, summary.savingNow) ??
+        all.filter((m) => m.status === "Saving").length,
+      pending:
+        readNumber(summary.pending, summary.pending_count) ??
+        all.filter((m) => m.status === "Pending").length,
+      topReferrer:
+        readPersonName(topRaw) ??
+        readPersonName(topRecord.referrer) ??
+        readString(topRecord.referrer, topRecord.name) ??
+        groups[0]?.referrer,
+    },
+    groups,
   };
 }
 
@@ -3409,8 +3572,19 @@ export class HttpAdminRepository implements AdminRepository {
       .get<unknown>(`/admin/reports?${p}`)
       .then((payload) => mapPlatformReport(payload, kind, year, month));
   }
+  referralDashboard(query: ReferralDashboardQuery = {}) {
+    const params = new URLSearchParams();
+    const referralId = query.referral_id?.trim();
+    const search = query.search?.trim();
+    if (referralId) params.set("referral_id", referralId);
+    if (search) params.set("search", search);
+    const suffix = params.toString();
+    return this.http
+      .get<unknown>(`/admin/referrals-dashboard${suffix ? `?${suffix}` : ""}`)
+      .then(mapReferralDashboard);
+  }
   referralGroups() {
-    return this.http.get<ReferralGroup[]>("/admin/referrals");
+    return this.referralDashboard().then((dashboard) => dashboard.groups);
   }
   listAuditLog() {
     return this.http.get<AuditEntry[]>("/admin/audit-log");

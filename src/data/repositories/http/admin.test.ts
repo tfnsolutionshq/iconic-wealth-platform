@@ -235,3 +235,177 @@ describe('HttpAdminRepository', () => {
     ]);
   });
 });
+
+describe('HttpAdminRepository referrals dashboard', () => {
+  it('maps an empty dashboard without throwing', async () => {
+    stubFetch(
+      200,
+      envelope({
+        summary: {
+          total_referred: 0,
+          saving_now: 0,
+          pending: 0,
+          top_referrer: null,
+        },
+        referrers: [],
+        referred_members: null,
+      }),
+    );
+
+    await expect(repo().referralDashboard()).resolves.toEqual({
+      summary: {
+        totalReferred: 0,
+        savingNow: 0,
+        pending: 0,
+        topReferrer: undefined,
+      },
+      groups: [],
+    });
+  });
+
+  it('projects referrer rows and their referred members', async () => {
+    const fetchMock = stubFetch(
+      200,
+      envelope({
+        summary: {
+          total_referred: 3,
+          saving_now: 2,
+          pending: 1,
+          top_referrer: { name: 'Ada Obi', total_referred: 2 },
+        },
+        referrers: [
+          {
+            referrer: 'Ada Obi',
+            total_referred: 2,
+            saving_now: 1,
+            pending: 1,
+            latest: '2026-10-02',
+            referred_members: [
+              {
+                name: 'Test Member A',
+                joined_at: '2026-10-02',
+                status: 'saving',
+              },
+              {
+                first_name: 'Test',
+                last_name: 'Member B',
+                submitted_at: '2026-09-01',
+                status: 'pending_approval',
+              },
+            ],
+          },
+          {
+            referrer: 'Ngozi Obi',
+            total_referred: 1,
+            saving_now: 1,
+            pending: 0,
+            referred_members: [
+              {
+                name: 'Test Member C',
+                date: '2026-08-15',
+                status: 'active',
+              },
+            ],
+          },
+        ],
+        referred_members: null,
+      }),
+    );
+
+    const dashboard = await repo().referralDashboard();
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+
+    expect(url).toContain('/admin/referrals-dashboard');
+    expect(dashboard.summary).toMatchObject({
+      totalReferred: 3,
+      savingNow: 2,
+      pending: 1,
+      topReferrer: 'Ada Obi',
+    });
+    expect(dashboard.groups).toHaveLength(2);
+    expect(dashboard.groups[0]).toMatchObject({
+      referrer: 'Ada Obi',
+      total: 2,
+      saving: 1,
+      pending: 1,
+      latest: '2026-10-02',
+      referred: [
+        { name: 'Test Member A', date: '2026-10-02', status: 'Saving' },
+        { name: 'Test Member B', date: '2026-09-01', status: 'Pending' },
+      ],
+    });
+
+    await expect(repo().referralGroups()).resolves.toHaveLength(2);
+  });
+
+  it('groups a flat referred-members list when referrers are absent', async () => {
+    stubFetch(
+      200,
+      envelope({
+        summary: null,
+        referrers: null,
+        referred_members: [
+          {
+            referrer: 'Ada Obi',
+            name: 'Test Member A',
+            joined_at: '2026-10-02',
+            status: 'saving',
+          },
+        ],
+      }),
+    );
+
+    const dashboard = await repo().referralDashboard();
+
+    expect(dashboard.groups).toEqual([
+      {
+        referrer: 'Ada Obi',
+        referred: [
+          { name: 'Test Member A', date: '2026-10-02', status: 'Saving' },
+        ],
+        total: 1,
+        saving: 1,
+        pending: 0,
+        latest: '2026-10-02',
+      },
+    ]);
+    expect(dashboard.summary).toMatchObject({
+      totalReferred: 1,
+      savingNow: 1,
+      pending: 0,
+      topReferrer: 'Ada Obi',
+    });
+  });
+
+  it('sends the optional referral_id and search filters', async () => {
+    const fetchMock = stubFetch(
+      200,
+      envelope({
+        summary: null,
+        referrers: [],
+        referred_members: null,
+      }),
+    );
+
+    await repo().referralDashboard({
+      referral_id: 'ref-123',
+      search: 'Ada Obi',
+    });
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+
+    expect(url).toContain('referral_id=ref-123');
+    expect(url).toContain('search=Ada+Obi');
+  });
+
+  it('omits blank filters from the request', async () => {
+    const fetchMock = stubFetch(
+      200,
+      envelope({ summary: null, referrers: [], referred_members: null }),
+    );
+
+    await repo().referralDashboard({ referral_id: '  ', search: '' });
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+
+    expect(url).not.toContain('?');
+  });
+});
