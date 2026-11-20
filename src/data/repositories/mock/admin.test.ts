@@ -40,9 +40,9 @@ describe('MockAdminRepository savings, reports, referrals, audit', () => {
     expect(groups.flatMap(g => g.referred).some(r => r.status === 'Pending')).toBe(true);
   });
   it('appends audit entries', async () => {
-    const before = (await admin.listAuditLog()).length;
+    const before = (await admin.listAuditLog()).rows.length;
     await admin.logAudit({ at: new Date().toISOString(), actor: 'Test Admin', role: 'Administrator', action: 'Test action', entity: 'T-1', change: '—', category: 'Access' });
-    expect((await admin.listAuditLog()).length).toBe(before + 1);
+    expect((await admin.listAuditLog()).rows.length).toBe(before + 1);
   });
 });
 

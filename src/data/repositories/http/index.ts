@@ -8,6 +8,8 @@ import type {
   AdminRole,
   AdminUser,
   AuditEntry,
+  AuditLogPage,
+  AuditLogQuery,
   Bank,
   ContributionPaymentMethod,
   InterestActor,
@@ -768,6 +770,75 @@ function findReportSection(payload: unknown, key: AdminReportKey): unknown {
     if (name && wanted.includes(name)) return item;
   }
   return undefined;
+}
+
+/** Maps the `type`/`type_label` values from the audit logs API. */
+function readAuditCategory(value: unknown): AuditEntry["category"] {
+  const text =
+    readString(value)
+      ?.toLowerCase()
+      .replace(/[_-]+/g, " ")
+      .trim() ?? "";
+  if (text.startsWith("fin")) return "Financial";
+  if (text.startsWith("mem")) return "Members";
+  if (text.startsWith("rol")) return "Roles";
+  return "Access";
+}
+
+/** Maps `GET /admin/audit-logs` into a page of domain audit entries. */
+function mapAuditLogPage(
+  payload: unknown,
+  query: AuditLogQuery,
+): AuditLogPage {
+  const data = unwrapData<unknown>(payload) ?? payload;
+  const root = asRecord(data);
+  // The API envelope carries pagination in its top-level `meta`, alongside
+  // `data` (which is the array of log entries).
+  const envelope = asRecord(payload);
+  const source = Array.isArray(data)
+    ? data
+    : readArray(root.data ?? root.items ?? root.logs ?? root.audit_logs ?? data);
+  const rows: AuditEntry[] = source.map(asRecord).map((item) => {
+    const who = asRecord(item.who ?? item.user);
+    return {
+      id: readString(item.id) ?? "",
+      at: readString(item.created_at, item.at, item.when) ?? "",
+      actor:
+        readPersonName(item.who ?? item.actor ?? item.user) ??
+        readString(item.who_name, item.actor_name, item.user_name) ??
+        "—",
+      role:
+        readString(who.role, who.role_label, item.role, item.actor_role) ?? "—",
+      action: readString(item.action_label, item.description, item.action) ?? "—",
+      entity: readString(item.record, item.entity, item.record_id) ?? "—",
+      change: readString(item.change) ?? "—",
+      category: readAuditCategory(item.type ?? item.type_label ?? item.category),
+    };
+  });
+  const meta = asRecord(root.meta ?? envelope.meta ?? root.pagination);
+  return {
+    rows,
+    meta: {
+      current_page:
+        readNumber(
+          meta.current_page,
+          asRecord(root.filters).current_page,
+          query.page,
+        ) ?? 1,
+      per_page:
+        readNumber(
+          meta.per_page,
+          asRecord(root.filters).per_page,
+          query.per_page,
+        ) ?? 15,
+      last_page: readNumber(meta.last_page) ?? 1,
+      total: readNumber(meta.total) ?? rows.length,
+      counts:
+        Object.keys(asRecord(meta.counts)).length > 0
+          ? (asRecord(meta.counts) as Record<string, number>)
+          : undefined,
+    },
+  };
 }
 
 function mapAdminReports(
@@ -3740,8 +3811,18 @@ export class HttpAdminRepository implements AdminRepository {
   referralGroups() {
     return this.referralDashboard().then((dashboard) => dashboard.groups);
   }
-  listAuditLog() {
-    return this.http.get<AuditEntry[]>("/admin/audit-log");
+  listAuditLog(query: AuditLogQuery = {}) {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      const normal = typeof value === "string" ? value.trim() : value;
+      if (normal !== undefined && normal !== null && normal !== "") {
+        params.set(key, String(normal));
+      }
+    }
+    const suffix = params.toString();
+    return this.http
+      .get<unknown>(`/admin/audit-logs${suffix ? `?${suffix}` : ""}`)
+      .then((payload) => mapAuditLogPage(payload, query));
   }
   logAudit(e: {
     at: string;

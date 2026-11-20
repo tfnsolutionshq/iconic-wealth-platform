@@ -10,6 +10,8 @@ import type {
   Allocation,
   AuditCategory,
   AuditEntry,
+  AuditLogPage,
+  AuditLogQuery,
   Bank,
   ContributionPaymentMethod,
   InterestBand,
@@ -687,8 +689,11 @@ export interface AdminRepository {
   ): Promise<ReferralDashboard>;
   /** Legacy referrer → referred members grouping, derived from the dashboard. */
   referralGroups(): Promise<ReferralGroup[]>;
-  /** ADM-23: every privileged and financial action. Entries are append-only. */
-  listAuditLog(): Promise<AuditEntry[]>;
+  /**
+   * ADM-23: `GET /admin/audit-logs`. Entries are append-only and returned
+   * newest first, one page at a time.
+   */
+  listAuditLog(query?: AuditLogQuery): Promise<AuditLogPage>;
   logAudit(e: {
     at: string;
     actor: string;

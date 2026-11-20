@@ -4,6 +4,8 @@ import type {
   AdminUser,
   Allocation,
   AuditEntry,
+  AuditLogPage,
+  AuditLogQuery,
   Bank,
   ContributionPaymentMethod,
   InterestBand,
@@ -2289,8 +2291,47 @@ export class MockAdminRepository implements AdminRepository {
       120,
     );
   }
-  async listAuditLog() {
-    return delay(auditEntries, 120);
+  async listAuditLog(query: AuditLogQuery = {}): Promise<AuditLogPage> {
+    const term = query.search?.trim().toLowerCase();
+    let rows = [...auditEntries].sort((a, b) => b.at.localeCompare(a.at));
+    if (query.type && query.type !== "all") {
+      rows = rows.filter((a) => a.category.toLowerCase() === query.type);
+    }
+    if (term) {
+      rows = rows.filter((a) =>
+        `${a.actor} ${a.action} ${a.entity} ${a.change}`
+          .toLowerCase()
+          .includes(term),
+      );
+    }
+    const now = Date.now();
+    const days = query.date === "today" ? 1 : query.date === "last_7_days" ? 7 : query.date === "last_30_days" ? 30 : 0;
+    if (days) {
+      rows = rows.filter((a) => now - new Date(a.at).getTime() <= days * 86_400_000);
+    }
+    const perPage = query.per_page ?? 15;
+    const page = query.page ?? 1;
+    const total = rows.length;
+    const lastPage = Math.max(1, Math.ceil(total / perPage));
+    const counts: Record<string, number> = { all: auditEntries.length };
+    for (const category of ["Financial", "Members", "Access", "Roles"] as const) {
+      counts[category.toLowerCase()] = auditEntries.filter(
+        (a) => a.category === category,
+      ).length;
+    }
+    return delay(
+      {
+        rows: rows.slice((page - 1) * perPage, page * perPage),
+        meta: {
+          current_page: page,
+          per_page: perPage,
+          last_page: lastPage,
+          total,
+          counts,
+        },
+      },
+      120,
+    );
   }
   async logAudit(e: {
     at: string;
