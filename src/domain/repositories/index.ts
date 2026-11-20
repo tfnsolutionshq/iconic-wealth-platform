@@ -166,6 +166,20 @@ export interface ActivityPageResult {
   meta: PageMeta;
 }
 
+export interface NotificationQuery {
+  page?: number;
+  per_page?: number;
+}
+
+export interface NotificationPageMeta extends PageMeta {
+  unread_count: number;
+}
+
+export interface NotificationListPage {
+  data: MemberNotification[];
+  meta: NotificationPageMeta;
+}
+
 export interface MemberRepository {
   getMember(id: string): Promise<Member>;
   getSavingsYear(id: string, year: number): Promise<SavingsYear>;
@@ -196,6 +210,9 @@ export interface MemberRepository {
   listTransactions(id: string): Promise<Transaction[]>;
   listActivity(params?: ActivityQuery): Promise<ActivityPageResult>;
   listNotifications(id: string): Promise<MemberNotification[]>;
+  listNotificationsPage(query?: NotificationQuery): Promise<NotificationListPage>;
+  markNotificationRead(notificationId: string): Promise<MemberNotification>;
+  markAllNotificationsRead(): Promise<{ markedCount: number }>;
   /** MEM-18/19: full year-end payout to the verified bank account or the platform wallet (once per member/year). */
   requestPayout(
     id: string,

@@ -283,8 +283,12 @@ export interface MemberNotification {
   body: string;
   createdAt: string;
   read: boolean;
+  readAt?: string | null;
+  event?: string;
+  category?: string;
+  data?: Record<string, unknown> | null;
   link: string;
-  tone: "brand" | "gold" | "fail" | "neutral";
+  tone: 'brand' | 'gold' | 'fail' | 'neutral';
 }
 
 export interface Testimonial {

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Check, Clock, Info, RefreshCw, X } from "lucide-react";
-import logoMain from "@/assets/brand/logo-main.png";
+import iconMain from "@/assets/brand/icon-main.png";
 import { cn } from "../cn";
 
 export type Tone =
@@ -124,7 +124,7 @@ export function LoadingSpinner({
 }) {
   const outer = size === "sm" ? "size-14" : "size-20";
   const inner = size === "sm" ? "size-10" : "size-14";
-  const img = size === "sm" ? "size-7" : "size-10";
+  const img = size === "sm" ? "size-8" : "size-11";
 
   return (
     <div
@@ -152,7 +152,7 @@ export function LoadingSpinner({
           )}
         >
           <img
-            src={logoMain}
+            src={iconMain}
             alt="Iconic Wealth Hub"
             className={cn("object-contain", img)}
           />

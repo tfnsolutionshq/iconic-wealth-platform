@@ -616,6 +616,33 @@ export class MockMemberRepository implements MemberRepository {
   async listNotifications() {
     return delay([]);
   }
+  async listNotificationsPage(query: { page?: number; per_page?: number } = {}) {
+    return delay({
+      data: [],
+      meta: {
+        current_page: query.page ?? 1,
+        per_page: query.per_page ?? 15,
+        last_page: 1,
+        total: 0,
+        unread_count: 0,
+      },
+    });
+  }
+  async markNotificationRead(notificationId: string): Promise<MemberNotification> {
+    return delay({
+      id: notificationId,
+      title: "Notification",
+      body: "",
+      createdAt: new Date().toISOString(),
+      read: true,
+      readAt: new Date().toISOString(),
+      link: "/member/home",
+      tone: "neutral" as const,
+    });
+  }
+  async markAllNotificationsRead() {
+    return delay({ markedCount: 0 });
+  }
   async requestPayout(
     id: string,
     year: number,
