@@ -121,6 +121,12 @@ export interface PayoutAccountRepository {
     id: string,
     account: Omit<PayoutAccount, "accountName" | "verifiedAt">,
   ): Promise<PayoutAccount>;
+  /** Submits a request to change the member's payout account (POST /payout-account/change-requests). */
+  requestChange?(input: {
+    accountNumber: string;
+    bankCode: string;
+    reason: string;
+  }): Promise<void>;
   resolveAccountName(bankCode: string, accountNumber: string): Promise<string>;
 }
 
@@ -168,7 +174,12 @@ export interface MemberRepository {
     applyToFollowing: boolean,
   ): Promise<SavingsYear>;
   /** Member locks the open month early (server checks it has at least the minimum). */
-  lockMonth(id: string, year: number, month: MonthIndex): Promise<SavingsYear>;
+  lockMonth(
+    id: string,
+    year: number,
+    month: MonthIndex,
+    monthId?: string | null,
+  ): Promise<SavingsYear>;
   markCommunityJoined(id: string): Promise<void>;
   /** Phone, email and payout account are admin-controlled; members request changes. */
   requestChange(
@@ -253,10 +264,44 @@ export interface PaymentGateway {
   checkout(intent: ContributionIntent): Promise<GatewayOutcome>;
 }
 
+export type WalletFilter = "money_in" | "money_out" | "pending" | "failed";
+
+export interface WalletTransactionsQuery {
+  filter?: WalletFilter;
+  per_page?: number;
+  page?: number;
+}
+
+export interface WalletTransactionsPage {
+  data: WalletEntry[];
+  meta: PageMeta;
+}
+
+export interface WalletFundInitiated {
+  transaction: WalletEntry;
+  intent: ContributionIntent;
+}
+
+export interface WalletFundVerified {
+  transaction: WalletEntry;
+  balanceKobo?: Kobo;
+}
+
 export interface WalletRepository {
   /** Balances derived from the ledger; entries and withdrawals newest first. */
   getSnapshot(memberId: string): Promise<WalletSnapshot>;
-  /** Member-initiated top-up. No gateway yet: demo mode settles it automatically shortly after. */
+  /** Paginated/filtered wallet ledger (GET /wallet/transactions). */
+  listTransactions?(
+    query?: WalletTransactionsQuery,
+  ): Promise<WalletTransactionsPage>;
+  /** Initializes a Paystack wallet top-up (POST /wallet/fund). */
+  initiateFund?(amountKobo: Kobo): Promise<WalletFundInitiated>;
+  /** Verifies a Paystack wallet top-up (POST /wallet/fund/{reference}/verify). */
+  verifyFund?(
+    reference: string,
+    amountKobo: Kobo,
+  ): Promise<WalletFundVerified>;
+  /** Member-initiated top-up (legacy/demo fallback). */
   requestTopUp(memberId: string, amountKobo: Kobo): Promise<WalletEntry>;
   /** Reserves the amount and targets the member's verified payout account; an admin disburses it later. */
   requestWithdrawal(

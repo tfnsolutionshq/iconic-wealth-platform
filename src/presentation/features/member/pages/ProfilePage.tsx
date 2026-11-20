@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Banknote,
@@ -9,6 +9,7 @@ import {
   MessageCircle,
   TriangleAlert,
 } from "lucide-react";
+import type { Bank } from "@/domain/entities";
 import type { ChangeField } from "@/domain/repositories";
 import { NG_STATES, isStrongPassword } from "@/domain/rules";
 import { useAuth } from "../../../contexts/AuthContext";
@@ -17,6 +18,7 @@ import { useToast } from "../../../contexts/ToastContext";
 import {
   Button,
   Card,
+  LoadingScreen,
   Modal,
   Pill,
   SelectField,
@@ -57,14 +59,42 @@ export function ProfilePage() {
   const [reqField, setReqField] = useState<ChangeField | null>(null);
   const [reqValue, setReqValue] = useState("");
   const [reqReason, setReqReason] = useState("");
+  const [reqBankCode, setReqBankCode] = useState("");
+  const [reqAccountNumber, setReqAccountNumber] = useState("");
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [banksLoading, setBanksLoading] = useState(false);
+  const [banksError, setBanksError] = useState("");
   const [reqBusy, setReqBusy] = useState(false);
+
+  useEffect(() => {
+    if (reqField !== "Payout account" || banks.length > 0) return;
+    let cancelled = false;
+    setBanksLoading(true);
+    setBanksError("");
+    repos.payout
+      .listBanks()
+      .then((list) => {
+        if (!cancelled) setBanks(list);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) {
+          setBanksError(e.message || "We couldn’t load the bank list.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBanksLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reqField, banks.length, repos]);
 
   const [pwOpen, setPwOpen] = useState(false);
   const [pwCurrent, setPwCurrent] = useState("");
   const [pwNext, setPwNext] = useState("");
   const [pwConfirm, setPwConfirm] = useState("");
 
-  if (!member) return <p className="text-mute">Loading…</p>;
+  if (!member) return <LoadingScreen />;
   const curState = state ?? member.stateOfResidence;
   const curAddress = address ?? member.address;
   const curNokName = nokName ?? member.nextOfKin.name;
@@ -106,21 +136,41 @@ export function ProfilePage() {
     setReqField(f);
     setReqValue("");
     setReqReason("");
+    setReqBankCode("");
+    setReqAccountNumber("");
   };
+  const isPayoutReq = reqField === "Payout account";
+  const payoutReqValid =
+    Boolean(reqBankCode) && reqAccountNumber.replace(/\D/g, "").length === 10;
+  const canSendRequest = isPayoutReq
+    ? payoutReqValid
+    : Boolean(reqValue.trim());
+
   const sendRequest = async () => {
-    if (!reqField || !reqValue.trim()) return;
+    if (!reqField || !canSendRequest) return;
     setReqBusy(true);
     try {
-      await repos.member.requestChange(
-        member.id,
-        reqField,
-        reqValue.trim(),
-        reqReason.trim(),
-      );
+      if (isPayoutReq && repos.payout.requestChange) {
+        await repos.payout.requestChange({
+          accountNumber: reqAccountNumber.replace(/\D/g, ""),
+          bankCode: reqBankCode,
+          reason: reqReason.trim(),
+        });
+      } else {
+        const value = isPayoutReq
+          ? `${banks.find((b) => b.code === reqBankCode)?.name ?? reqBankCode} · ${reqAccountNumber}`
+          : reqValue.trim();
+        await repos.member.requestChange(
+          member.id,
+          reqField,
+          value,
+          reqReason.trim(),
+        );
+      }
       setReqField(null);
       toast("Request sent. We’ll be in touch to confirm.");
     } catch (e) {
-      toast((e as Error).message);
+      toast((e as Error).message || "Could not submit your request.");
     } finally {
       setReqBusy(false);
     }
@@ -269,13 +319,36 @@ export function ProfilePage() {
               Request a change
             </button>
           </>
+        ) : member.isProfileComplete ? (
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="flex size-10.5 items-center justify-center rounded-input bg-soft">
+                <Landmark size={20} />
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <b>Payout account on file</b>
+                <span className="text-[13px] font-semibold text-mute">
+                  Your verified bank account for year-end payouts and
+                  withdrawals.
+                </span>
+              </span>
+              <Pill tone="ok">Verified</Pill>
+            </div>
+            <button
+              className="self-start text-sm font-bold text-brand"
+              onClick={() => openRequest("Payout account")}
+            >
+              Request a change
+            </button>
+          </>
         ) : (
           <span className="text-[13px] font-semibold text-mute">
             Not set up yet.
           </span>
         )}
         <span className="text-[13px] font-semibold text-mute">
-          To change your payout account, contact Iconic Wealth Hub.
+          To change your payout account, submit a change request to Iconic
+          Wealth Hub.
         </span>
       </Card>
 
@@ -328,7 +401,7 @@ export function ProfilePage() {
             </Button>
             <Button
               size="md"
-              disabled={!reqValue.trim() || reqBusy}
+              disabled={!canSendRequest || reqBusy}
               onClick={sendRequest}
             >
               {reqBusy ? "Sending…" : "Send request"}
@@ -346,21 +419,61 @@ export function ProfilePage() {
           onChange={(e) => setReqField(e.target.value as ChangeField)}
           options={CHANGE_OPTIONS}
         />
-        <TextField
-          label={
-            reqField === "Payout account"
-              ? "New bank and account number"
-              : `New ${reqField?.toLowerCase() ?? ""}`
-          }
-          value={reqValue}
-          onChange={(e) => setReqValue(e.target.value)}
-        />
+        {isPayoutReq ? (
+          <>
+            <SelectField
+              label="New bank"
+              value={reqBankCode}
+              onChange={(e) => setReqBankCode(e.target.value)}
+              options={banks.map((b) => ({ value: b.code, label: b.name }))}
+              placeholder={
+                banks.length
+                  ? "Select your bank"
+                  : banksError
+                    ? "Banks unavailable"
+                    : banksLoading
+                      ? "Loading banks…"
+                      : "Select your bank"
+              }
+              disabled={!banks.length || banksLoading}
+              error={banksError || undefined}
+            />
+            <TextField
+              label="New account number"
+              inputMode="numeric"
+              maxLength={10}
+              placeholder="10-digit account number"
+              value={reqAccountNumber}
+              onChange={(e) =>
+                setReqAccountNumber(
+                  e.target.value.replace(/\D/g, "").slice(0, 10),
+                )
+              }
+              error={
+                reqAccountNumber &&
+                reqAccountNumber.replace(/\D/g, "").length !== 10
+                  ? "Enter a 10-digit account number."
+                  : undefined
+              }
+            />
+          </>
+        ) : (
+          <TextField
+            label={`New ${reqField?.toLowerCase() ?? ""}`}
+            value={reqValue}
+            onChange={(e) => setReqValue(e.target.value)}
+          />
+        )}
         <TextField
           label="Reason"
           optional
           value={reqReason}
           onChange={(e) => setReqReason(e.target.value)}
-          hint="e.g. I changed my phone number"
+          hint={
+            isPayoutReq
+              ? "e.g. Switched primary salary account to Zenith Bank."
+              : "e.g. I changed my phone number"
+          }
         />
       </Modal>
 

@@ -6,7 +6,7 @@ import { MONTHS, formatNaira } from "@/domain/rules";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
-import { Banner, Button, Card, KeyValue, Pill } from "../../../design-system";
+import { Banner, Button, Card, KeyValue, LoadingScreen, Pill } from "../../../design-system";
 import { paths } from "../../../routes/paths";
 import {
   TX_STATUS_TONE,
@@ -32,7 +32,7 @@ export function ReceiptPage() {
         .then((all) => setTx(all.find((t) => t.id === id) ?? null));
   }, [repos, member, id]);
 
-  if (!member || tx === undefined) return <p className="text-mute">Loading…</p>;
+  if (!member || tx === undefined) return <LoadingScreen />;
   if (tx === null) {
     return (
       <div className="mx-auto flex max-w-140 flex-col gap-4">

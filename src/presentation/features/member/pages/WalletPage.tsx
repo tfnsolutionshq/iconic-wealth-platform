@@ -5,9 +5,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Download,
   Info,
@@ -22,6 +25,7 @@ import type {
   WalletEntryKind,
   WalletSnapshot,
 } from "@/domain/entities";
+import type { PageMeta, WalletFilter } from "@/domain/repositories";
 import { formatNaira, parseNairaInput } from "@/domain/rules";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useServices } from "../../../contexts/ServicesContext";
@@ -34,6 +38,8 @@ import {
   Chips,
   EmptyState,
   KeyValue,
+  LoadingScreen,
+  LoadingSpinner,
   Modal,
   Pill,
   SelectField,
@@ -45,6 +51,23 @@ import { paths } from "../../../routes/paths";
 import { fmtDateTime } from "../components/TransactionParts";
 
 type Tab = "All" | "Money in" | "Money out" | "Pending" | "Failed";
+
+const PER_PAGE = 15;
+
+const INITIAL_META: PageMeta = {
+  current_page: 1,
+  per_page: PER_PAGE,
+  last_page: 1,
+  total: 0,
+};
+
+const TAB_TO_FILTER: Record<Tab, WalletFilter | undefined> = {
+  All: undefined,
+  "Money in": "money_in",
+  "Money out": "money_out",
+  Pending: "pending",
+  Failed: "failed",
+};
 
 type StatementType = "All" | WalletEntryKind;
 
@@ -165,11 +188,17 @@ export function WalletPage() {
   const { session } = useAuth();
   const { repos } = useServices();
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const member = session?.kind === "member" ? session.member : null;
   const [snap, setSnap] = useState<WalletSnapshot | null>(null);
+  const [entries, setEntries] = useState<WalletEntry[]>([]);
+  const [meta, setMeta] = useState<PageMeta>(INITIAL_META);
+  const [page, setPage] = useState(1);
+  const [txLoading, setTxLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("All");
   const [amountText, setAmountText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [verifyingRef, setVerifyingRef] = useState<string | null>(null);
   const [fundOpen, setFundOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [statementOpen, setStatementOpen] = useState(false);
@@ -177,45 +206,107 @@ export function WalletPage() {
   const [dateTo, setDateTo] = useState("");
   const [statementType, setStatementType] = useState<StatementType>("All");
 
-  const reload = useCallback(async () => {
-    if (member) setSnap(await repos.wallet.getSnapshot(member.id));
+  const reloadWallet = useCallback(async () => {
+    if (!member) return;
+    try {
+      setSnap(await repos.wallet.getSnapshot(member.id));
+    } catch {
+      setSnap({
+        memberId: member.id,
+        availableKobo: 0,
+        pendingDepositKobo: 0,
+        pendingWithdrawalKobo: 0,
+        entries: [],
+        withdrawals: [],
+      });
+    }
   }, [repos, member]);
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  const reloadTransactions = useCallback(async () => {
+    if (!member) return;
+    setTxLoading(true);
+    try {
+      if (repos.wallet.listTransactions) {
+        const res = await repos.wallet.listTransactions({
+          filter: TAB_TO_FILTER[tab],
+          per_page: PER_PAGE,
+          page,
+        });
+        setEntries(res.data);
+        setMeta(res.meta);
+      } else {
+        const fallback = await repos.wallet.getSnapshot(member.id);
+        setEntries(fallback.entries);
+        setMeta({
+          current_page: 1,
+          per_page: PER_PAGE,
+          last_page: 1,
+          total: fallback.entries.length,
+        });
+      }
+    } catch (e) {
+      toast((e as Error).message || "Could not load wallet transactions.");
+    } finally {
+      setTxLoading(false);
+    }
+  }, [repos, member, tab, page, toast]);
 
-  // Top-ups settle on their own (demo mode), so refresh while one is in flight.
-  const pendingDeposits = snap?.pendingDepositKobo ?? 0;
-  useEffect(() => {
-    if (pendingDeposits <= 0) return;
-    const t = setInterval(() => void reload(), 2000);
-    return () => clearInterval(t);
-  }, [pendingDeposits, reload]);
+  const reloadAll = useCallback(async () => {
+    await Promise.all([reloadWallet(), reloadTransactions()]);
+  }, [reloadWallet, reloadTransactions]);
 
-  const list = useMemo(() => {
-    const entries = snap?.entries ?? [];
-    return entries.filter(
-      (e) =>
-        tab === "All" ||
-        (tab === "Money in" && e.direction === "Credit") ||
-        (tab === "Money out" && e.direction === "Debit") ||
-        (tab === "Pending" &&
-          (e.status === "Pending" || e.status === "Processing")) ||
-        e.status === tab,
-    );
-  }, [snap, tab]);
+  useEffect(() => {
+    void reloadWallet();
+  }, [reloadWallet]);
+
+  useEffect(() => {
+    void reloadTransactions();
+  }, [reloadTransactions]);
+
+  // Verify redirect callback if Paystack returned ?reference=... to /member/wallet
+  useEffect(() => {
+    const ref = searchParams.get("reference") || searchParams.get("trxref");
+    if (!ref || !member || !repos.wallet.verifyFund) return;
+    const storedAmt = Number(sessionStorage.getItem(`iwh.wal.amt.${ref}`) || 0);
+    setVerifyingRef(ref);
+    repos.wallet
+      .verifyFund(ref, storedAmt)
+      .then((res) => {
+        sessionStorage.removeItem(`iwh.wal.amt.${ref}`);
+        if (res.transaction.status === "Successful") {
+          toast(`${formatNaira(res.transaction.amountKobo)} added to your wallet.`);
+        } else if (res.transaction.status === "Failed") {
+          toast("Wallet funding did not go through.");
+        } else {
+          toast("Payment is being confirmed. Your balance will update shortly.");
+        }
+        void reloadAll();
+      })
+      .catch((e) => {
+        toast((e as Error).message || "Could not verify wallet funding.");
+      })
+      .finally(() => {
+        setVerifyingRef(null);
+        setSearchParams({}, { replace: true });
+      });
+  }, [searchParams, setSearchParams, member, repos, toast, reloadAll]);
 
   const statementEntries = useMemo(() => {
-    const entries = snap?.entries ?? [];
-    return entries.filter((e) => {
+    const source = entries.length ? entries : (snap?.entries ?? []);
+    return source.filter((e) => {
       if (statementType !== "All" && e.kind !== statementType) return false;
       const day = e.createdAt.slice(0, 10);
       return (!dateFrom || day >= dateFrom) && (!dateTo || day <= dateTo);
     });
-  }, [snap, statementType, dateFrom, dateTo]);
+  }, [entries, snap, statementType, dateFrom, dateTo]);
 
-  if (!member || !snap) return <p className="text-mute">Loading…</p>;
+  if (!member || !snap || verifyingRef) {
+    return (
+      <LoadingScreen
+        label={verifyingRef ? "Confirming your wallet payment…" : undefined}
+      />
+    );
+  }
 
   const dateError =
     dateFrom && dateTo && dateFrom > dateTo
@@ -246,19 +337,57 @@ export function WalletPage() {
     if (amount <= 0 || fundError || busy) return;
     setBusy(true);
     try {
-      await repos.wallet.requestTopUp(member.id, amount);
-      toast(
-        `${formatNaira(amount)} top-up started. It will show in your balance once confirmed.`,
-      );
-      setFundOpen(false);
-      setAmountText("");
-      void reload();
+      if (repos.wallet.initiateFund && repos.wallet.verifyFund) {
+        const { intent } = await repos.wallet.initiateFund(amount);
+        sessionStorage.setItem(`iwh.wal.amt.${intent.reference}`, String(amount));
+
+        if (!intent.accessCode && intent.authorizationUrl) {
+          window.location.href = intent.authorizationUrl;
+          return;
+        }
+
+        setFundOpen(false);
+        const outcome = await repos.gateway.checkout(intent);
+        if (outcome === "closed") {
+          setBusy(false);
+          toast("Payment cancelled.");
+          return;
+        }
+
+        setVerifyingRef(intent.reference);
+        const verified = await repos.wallet.verifyFund(intent.reference, amount);
+        sessionStorage.removeItem(`iwh.wal.amt.${intent.reference}`);
+        setVerifyingRef(null);
+        setAmountText("");
+
+        if (verified.transaction.status === "Successful") {
+          toast(`${formatNaira(amount)} added to your wallet.`);
+        } else if (verified.transaction.status === "Failed") {
+          toast("Wallet funding did not go through.");
+        } else {
+          toast("Payment is being confirmed. Your balance will update shortly.");
+        }
+        await reloadAll();
+      } else {
+        await repos.wallet.requestTopUp(member.id, amount);
+        toast(
+          `${formatNaira(amount)} top-up started. It will show in your balance once confirmed.`,
+        );
+        setFundOpen(false);
+        setAmountText("");
+        await reloadAll();
+      }
     } catch (e) {
-      toast((e as Error).message);
+      setVerifyingRef(null);
+      toast((e as Error).message || "Could not complete wallet funding.");
     } finally {
       setBusy(false);
     }
   };
+
+  const canWithdrawAccount = Boolean(
+    member.payoutAccount || member.isProfileComplete,
+  );
 
   const withdraw = async () => {
     if (amount <= 0 || withdrawError || busy) return;
@@ -266,13 +395,13 @@ export function WalletPage() {
     try {
       await repos.wallet.requestWithdrawal(member.id, amount);
       toast(
-        `Withdrawal of ${formatNaira(amount)} requested. Track it under Pending.`,
+        `Withdrawal of ${formatNaira(amount)} submitted. It will be processed once approved by an admin.`,
       );
       setWithdrawOpen(false);
       setAmountText("");
-      void reload();
+      await reloadAll();
     } catch (e) {
-      toast((e as Error).message);
+      toast((e as Error).message || "Could not submit withdrawal request.");
     } finally {
       setBusy(false);
     }
@@ -381,28 +510,61 @@ export function WalletPage() {
       <div className="overflow-x-auto">
         <Chips<Tab>
           value={tab}
-          onChange={setTab}
+          onChange={(next) => {
+            setTab(next);
+            setPage(1);
+          }}
           options={(
             ["All", "Money in", "Money out", "Pending", "Failed"] as Tab[]
           ).map((t) => ({ value: t, label: t }))}
         />
       </div>
       <Card>
-        {list.length ? (
-          list.map((e) => <WalletRow key={e.id} e={e} />)
+        {txLoading ? (
+          <div className="flex min-h-48 items-center justify-center py-8">
+            <LoadingSpinner size="sm" label="Loading transactions…" />
+          </div>
+        ) : entries.length ? (
+          entries.map((e) => <WalletRow key={e.id} e={e} />)
         ) : (
           <EmptyState
             icon={<Wallet size={28} />}
-            title={
-              snap.entries.length ? "Nothing here" : "No wallet activity yet"
-            }
+            title={tab === "All" ? "No wallet activity yet" : "Nothing here"}
           >
-            {snap.entries.length
-              ? "Try another filter."
-              : "Fund your wallet to see top-ups and withdrawals here."}
+            {tab === "All"
+              ? "Fund your wallet to see top-ups and withdrawals here."
+              : "Try another filter."}
           </EmptyState>
         )}
       </Card>
+
+      {meta.last_page > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span className="font-semibold text-mute">
+            Page {meta.current_page} of {meta.last_page} ({meta.total} total)
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={txLoading || meta.current_page <= 1}
+              icon={<ChevronLeft size={16} />}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={txLoading || meta.current_page >= meta.last_page}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+              <ChevronRight size={16} />
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Modal
         open={statementOpen}
@@ -503,8 +665,8 @@ export function WalletPage() {
           </Card>
         )}
         <Banner tone="info" icon={<Info size={20} />}>
-          Payments are simulated in demo mode, so your top-up confirms
-          automatically and appears in your balance shortly.
+          You’ll complete the payment securely on Paystack. Your wallet balance
+          updates once the payment is verified.
         </Banner>
       </Modal>
 
@@ -513,7 +675,7 @@ export function WalletPage() {
         title="Withdraw"
         onClose={() => setWithdrawOpen(false)}
         footer={
-          member.payoutAccount ? (
+          canWithdrawAccount ? (
             <>
               <Button
                 variant="outline"
@@ -527,7 +689,11 @@ export function WalletPage() {
                 disabled={!!withdrawError || !amount || busy}
                 onClick={withdraw}
               >
-                {amount > 0 ? `Withdraw ${formatNaira(amount)}` : "Withdraw"}
+                {busy
+                  ? "Submitting…"
+                  : amount > 0
+                    ? `Withdraw ${formatNaira(amount)}`
+                    : "Withdraw"}
               </Button>
             </>
           ) : (
@@ -537,7 +703,7 @@ export function WalletPage() {
           )
         }
       >
-        {!member.payoutAccount ? (
+        {!canWithdrawAccount ? (
           <Banner tone="warn" icon={<Landmark size={20} />}>
             You need a verified bank account before you can withdraw. Set up
             your payout account in Profile — it takes a minute.
@@ -553,12 +719,18 @@ export function WalletPage() {
             <Card tone="soft" className="flex flex-col">
               <KeyValue
                 label="Sending to"
-                value={`${member.payoutAccount.bankName} •••• ${member.payoutAccount.accountNumber.slice(-4)}`}
+                value={
+                  member.payoutAccount
+                    ? `${member.payoutAccount.bankName} •••• ${member.payoutAccount.accountNumber.slice(-4)}`
+                    : "Your verified payout account"
+                }
               />
-              <KeyValue
-                label="Account name"
-                value={member.payoutAccount.accountName}
-              />
+              {member.payoutAccount?.accountName && (
+                <KeyValue
+                  label="Account name"
+                  value={member.payoutAccount.accountName}
+                />
+              )}
               <KeyValue label="Withdrawal charges" value={formatNaira(0)} />
               {amount > 0 && !withdrawError && (
                 <KeyValue
@@ -568,8 +740,8 @@ export function WalletPage() {
               )}
             </Card>
             <Banner tone="info" icon={<Info size={20} />}>
-              Withdrawals are sent to your bank account by the Iconic Wealth Hub
-              team. You will see it here as pending until it is completed.
+              Withdrawals are sent to your bank account once approved by an
+              admin. You will see it here as pending until it is completed.
             </Banner>
           </>
         )}

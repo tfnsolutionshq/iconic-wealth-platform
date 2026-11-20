@@ -52,6 +52,10 @@ import type {
   Testimonial,
   Transaction,
   TransactionStatus,
+  WalletEntry,
+  WalletEntryKind,
+  WalletSnapshot,
+  WalletWithdrawal,
 } from "@/domain/entities";
 import type { PlatformSettings } from "@/domain/rules";
 import { interestWizardProgress, MONTHS, naira } from "@/domain/rules";
@@ -89,6 +93,11 @@ import type {
   TransactionListPage,
   TransactionPageMeta,
   TransactionQuery,
+  WalletFundInitiated,
+  WalletFundVerified,
+  WalletRepository,
+  WalletTransactionsPage,
+  WalletTransactionsQuery,
 } from "@/domain/repositories";
 import type { RegistrationDetails } from "@/domain/rules";
 import type { HttpClient } from "@/data/api/httpClient";
@@ -1800,6 +1809,17 @@ export class HttpPayoutAccountRepository implements PayoutAccountRepository {
       verifiedAt: saved?.verified_at,
     };
   }
+  async requestChange(input: {
+    accountNumber: string;
+    bankCode: string;
+    reason: string;
+  }): Promise<void> {
+    await this.http.post("/payout-account/change-requests", {
+      account_number: input.accountNumber,
+      bank_code: input.bankCode,
+      reason: input.reason,
+    });
+  }
   async resolveAccountName(bankCode: string, accountNumber: string) {
     return (
       await this.http.get<{ accountName: string }>(
@@ -1836,18 +1856,34 @@ interface ApiSavingsMonth {
   contributions_count: number;
   close_note: string;
   deadline: string;
+  is_catch_up?: boolean;
+  is_catchup?: boolean;
 }
 /** Raw period record returned by GET /savings. */
 interface ApiSavingsPeriod {
+  id?: string | null;
   year: number;
   month: number;
   period: string;
   month_name: string;
   deadline: string;
+  is_catch_up?: boolean;
+  is_catchup?: boolean;
+  target_amount?: string | number | null;
+  saved_amount?: string | number;
+  remaining_amount?: string | number;
+  progress_percentage?: number | null;
+  target_met?: boolean;
+  status?: string;
+  status_label?: string;
+  close_note?: string;
+  contributions_count?: number;
 }
 
 /** Raw dashboard record returned by GET /savings. */
 interface ApiSavingsDashboard {
+  is_catch_up?: boolean;
+  is_catchup?: boolean;
   active_month: ApiSavingsPeriod | null;
   next_period: ApiSavingsPeriod | null;
   summary: {
@@ -1882,11 +1918,24 @@ const koboFromApi = (value: string | number | null | undefined): Kobo =>
 
 function mapSavingsPeriod(p: ApiSavingsPeriod): SavingsPeriod {
   return {
+    id: p.id,
     year: p.year,
     month: p.month,
     period: p.period,
     monthName: p.month_name,
     deadline: p.deadline,
+    isCatchUp: p.is_catch_up ?? p.is_catchup,
+    targetAmount:
+      p.target_amount == null ? null : koboFromApi(p.target_amount),
+    savedAmount: p.saved_amount == null ? undefined : koboFromApi(p.saved_amount),
+    remainingAmount:
+      p.remaining_amount == null ? undefined : koboFromApi(p.remaining_amount),
+    progressPercentage: p.progress_percentage,
+    targetMet: p.target_met,
+    status: p.status,
+    statusLabel: p.status_label,
+    closeNote: p.close_note,
+    contributionsCount: p.contributions_count,
   };
 }
 
@@ -1907,11 +1956,13 @@ function mapSavingsMonth(m: ApiSavingsMonth): SavingsMonth {
     contributionsCount: m.contributions_count,
     closeNote: m.close_note,
     deadline: m.deadline,
+    isCatchUp: m.is_catch_up ?? m.is_catchup,
   };
 }
 
 function mapSavingsDashboard(d: ApiSavingsDashboard): SavingsDashboard {
   return {
+    isCatchUp: d.is_catch_up ?? d.is_catchup,
     activeMonth: d.active_month ? mapSavingsPeriod(d.active_month) : null,
     nextPeriod: d.next_period ? mapSavingsPeriod(d.next_period) : null,
     summary: {
@@ -1995,7 +2046,8 @@ function mapActivityItem(item: ApiActivityItem): Transaction {
 
   const period = d.savings_month?.period ?? "";
   const periodMatch = /^(\d{4})-(\d{2})$/.exec(period);
-  const createdAt = d.created_at || item.created_at || new Date().toISOString();
+  const createdAt =
+    d.confirmed_at || d.created_at || item.created_at || new Date().toISOString();
   const year = periodMatch
     ? Number(periodMatch[1])
     : new Date(createdAt).getFullYear() || new Date().getFullYear();
@@ -2013,9 +2065,9 @@ function mapActivityItem(item: ApiActivityItem): Transaction {
     if (idx >= 0) monthIndex = idx as MonthIndex;
   }
 
-  const amountKobo = koboFromApi(d.amount ?? d.net_amount);
+  const grossKobo = koboFromApi(d.amount ?? d.net_amount);
   const platformChargeKobo = koboFromApi(d.platform_charge);
-  const netKobo = koboFromApi(d.net_amount) || amountKobo;
+  const netKobo = koboFromApi(d.net_amount) || grossKobo;
 
   const statusLower = (d.status ?? "").toLowerCase();
   let status: TransactionStatus = "Pending";
@@ -2052,12 +2104,20 @@ function mapActivityItem(item: ApiActivityItem): Transaction {
       kind === "Contribution"
         ? [{ month: monthIndex, amountKobo: netKobo }]
         : [],
-    amountKobo,
+    amountKobo: netKobo,
     platformChargeKobo,
     paymentMethod,
     status,
     late: false,
     createdAt,
+    savingsMonth: d.savings_month?.id
+      ? {
+          id: d.savings_month.id,
+          period: d.savings_month.period ?? "",
+          monthName: d.savings_month.month_name ?? MONTHS[monthIndex],
+          status: d.savings_month.status ?? "",
+        }
+      : undefined,
   };
 }
 
@@ -2083,7 +2143,30 @@ export class HttpMemberRepository implements MemberRepository {
       applyToFollowing,
     });
   }
-  lockMonth(id: string, year: number, month: MonthIndex) {
+  async lockMonth(
+    id: string,
+    year: number,
+    month: MonthIndex,
+    monthId?: string | null,
+  ) {
+    let targetMonthId = monthId ?? null;
+    if (!targetMonthId) {
+      for (const tx of this.txCache.values()) {
+        if (
+          tx.savingsMonth?.id &&
+          tx.year === year &&
+          tx.allocations.some((a) => a.month === month)
+        ) {
+          targetMonthId = tx.savingsMonth.id;
+          break;
+        }
+      }
+    }
+    if (targetMonthId) {
+      return this.http.post<SavingsYear>(
+        `/savings/months/${targetMonthId}/lock`,
+      );
+    }
     return this.http.post<SavingsYear>(
       `/members/${id}/savings/${year}/months/${month}/lock`,
     );
@@ -2134,10 +2217,25 @@ export class HttpMemberRepository implements MemberRepository {
     };
   }
   async listTransactions(_id: string): Promise<Transaction[]> {
-    const res = await this.listActivity({ page: 1 });
-    const merged = new Map<string, Transaction>(this.txCache);
-    for (const tx of res.data) merged.set(tx.id, tx);
-    return Array.from(merged.values());
+    try {
+      const payload = await this.http.get<
+        ApiEnvelope<ApiActivityItem[]> | ApiActivityItem[]
+      >("/savings/contributions?per_page=100");
+      const rawItems = unwrapData(payload) ?? [];
+      const data = rawItems.map(mapActivityItem);
+      this.txCache.clear();
+      for (const tx of data) {
+        this.txCache.set(tx.id, tx);
+      }
+      return data;
+    } catch {
+      const res = await this.listActivity({ page: 1 });
+      this.txCache.clear();
+      for (const tx of res.data) {
+        this.txCache.set(tx.id, tx);
+      }
+      return res.data;
+    }
   }
   listNotifications(id: string) {
     return this.http.get<MemberNotification[]>(`/members/${id}/notifications`);
@@ -3011,5 +3109,238 @@ export class HttpAdminRepository implements AdminRepository {
   }
   currentAdmin(_role: AdminRole) {
     return this.http.get<AdminUser>("/admin/me");
+  }
+}
+
+interface ApiWalletSummary {
+  balance?: string | number;
+  pending_topups?: string | number;
+  pending_withdrawals?: string | number;
+}
+
+interface ApiWalletTransaction {
+  id?: string;
+  reference?: string;
+  type?: string;
+  type_label?: string;
+  direction?: string;
+  amount?: string | number;
+  status?: string;
+  status_label?: string;
+  channel?: string;
+  note?: string | null;
+  failure_reason?: string | null;
+  completed_at?: string | null;
+  created_at?: string;
+}
+
+interface ApiWalletFundData {
+  transaction?: ApiWalletTransaction;
+  payment?: {
+    gateway?: string;
+    reference?: string;
+    authorization_url?: string;
+    access_code?: string;
+    status?: string;
+  };
+  wallet?: ApiWalletSummary;
+  balance?: string | number;
+}
+
+function mapWalletEntry(t: ApiWalletTransaction): WalletEntry {
+  const typeLower = (t.type ?? "").toLowerCase();
+  let kind: WalletEntryKind = "Adjustment";
+  if (
+    typeLower === "topup" ||
+    typeLower === "top_up" ||
+    typeLower === "deposit"
+  ) {
+    kind = "TopUp";
+  } else if (typeLower === "withdrawal" || typeLower === "withdraw") {
+    kind = "Withdrawal";
+  } else if (typeLower === "contribution") {
+    kind = "Contribution";
+  } else if (typeLower === "payout") {
+    kind = "Payout";
+  }
+
+  const dirLower = (t.direction ?? "").toLowerCase();
+  const direction: WalletEntry["direction"] =
+    dirLower === "debit" || kind === "Withdrawal" || kind === "Contribution"
+      ? "Debit"
+      : "Credit";
+
+  const statusLower = (t.status ?? "").toLowerCase();
+  let status: TransactionStatus = "Pending";
+  if (["confirmed", "successful", "paid", "completed"].includes(statusLower)) {
+    status = "Successful";
+  } else if (statusLower === "processing") {
+    status = "Processing";
+  } else if (
+    ["failed", "declined", "cancelled", "abandoned"].includes(statusLower)
+  ) {
+    status = "Failed";
+  }
+
+  return {
+    id: t.id || t.reference || `WE-${Date.now()}`,
+    reference: t.reference || t.id || "",
+    memberId: "",
+    kind,
+    direction,
+    amountKobo: koboFromApi(t.amount),
+    status,
+    note: t.note || undefined,
+    failureReason: t.failure_reason || undefined,
+    createdAt: t.completed_at || t.created_at || new Date().toISOString(),
+  };
+}
+
+export class HttpWalletRepository implements WalletRepository {
+  constructor(private readonly http: HttpClient) {}
+
+  async getSnapshot(memberId: string): Promise<WalletSnapshot> {
+    const [walletPayload, txPage] = await Promise.all([
+      this.http.get<ApiEnvelope<ApiWalletSummary> | ApiWalletSummary>("/wallet"),
+      this.listTransactions({ per_page: 100, page: 1 }).catch(() => ({
+        data: [] as WalletEntry[],
+        meta: { current_page: 1, per_page: 100, last_page: 1, total: 0 },
+      })),
+    ]);
+    const w = unwrapData(walletPayload);
+    return {
+      memberId,
+      availableKobo: koboFromApi(w?.balance),
+      pendingDepositKobo: koboFromApi(w?.pending_topups),
+      pendingWithdrawalKobo: koboFromApi(w?.pending_withdrawals),
+      entries: txPage.data,
+      withdrawals: [],
+    };
+  }
+
+  async listTransactions(
+    query: WalletTransactionsQuery = {},
+  ): Promise<WalletTransactionsPage> {
+    const p = new URLSearchParams();
+    if (query.filter) p.set("filter", query.filter);
+    if (query.per_page) p.set("per_page", String(query.per_page));
+    if (query.page) p.set("page", String(query.page));
+    const qs = p.toString();
+    const payload = await this.http.get<
+      ApiEnvelope<ApiWalletTransaction[]> | ApiWalletTransaction[]
+    >(`/wallet/transactions${qs ? `?${qs}` : ""}`);
+    const raw = unwrapData(payload) ?? [];
+    const data = raw.map(mapWalletEntry);
+    const perPage = query.per_page ?? 15;
+    const page = query.page ?? 1;
+    return {
+      data,
+      meta: readPageMeta(payload, {
+        current_page: page,
+        per_page: perPage,
+        last_page: 1,
+        total: data.length,
+      }),
+    };
+  }
+
+  async initiateFund(amountKobo: Kobo): Promise<WalletFundInitiated> {
+    const amountNaira = Number((amountKobo / 100).toFixed(2));
+    const payload = await this.http.post<
+      ApiEnvelope<ApiWalletFundData> | ApiWalletFundData
+    >("/wallet/fund", { amount: amountNaira });
+    const data = unwrapData(payload);
+    const tx = data?.transaction
+      ? mapWalletEntry(data.transaction)
+      : {
+          id: `WE-${Date.now()}`,
+          reference: data?.payment?.reference ?? `IWH-WAL-${Date.now()}`,
+          memberId: "",
+          kind: "TopUp" as const,
+          direction: "Credit" as const,
+          amountKobo,
+          status: "Pending" as const,
+          createdAt: new Date().toISOString(),
+        };
+    const payment = data?.payment;
+    const ref = payment?.reference || tx.reference;
+    return {
+      transaction: tx,
+      intent: {
+        reference: ref,
+        amountKobo,
+        platformChargeKobo: 0,
+        allocations: [],
+        email: "",
+        authorizationUrl: payment?.authorization_url,
+        accessCode: payment?.access_code,
+      },
+    };
+  }
+
+  async verifyFund(
+    reference: string,
+    amountKobo: Kobo,
+  ): Promise<WalletFundVerified> {
+    const amountNaira = Number((amountKobo / 100).toFixed(2));
+    const payload = await this.http.post<
+      ApiEnvelope<ApiWalletFundData> | ApiWalletFundData
+    >(`/wallet/fund/${encodeURIComponent(reference)}/verify`, {
+      amount: amountNaira,
+    });
+    const data = unwrapData(payload);
+    const tx = data?.transaction
+      ? mapWalletEntry(data.transaction)
+      : {
+          id: reference,
+          reference,
+          memberId: "",
+          kind: "TopUp" as const,
+          direction: "Credit" as const,
+          amountKobo,
+          status: "Successful" as const,
+          createdAt: new Date().toISOString(),
+        };
+    const balRaw = data?.wallet?.balance ?? data?.balance;
+    return {
+      transaction: tx,
+      balanceKobo: balRaw != null ? koboFromApi(balRaw) : undefined,
+    };
+  }
+
+  async requestTopUp(_memberId: string, amountKobo: Kobo): Promise<WalletEntry> {
+    const res = await this.initiateFund(amountKobo);
+    return res.transaction;
+  }
+
+  async requestWithdrawal(
+    memberId: string,
+    amountKobo: Kobo,
+  ): Promise<WalletWithdrawal> {
+    const payload = await this.http.post<
+      ApiEnvelope<ApiWalletTransaction> | ApiWalletTransaction
+    >("/wallet/withdraw", {
+      amount: Number((amountKobo / 100).toFixed(2)),
+    });
+    const d = unwrapData(payload);
+    const statusLower = (d?.status_label ?? d?.status ?? "").toLowerCase();
+    const status: WalletWithdrawal["status"] =
+      statusLower === "paid" || statusLower === "completed" || statusLower === "successful"
+        ? "Paid"
+        : statusLower === "failed" || statusLower === "rejected"
+          ? "Failed"
+          : "Processing";
+    return {
+      id: d?.id || d?.reference || `WR-${Date.now()}`,
+      reference: d?.reference || d?.id || "",
+      memberId,
+      amountKobo: d?.amount != null ? koboFromApi(d.amount) : amountKobo,
+      status,
+      bankName: "",
+      accountNumber: "",
+      accountName: "",
+      createdAt: d?.created_at || new Date().toISOString(),
+      completedAt: d?.completed_at || undefined,
+    };
   }
 }

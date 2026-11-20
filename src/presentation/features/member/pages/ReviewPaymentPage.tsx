@@ -21,27 +21,26 @@ import { useAuth } from "../../../contexts/AuthContext";
 import { useContributionDraft } from "../../../contexts/ContributionDraftContext";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
-import { useSavings } from "../../../hooks/useSavings";
+import { useSavingsDashboard } from "../../../hooks/useSavingsDashboard";
 import {
   Banner,
   Button,
   ButtonLink,
   Card,
   KeyValue,
+  LoadingScreen,
   OpenDecisionTag,
   Pill,
   cn,
 } from "../../../design-system";
 import {
   BANK_TRANSFER_WINDOW_MS,
+  DEFAULT_SETTINGS,
   MONTHS,
   bankTransferFor,
   chargeBreakdown,
   formatNaira,
-  isCatchUp,
-  planAllocation,
 } from "@/domain/rules";
-import { ContributeUseCase } from "@/domain/usecases/contribute";
 import { paths } from "../../../routes/paths";
 
 const BANK_WINDOW_MINUTES = Math.round(BANK_TRANSFER_WINDOW_MS / 60_000);
@@ -52,13 +51,13 @@ const BANK_WINDOW_MINUTES = Math.round(BANK_TRANSFER_WINDOW_MS / 60_000);
  * and a timed window before the member confirms they have paid.
  */
 export function ReviewPaymentPage() {
-  const { session, updateMember } = useAuth();
+  const { session } = useAuth();
   const { repos } = useServices();
   const toast = useToast();
   const navigate = useNavigate();
   const draft = useContributionDraft();
   const member = session?.kind === "member" ? session.member : null;
-  const { data } = useSavings(member);
+  const { data } = useSavingsDashboard(member);
   const [busy, setBusy] = useState(false);
   const [method, setMethod] = useState<ContributionPaymentMethod>("Online");
   const [wallet, setWallet] = useState<WalletSnapshot | null>(null);
@@ -86,29 +85,43 @@ export function ReviewPaymentPage() {
 
   useEffect(() => {
     if (method !== "Bank Account") return;
-    const tick = () =>
-      setRemaining(Math.max(0, bankDeadline - Date.now()));
+    const tick = () => setRemaining(Math.max(0, bankDeadline - Date.now()));
     tick();
     const id = window.setInterval(tick, 1_000);
     return () => window.clearInterval(id);
   }, [method, bankDeadline]);
 
   if (!draft.amount) return <Navigate to={paths.member.contribute} replace />;
-  if (!member || !data) return <p className="text-mute">Loading…</p>;
-  const { year, txs, now, settings } = data;
-  const plan = planAllocation(draft.amount, year, txs, now, settings);
-  if (!plan.ok) return <Navigate to={paths.member.contribute} replace />;
+  if (!member || !data) return <LoadingScreen />;
 
-  const b = chargeBreakdown(draft.amount, settings.platformCharge, method);
-  const a = plan.allocations;
-  const goesTo =
-    a.length > 1
-      ? `${MONTHS[a[0].month]} – ${MONTHS[a[a.length - 1].month]} ${year.year}`
-      : `${MONTHS[a[0].month]} ${year.year}`;
-  const bank = bankTransferFor(settings);
+  const { dashboard, now, viewState } = data;
+  const { activeMonth, summary, settings } = dashboard;
+  const minimum = settings.minimumPerPayment;
+  if (draft.amount < minimum) {
+    return <Navigate to={paths.member.contribute} replace />;
+  }
+
+  const isCatchUpMode = viewState.isCatchUpMode;
+  const effectiveOpenMonth = viewState.openPeriod ?? activeMonth;
+  const activeMonthName =
+    (isCatchUpMode ? viewState.activeCatchUpMonthName : null) ??
+    effectiveOpenMonth?.monthName ??
+    dashboard.nextPeriod?.monthName ??
+    MONTHS[Math.min(now.getMonth(), 10)];
+  const activeYear =
+    effectiveOpenMonth?.year ?? dashboard.nextPeriod?.year ?? summary.year;
+
+  const goesTo = `${activeMonthName} ${activeYear}${isCatchUpMode ? " (catch-up)" : ""}`;
+  const b = chargeBreakdown(
+    draft.amount,
+    settings.platformChargePerPayment ?? DEFAULT_SETTINGS.platformCharge,
+    method,
+  );
+  const bank = bankTransferFor(DEFAULT_SETTINGS);
   const walletBalance = wallet?.availableKobo ?? 0;
   const walletShortfall = Math.max(0, b.total - walletBalance);
-  const walletUnavailable = method === "Wallet" && (!wallet || walletShortfall > 0);
+  const walletUnavailable =
+    method === "Wallet" && (!wallet || walletShortfall > 0);
   const bankExpired = method === "Bank Account" && remaining <= 0;
   const canPay = !busy && !walletUnavailable;
   const minutes = Math.floor(remaining / 60_000);
@@ -119,15 +132,6 @@ export function ReviewPaymentPage() {
     Math.min(100, (remaining / BANK_TRANSFER_WINDOW_MS) * 100),
   );
 
-  const startNewWindow = () => {
-    setBankDeadline(Date.now() + BANK_TRANSFER_WINDOW_MS);
-    setRemaining(BANK_TRANSFER_WINDOW_MS);
-    toast("New transfer window started.");
-  };
-  const chooseBank = () => {
-    if (bankDeadline <= Date.now()) startNewWindow();
-    setMethod("Bank Account");
-  };
   const copyAccount = async () => {
     try {
       await navigator.clipboard.writeText(bank.accountNumber);
@@ -144,8 +148,8 @@ export function ReviewPaymentPage() {
     try {
       const intent = await repos.contribution.initiate(
         member.id,
-        year.year,
-        draft.amount!,
+        activeYear,
+        b.total,
         method,
       );
 
@@ -161,7 +165,9 @@ export function ReviewPaymentPage() {
       }
 
       draft.setResult(null);
-      navigate(`${paths.member.result}?reference=${encodeURIComponent(intent.reference)}`);
+      navigate(
+        `${paths.member.result}?reference=${encodeURIComponent(intent.reference)}`,
+      );
     } catch (e) {
       toast((e as Error).message);
       setBusy(false);
@@ -218,7 +224,7 @@ export function ReviewPaymentPage() {
             disabled
             aria-disabled="true"
             aria-checked={false}
-            className="flex flex-col gap-2 rounded-card border border-line bg-soft/40 p-3.5 text-left opacity-60 cursor-not-allowed"
+            className="flex cursor-not-allowed flex-col gap-2 rounded-card border border-line bg-soft/40 p-3.5 text-left opacity-60"
           >
             <div className="flex items-center justify-between">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-input bg-soft text-mute">
@@ -239,7 +245,7 @@ export function ReviewPaymentPage() {
             disabled
             aria-disabled="true"
             aria-checked={false}
-            className="flex flex-col gap-2 rounded-card border border-line bg-soft/40 p-3.5 text-left opacity-60 cursor-not-allowed"
+            className="flex cursor-not-allowed flex-col gap-2 rounded-card border border-line bg-soft/40 p-3.5 text-left opacity-60"
           >
             <div className="flex items-center justify-between">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-input bg-soft text-mute">
@@ -280,7 +286,9 @@ export function ReviewPaymentPage() {
       {method === "Bank Account" && (
         <Card className="flex flex-col gap-3 border-brand/35 bg-brand-tint/40">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-sm font-extrabold">Transfer to this account</span>
+            <span className="text-sm font-extrabold">
+              Transfer to this account
+            </span>
             <Pill
               tone={bankExpired ? "fail" : "pending"}
               icon={<Timer size={12} />}
@@ -339,21 +347,14 @@ export function ReviewPaymentPage() {
           value={b.platformCharge ? formatNaira(b.platformCharge) : "₦0"}
         />
         <KeyValue label="Total to pay" value={formatNaira(b.total)} />
-        {a.length > 1 &&
-          a.map((x) => (
-            <KeyValue
-              key={x.month}
-              label={`· ${MONTHS[x.month]}${isCatchUp(year, x.month) ? " (catch-up)" : ""}`}
-              value={formatNaira(x.amountKobo)}
-            />
-          ))}
       </Card>
 
       {method === "Bank Account" ? (
         bankExpired ? (
           <Banner tone="fail" icon={<Timer size={20} />}>
             <b>This transfer window has closed.</b> Start a new{" "}
-            {BANK_WINDOW_MINUTES}-minute window to see the account details again.
+            {BANK_WINDOW_MINUTES}-minute window to see the account details
+            again.
           </Banner>
         ) : (
           <Banner tone="neutral" icon={<Info size={20} />}>
@@ -411,8 +412,8 @@ export function ReviewPaymentPage() {
         onClick={pay}
       >
         {busy
-          ? "Redirecting to Paystack…"
-          : `Pay ${formatNaira(draft.amount)} with Paystack`}
+          ? "Opening Paystack…"
+          : `Pay ${formatNaira(b.total)} with Paystack`}
       </Button>
       <ButtonLink to={paths.member.contribute} variant="outline" full>
         Change amount

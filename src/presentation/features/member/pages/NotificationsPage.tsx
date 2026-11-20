@@ -6,7 +6,7 @@ import { formatNaira } from "@/domain/rules";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
-import { Card, EmptyState, cn } from "../../../design-system";
+import { Card, EmptyState, LoadingScreen, cn } from "../../../design-system";
 import { paths } from "../../../routes/paths";
 import { describeTx, fmtDateTime } from "../components/TransactionParts";
 
@@ -120,7 +120,7 @@ export function NotificationsPage() {
     return [...server.map(fromServer), ...derived];
   }, [server, txs]);
 
-  if (!member) return <p className="text-mute">Loading…</p>;
+  if (!member) return <LoadingScreen />;
   const unread = items.filter(
     (n) => !read.has(n.id) && !server.find((s) => s.id === n.id)?.read,
   );
