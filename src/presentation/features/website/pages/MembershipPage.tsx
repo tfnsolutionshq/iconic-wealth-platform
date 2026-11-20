@@ -14,7 +14,7 @@ const NEXT_STEPS = [
   [
     FileText,
     "An admin reviews your details",
-    "You’ll get an email and SMS when your account opens.",
+    "You’ll get an email when your account opens.",
   ],
   [
     PiggyBank,

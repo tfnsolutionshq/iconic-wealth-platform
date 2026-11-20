@@ -39,6 +39,9 @@ import type {
   PayoutRowStatus,
   ReferralGroup,
   Registration,
+  AdminReportKey,
+  AdminReports,
+  AdminReportsQuery,
   ReportKind,
   ReportResult,
   SavingsDashboard,
@@ -52,6 +55,7 @@ import type {
 } from "@/domain/entities";
 import type { PlatformSettings } from "@/domain/rules";
 import { interestWizardProgress, MONTHS, naira } from "@/domain/rules";
+import { ADMIN_REPORT_KEYS, REPORT_HEADERS } from "@/domain/rules/reports";
 import type {
   ActivityPageResult,
   ActivityQuery,
@@ -620,6 +624,146 @@ function readRecordList(payload: unknown, keys: string[]): unknown[] {
     if (Array.isArray(nested[key])) return nested[key] as unknown[];
   }
   return [];
+}
+
+/** API names accepted for each report section when it is nested in the payload. */
+const REPORT_SECTION_ALIASES: Record<AdminReportKey, string[]> = {
+  compliance: ["compliance", "monthly_compliance", "contribution_compliance"],
+  eligibility: ["eligibility", "interest_eligibility"],
+  charges: ["charges", "contribution_charges", "collections"],
+  payout: ["payout", "payouts", "year_end_payout"],
+  late: ["late", "late_contributions"],
+  savings: ["savings", "savings_by_member"],
+};
+
+function reportKey(kind: ReportKind): AdminReportKey {
+  return kind === "collections" ? "charges" : kind;
+}
+
+function readReportHeaders(value: unknown): string[] {
+  const names = readArray(value)
+    .map((item) => {
+      if (typeof item === "string") return item;
+      const column = asRecord(item);
+      return readString(
+        column.label,
+        column.name,
+        column.title,
+        column.header,
+        column.key,
+      );
+    })
+    .filter((name): name is string => Boolean(name));
+  return names;
+}
+
+function readReportRows(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  const record = asRecord(value);
+  for (const key of ["rows", "data", "records", "items", "values"]) {
+    if (Array.isArray(record[key])) return record[key] as unknown[];
+  }
+  return [];
+}
+
+function stringifyReportCell(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "object") {
+    const record = asRecord(value);
+    return (
+      readString(record.label, record.name, record.value, record.formatted) ??
+      "—"
+    );
+  }
+  return String(value);
+}
+
+function mapReportResult(raw: unknown, key: AdminReportKey): ReportResult {
+  const record = asRecord(raw);
+  const headers =
+    readReportHeaders(
+      record.headers ?? record.columns ?? record.column_names ?? record.labels,
+    ).length > 0
+      ? readReportHeaders(
+          record.headers ??
+            record.columns ??
+            record.column_names ??
+            record.labels,
+        )
+      : REPORT_HEADERS[key];
+  const rows = readReportRows(raw).map((row) => {
+    if (Array.isArray(row)) return row.map(stringifyReportCell);
+    const cells = asRecord(row);
+    return headers.map((header, index) => {
+      const snake = header
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_|_$/g, "");
+      return stringifyReportCell(
+        cells[snake] ??
+          cells[header] ??
+          cells[header.toLowerCase()] ??
+          Object.values(cells)[index],
+      );
+    });
+  });
+  return { headers, rows };
+}
+
+function findReportSection(payload: unknown, key: AdminReportKey): unknown {
+  const data = unwrapData<unknown>(payload) ?? payload;
+  const root = asRecord(data);
+  const groups = [
+    root,
+    asRecord(root.data),
+    asRecord(root.reports),
+    asRecord(asRecord(root.data).reports),
+    asRecord(asRecord(root.data).result),
+    asRecord(root.result),
+  ];
+  const aliases = REPORT_SECTION_ALIASES[key];
+  for (const group of groups) {
+    for (const alias of aliases) {
+      if (group[alias] !== undefined) return group[alias];
+    }
+  }
+  const normalise = (value: unknown) =>
+    readString(value)
+      ?.toLowerCase()
+      .replace(/[^a-z]/g, "");
+  const wanted = aliases.map(normalise);
+  // Sections may also arrive as a named list, either under `reports`/`data`
+  // or as the payload root itself.
+  const candidates = [
+    ...groups.flatMap((group) => readArray(group.reports ?? group.data)),
+    ...readArray(data),
+  ];
+  for (const item of candidates) {
+    const entry = asRecord(item);
+    const name = normalise(
+      entry.key ?? entry.type ?? entry.name ?? entry.id ?? entry.report,
+    );
+    if (name && wanted.includes(name)) return item;
+  }
+  return undefined;
+}
+
+function mapAdminReports(
+  payload: unknown,
+  query: AdminReportsQuery,
+): AdminReports {
+  const data = unwrapData<unknown>(payload) ?? payload;
+  const root = asRecord(data);
+  const reports = {} as Record<AdminReportKey, ReportResult>;
+  for (const key of ADMIN_REPORT_KEYS) {
+    reports[key] = mapReportResult(findReportSection(payload, key), key);
+  }
+  return {
+    year: readNumber(root.year, root.report_year) ?? query.year,
+    month: query.month,
+    eligibility: query.eligibility,
+    reports,
+  };
 }
 
 const INTEREST_STATUS_VALUES: readonly InterestStatus[] = [
@@ -2802,19 +2946,27 @@ export class HttpAdminRepository implements AdminRepository {
       })
       .then(readPayoutBatchPayload);
   }
+  getReports(query: AdminReportsQuery) {
+    const p = new URLSearchParams({ year: String(query.year) });
+    if (query.month !== undefined) p.set("month", String(query.month));
+    if (query.eligibility && query.eligibility !== "All") {
+      p.set("eligibility", query.eligibility);
+    }
+    return this.http
+      .get<unknown>(`/admin/reports?${p}`)
+      .then((payload) => mapAdminReports(payload, query));
+  }
   runReport(
     kind: ReportKind,
     year: number,
     month?: number | "all",
     status?: string,
   ) {
-    const p = new URLSearchParams({
-      kind,
-      year: String(year),
-      ...(month !== undefined ? { month: String(month) } : {}),
-      ...(status ? { status } : {}),
-    });
-    return this.http.get<ReportResult>(`/admin/reports?${p}`);
+    return this.getReports({
+      year,
+      month,
+      eligibility: status && status !== "All" ? status : undefined,
+    }).then((data) => data.reports[reportKey(kind)]);
   }
   referralGroups() {
     return this.http.get<ReferralGroup[]>("/admin/referrals");

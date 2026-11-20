@@ -107,7 +107,7 @@ export function AwaitingApprovalPage() {
             <p className="max-w-[52ch] text-mute">
               {rejected
                 ? `Thanks for your interest, ${r.firstName}. Contact support if you’d like to discuss the reason below.`
-                : `Thanks for registering, ${r.firstName}. You’ll get an email and SMS as soon as you’re approved.`}
+                : `Thanks for registering, ${r.firstName}. You’ll get an email as soon as you’re approved.`}
             </p>
           </div>
           {rejected && (

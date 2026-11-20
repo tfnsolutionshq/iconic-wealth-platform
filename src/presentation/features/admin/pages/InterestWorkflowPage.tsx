@@ -70,7 +70,6 @@ const MIN_BAND_KOBO = parseNairaInput("10000");
 const NOTIFY_CHANNELS = {
   InApp: "in_app",
   Email: "email",
-  Sms: "sms",
   WhatsApp: "whatsapp",
 } as const satisfies Record<string, InterestNotifyChannel>;
 
@@ -82,6 +81,29 @@ type InterestCalculationCache = {
 
 const interestCalculationKey = (id: string) =>
   `iwh:interest-calculation:${encodeURIComponent(id || "current")}`;
+
+/**
+ * A year route can be opened before a configuration exists. Once step 2 creates
+ * the real config we remember its id so a refresh of the year URL still loads
+ * the server record instead of falling back to a fresh draft.
+ */
+const interestConfigIdKey = (year: number) => `iwh:interest-config-id:${year}`;
+function readStoredConfigId(year: number): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(interestConfigIdKey(year));
+  } catch {
+    return null;
+  }
+}
+function writeStoredConfigId(year: number, id: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(interestConfigIdKey(year), id);
+  } catch {
+    // Storage can be disabled; the in-memory id still drives this session.
+  }
+}
 
 function readCalculationCache(id: string): InterestCalculationCache | null {
   if (typeof window === "undefined") return null;
@@ -220,6 +242,33 @@ const formatApprovalDate = (value?: string | null) => {
         year: "numeric",
       });
 };
+
+/** Human labels for the event keys returned by GET /admin/interest/{id}/history. */
+const INTEREST_HISTORY_ACTIONS: Record<string, string> = {
+  "interest.config.created": "Interest configuration created",
+  "interest.config.calculated": "Interest configuration calculated",
+  "interest.config.submitted": "Interest configuration submitted",
+  "interest.config.approved": "Interest configuration approved",
+  "interest.payout.batch-created": "Payout batch created",
+  "interest.config.members-notified": "Members notified",
+};
+const historyAction = (event: string) =>
+  INTEREST_HISTORY_ACTIONS[event] ?? event;
+
+/** e.g. 2026-11-19T09:46:55+00:00 -> 19 Nov 2026 • 09:46. */
+const formatHistoryDate = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  })} • ${date.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })}`;
+};
 function BandSummary({ bands }: { bands: InterestBand[] }) {
   if (!bands.length) return null;
   return (
@@ -241,6 +290,16 @@ function BandSummary({ bands }: { bands: InterestBand[] }) {
 export function InterestWorkflowPage() {
   const { interestConfigId } = useParams();
   const interestConfigIdValue = interestConfigId ?? "";
+  /** A 4-digit route id is a savings year, which may not have a config yet. */
+  const draftYear = /^\d{4}$/.test(interestConfigIdValue)
+    ? Number(interestConfigIdValue)
+    : null;
+  /** The id used for API calls; swapped to the real config id after step 2. */
+  const [activeId, setActiveId] = useState<string>(
+    () =>
+      (draftYear != null ? readStoredConfigId(draftYear) : null) ??
+      interestConfigIdValue,
+  );
   const { repos, clock } = useServices();
   const toast = useToast();
   const { session } = useAuth();
@@ -287,7 +346,6 @@ export function InterestWorkflowPage() {
   const [channels, setChannels] = useState<Record<keyof typeof NOTIFY_CHANNELS, boolean>>({
     InApp: true,
     Email: true,
-    Sms: true,
     WhatsApp: true,
   });
   const [q, setQ] = useState("");
@@ -312,9 +370,53 @@ export function InterestWorkflowPage() {
   /** Guards against refetching the same calculation on repeated renders. */
   const calculationFetchRef = useRef<string | null>(null);
 
+  /**
+   * Local starting point when `GET /admin/interest/{id}` finds no configuration
+   * for the current year. Steps 1 and 2 fill this in, then step 2's
+   * `createInterestConfig` call creates the real server record.
+   */
+  const createDraftWorkflow = (): InterestWorkflow => {
+    const year = draftYear ?? new Date().getFullYear();
+    return {
+      year,
+      status: "Not started",
+      statusLabel: "Not started",
+      rate: null,
+      rateMode: "Fixed rate",
+      eligible: 0,
+      forfeited: 0,
+      contributionsKobo: 0,
+      interestKobo: 0,
+      closed: false,
+      stage: 1,
+      done: 0,
+      start: `${year}-01-01`,
+      end: `${year}-11-30`,
+      close: `${year + 1}-01-05`,
+      rounding: "Nearest naira",
+      bands: [],
+      scope: "All members",
+      selectedMemberIds: [],
+      excludedMemberIds: [],
+      calc: false,
+      note: "",
+      notified: false,
+      history: [],
+      currentStage: null,
+      completedStages: [],
+      stages: [],
+      calculationRunAt: null,
+      createdBy: null,
+      submittedBy: null,
+      reviewedBy: null,
+      submittedAt: null,
+      reviewedAt: null,
+    };
+  };
+
   const buildInterestConfigPayload = () => {
     const yearValue = Number(
-      w?.year ?? (interestConfigIdValue || new Date().getFullYear()),
+      w?.year ?? (activeId || new Date().getFullYear()),
     );
     const payload: {
       year: number;
@@ -405,14 +507,25 @@ export function InterestWorkflowPage() {
   const reload = async (keepStage?: number) => {
     setLoading(true);
     try {
-      const d = await repos.admin.getInterest(interestConfigIdValue);
+      const d = await repos.admin.getInterest(activeId);
       applyWorkflow(d, keepStage);
+    } catch {
+      if (draftYear == null) {
+        setMissing(true);
+        return;
+      }
+      // No configuration exists for this year yet. Start a local draft so the
+      // admin can complete steps 1 and 2, which create the real configuration.
+      applyWorkflow({ workflow: createDraftWorkflow() }, keepStage ?? 1);
     } finally {
       setLoading(false);
     }
   };
   useEffect(() => {
-    reload().catch(() => setMissing(true));
+    setMissing(false);
+    reload();
+    // `activeId` is intentionally omitted: it changes only after step 2 creates
+    // the config, and that handler adopts the returned workflow directly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repos, interestConfigIdValue]);
 
@@ -423,7 +536,7 @@ export function InterestWorkflowPage() {
    */
   useEffect(() => {
     if (!w || w.done < 3) return;
-    const key = interestConfigIdValue || String(w.year);
+    const key = activeId || String(w.year);
     const stored = readCalculationCache(key);
     if (stored) {
       const expected = mergeCalculationResult(
@@ -460,7 +573,7 @@ export function InterestWorkflowPage() {
       })
       .catch((e) => toast((e as Error).message))
       .finally(() => setBusy(false));
-  }, [w, preview, interestConfigIdValue, repos, toast]);
+  }, [w, preview, activeId, repos, toast]);
 
   const audit = (
     action: string,
@@ -563,7 +676,7 @@ export function InterestWorkflowPage() {
     let live = true;
     setHistoryLoading(true);
     repos.admin
-      .getInterestHistory(interestConfigIdValue)
+      .getInterestHistory(activeId)
       .then((rows) => {
         if (live) setInterestHistory(rows);
       })
@@ -574,7 +687,7 @@ export function InterestWorkflowPage() {
     return () => {
       live = false;
     };
-  }, [stage, interestConfigIdValue, repos.admin]);
+  }, [stage, activeId, repos.admin]);
 
   const openPicker = async () => {
     setPickerOpen(true);
@@ -636,7 +749,7 @@ export function InterestWorkflowPage() {
   /** The list endpoint does not expose a batch id, so mirror the prototype's PB-<year>-12. */
   const payoutBatchId = w.batchId ?? `PB-${w.year}-12`;
   const payoutBatchPath = paths.admin.payoutBatch(payoutBatchId, {
-    interestConfigId: interestConfigIdValue,
+    interestConfigId: activeId,
     year: w.year,
   });
 
@@ -768,8 +881,8 @@ export function InterestWorkflowPage() {
       ? (w.bands ?? []).length > 0
       : w.rate != null;
   const isMaker = w.maker === adminName;
-  /** ADM-16/17: a Super Admin checks — including their own maker request; only non-Super Admins are blocked from approving. */
-  const canCheck = isSuper;
+  /** ADM-16/17: a different Super Admin checks. Makers never check their own request. */
+  const canCheck = isSuper && !isMaker;
 
   const savePeriod = () => {
     if (
@@ -924,22 +1037,53 @@ export function InterestWorkflowPage() {
           rate:
             rateMode === "Fixed rate" ? fixedRate : Number(bands[0]?.rate || 0),
         }),
-      () => setStage(3),
+      (result) => {
+        const created = result as InterestWorkflow | undefined;
+        if (!created) {
+          setStage(3);
+          return;
+        }
+        // Adopt the server record so every later endpoint uses the real config
+        // id, while keeping step 1/2 inputs and advancing to Calculation.
+        const createdId = created.id ? String(created.id) : null;
+        setW((prev) => ({
+          ...(prev ?? createDraftWorkflow()),
+          ...created,
+          year:
+            created.year ||
+            prev?.year ||
+            draftYear ||
+            new Date().getFullYear(),
+          start: created.start || config.savings_start,
+          end: created.end || config.savings_end,
+          close: created.close || config.contribution_close,
+          rate: created.rate ?? prev?.rate ?? fixedRate,
+          done: Math.max(prev?.done ?? 0, 2),
+          stage: 3,
+        }));
+        if (createdId) {
+          setActiveId(createdId);
+          if (draftYear != null) writeStoredConfigId(draftYear, createdId);
+        }
+        setStage(3);
+      },
       "Configuration saved.",
+      // The new id is adopted above; reloading the old year id would 404.
+      { reloadAfter: false },
     );
   };
   const calculate = () =>
     run(
       () =>
         repos.admin
-          .runInterestCalculation(interestConfigIdValue)
+          .runInterestCalculation(activeId)
           .then((calculation) =>
             repos.admin
-              .getInterestEntries(interestConfigIdValue)
+              .getInterestEntries(activeId)
               .then((entries) => {
                 const cache = { calculation, entries };
-                writeCalculationCache(interestConfigIdValue, cache);
-                calculationFetchRef.current = interestConfigIdValue;
+                writeCalculationCache(activeId, cache);
+                calculationFetchRef.current = activeId;
                 return cache;
               }),
           ),
@@ -970,7 +1114,7 @@ export function InterestWorkflowPage() {
     run(
       () =>
         repos.admin
-          .setInterestExclusions(interestConfigIdValue, [
+          .setInterestExclusions(activeId, [
             ...(w.excludedMemberIds ?? []),
             m.id,
           ])
@@ -989,11 +1133,11 @@ export function InterestWorkflowPage() {
     run(
       () =>
         repos.admin
-          .setInterestExclusions(interestConfigIdValue, [])
+          .setInterestExclusions(activeId, [])
           .then((wf) =>
             audit(
               "Restored payout members",
-              `Interest ${interestConfigIdValue}`,
+              `Interest ${activeId}`,
               `${(w.excludedMemberIds ?? []).length} restored · ${wf.eligible} eligible`,
               "Financial",
             ),
@@ -1005,11 +1149,11 @@ export function InterestWorkflowPage() {
     run(
       () =>
         repos.admin
-          .submitInterest(interestConfigIdValue, note, adminName)
+          .submitInterest(activeId, note, adminName)
           .then((wf) =>
             audit(
               "Submitted interest for approval",
-              `Interest ${interestConfigIdValue}`,
+              `Interest ${activeId}`,
               `${wf.eligible} eligible · ${rateLabel(wf)}`,
               "Financial",
             ),
@@ -1017,21 +1161,30 @@ export function InterestWorkflowPage() {
       () => {},
       "Sent for approval.",
     );
+  /** Defence in depth: the maker/checker split must hold even if a modal is opened stale. */
+  const assertCanCheck = () => {
+    if (!isSuper) throw new Error("Only a Super Admin can approve.");
+    if (isMaker)
+      throw new Error("You can’t approve or return a request you prepared.");
+  };
   const approve = () =>
     run(
-      () =>
-        repos.admin.decideInterest(interestConfigIdValue, "Approved", {
+      () => {
+        assertCanCheck();
+        return repos.admin.decideInterest(activeId, "Approved", {
           by: adminName,
           role: admin?.role,
-        }),
+        });
+      },
       () => setApproveOpen(false),
       "Configuration approved.",
     );
   const returnToMaker = () =>
     run(
-      () =>
-        repos.admin
-          .decideInterest(interestConfigIdValue, "Returned", {
+      () => {
+        assertCanCheck();
+        return repos.admin
+          .decideInterest(activeId, "Returned", {
             by: adminName,
             role: admin?.role,
             reason,
@@ -1039,11 +1192,12 @@ export function InterestWorkflowPage() {
           .then(() =>
             audit(
               "Returned interest to maker",
-              `Interest ${interestConfigIdValue}`,
+              `Interest ${activeId}`,
               reason,
               "Financial",
             ),
-          ),
+          );
+      },
       () => {
         setReturnOpen(false);
         setReason("");
@@ -1059,7 +1213,7 @@ export function InterestWorkflowPage() {
     return run(
       () =>
         repos.admin.notifyInterest(
-          interestConfigIdValue,
+          activeId,
           selectedChannels,
           adminName,
         ),
@@ -1082,7 +1236,7 @@ export function InterestWorkflowPage() {
             <Pill tone={STATUS_TONE[w.status]}>
               {w.statusLabel || w.status}
             </Pill>{" "}
-            Maker: Administrator · Checker: Super Admin
+            Maker: {w.maker ?? "Administrator"} · Checker: a different Super Admin
           </span>
         }
         back={paths.admin.interest}
@@ -1094,6 +1248,7 @@ export function InterestWorkflowPage() {
             const completed = s.status === "completed";
             const current =
               !completed && (s.status === "current" || n === stage);
+            const viewing = n === stage;
             const openable = completed || current || (n === 7 && batchCreated);
             return (
               <button
@@ -1101,7 +1256,7 @@ export function InterestWorkflowPage() {
                 disabled={!openable}
                 title={openable ? s.label : "Finish the earlier stages first"}
                 onClick={() => goToStage(n)}
-                className={`flex flex-col items-start gap-1.5 rounded-2xl border-[1.5px] p-2.5 text-left text-xs font-bold transition ${current ? "border-brand bg-[#faf7fe] text-ink" : "border-line bg-white text-mute"} ${!openable ? "cursor-not-allowed opacity-50" : ""}`}
+                className={`flex flex-col items-start gap-1.5 rounded-2xl p-2.5 text-left text-xs font-bold transition ${viewing ? "border-2 border-brand bg-[#faf7fe] text-ink" : current ? "border-[1.5px] border-brand bg-[#faf7fe] text-ink" : "border-[1.5px] border-line bg-white text-mute"} ${!openable ? "cursor-not-allowed opacity-50" : ""}`}
               >
                 <span
                   className={`flex size-6 items-center justify-center rounded-full text-xs font-extrabold ${completed ? "bg-brand text-white" : current ? "bg-gold text-[#2a1a00]" : "bg-soft text-mute"}`}
@@ -1119,7 +1274,7 @@ export function InterestWorkflowPage() {
         )}
 
         {stage === 1 && (
-          <Card className="flex max-w-2xl flex-col gap-4">
+          <Card className="flex w-full flex-col gap-4">
             <h2 className="text-base font-extrabold">Period setup</h2>
             <div className="grid gap-4 md:grid-cols-3">
               <TextField
@@ -1161,7 +1316,7 @@ export function InterestWorkflowPage() {
         )}
 
         {stage === 2 && (
-          <Card className="flex max-w-2xl flex-col gap-4">
+          <Card className="flex w-full flex-col gap-4">
             <h2 className="text-base font-extrabold">Rule configuration</h2>
             <div className="grid gap-4 md:grid-cols-3"></div>
             <div className="flex flex-col gap-2">
@@ -1711,12 +1866,17 @@ export function InterestWorkflowPage() {
         )}
 
         {stage === 5 && (
-          <Card className="flex max-w-2xl flex-col items-start gap-3">
+          <Card className="flex w-full flex-col items-start gap-3">
             <h2 className="text-base font-extrabold">Approval</h2>
             {w.status === "Approved" ? (
               <Banner tone="info" icon={<Check size={20} />}>
                 Approved by {w.checker ?? w.reviewedBy?.name ?? "the checker"}{" "}
                 on {formatApprovalDate(w.approvedAt ?? w.reviewedAt)}.
+              </Banner>
+            ) : isMaker ? (
+              <Banner tone="neutral">
+                You prepared this request. Another Super Admin must approve or
+                return it — makers cannot check their own work.
               </Banner>
             ) : !awaitingApproval ? (
               <p className="text-sm font-semibold text-mute">
@@ -1731,12 +1891,6 @@ export function InterestWorkflowPage() {
                 </p>
                 {w.rateMode === "Contribution ranges" && (
                   <BandSummary bands={w.bands ?? []} />
-                )}
-                {isMaker && (
-                  <p className="text-sm text-mute">
-                    You prepared this request — as a Super Admin you can approve
-                    it yourself.
-                  </p>
                 )}
                 {w.note && (
                   <p className="text-sm text-mute">Maker’s note: {w.note}</p>
@@ -1761,14 +1915,9 @@ export function InterestWorkflowPage() {
                   </Button>
                 </div>
               </>
-            ) : isMaker ? (
-              <Banner tone="neutral">
-                Waiting for a Super Admin to approve. Switch role from the
-                header in demo mode.
-              </Banner>
             ) : (
               <Banner tone="neutral">
-                Only a Super Admin can approve.{" "}
+                Only a different Super Admin can approve.{" "}
                 {isSuper ? "" : "Switch role from the header in demo mode."}
               </Banner>
             )}
@@ -1776,7 +1925,7 @@ export function InterestWorkflowPage() {
         )}
 
         {stage === 6 && (
-          <Card className="flex max-w-2xl flex-col items-start gap-3">
+          <Card className="flex w-full flex-col items-start gap-3">
             <h2 className="text-base font-extrabold">Payout batch</h2>
             {!batchCreated ? (
               <>
@@ -1791,9 +1940,7 @@ export function InterestWorkflowPage() {
                     onClick={() =>
                       run(
                         () =>
-                          repos.admin.createInterestPayouts(
-                            interestConfigIdValue,
-                          ),
+                          repos.admin.createInterestPayouts(activeId),
                         () => {
                           setPayoutBatchCreated(true);
                           setStage(7);
@@ -1821,7 +1968,7 @@ export function InterestWorkflowPage() {
         )}
 
         {stage === 7 && (
-          <Card className="flex max-w-2xl flex-col gap-3">
+          <Card className="flex w-full flex-col gap-3">
             <h2 className="text-base font-extrabold">Notify members</h2>
             <Card tone="soft">
               <p className="text-sm font-semibold leading-relaxed">
@@ -1836,7 +1983,7 @@ export function InterestWorkflowPage() {
                   checked={channels[c]}
                   onChange={(v) => setChannels({ ...channels, [c]: v })}
                 >
-                  {c === "InApp" ? "In-app" : c === "Sms" ? "SMS" : c}
+                  {c === "InApp" ? "In-app" : c}
                 </Checkbox>
               ))}
             </div>
@@ -1855,7 +2002,7 @@ export function InterestWorkflowPage() {
         )}
 
         {stage === 8 && (
-          <Card className="flex max-w-2xl flex-col gap-2">
+          <Card className="flex w-full flex-col gap-2">
             <h2 className="text-base font-extrabold">History</h2>
             {historyLoading && interestHistory.length === 0 ? (
               <p className="text-sm font-semibold text-mute">
@@ -1872,9 +2019,14 @@ export function InterestWorkflowPage() {
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-tint text-brand-dark">
                     <Check size={14} />
                   </span>
-                  <span className="flex-1 font-semibold">{ev}</span>
-                  <span className="text-xs font-semibold text-mute">
-                    {who} · {at.slice(0, 16).replace("T", " ")}
+                  <span className="flex flex-1 flex-col gap-0.5">
+                    <span className="font-semibold">{historyAction(ev)}</span>
+                    <span className="text-xs font-semibold text-mute">
+                      {who}
+                    </span>
+                  </span>
+                  <span className="whitespace-nowrap text-xs font-semibold text-mute">
+                    {formatHistoryDate(at)}
                   </span>
                 </div>
               ))

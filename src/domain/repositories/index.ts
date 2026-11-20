@@ -35,6 +35,8 @@ import type {
   NotificationSettings,
   ReferralGroup,
   Registration,
+  AdminReports,
+  AdminReportsQuery,
   ReportKind,
   ReportResult,
   SavingsDashboard,
@@ -596,7 +598,12 @@ export interface AdminRepository {
     memberId: string,
     opts: { method: string; proof: string; note: string; by: string },
   ): Promise<PayoutBatch>;
-  /** ADM-21: filtered report preview (exported client-side to CSV). */
+  /**
+   * ADM-21: `GET /admin/reports?year=…&month=…&eligibility=…`. The response
+   * carries every report section; the page selects one to render and export.
+   */
+  getReports(query: AdminReportsQuery): Promise<AdminReports>;
+  /** Selects one section from `getReports`; kept for callers with a local kind. */
   runReport(
     kind: ReportKind,
     year: number,

@@ -23,6 +23,31 @@ const STATUS_TONE = {
   "Paid out": "ok",
 } as const;
 
+/** The savings year we are currently in. Used when no configuration exists yet. */
+const CURRENT_YEAR = new Date().getFullYear();
+
+/** A List Config row, optionally the synthesised current-year placeholder. */
+interface InterestRow extends InterestYearSummary {
+  placeholder?: boolean;
+}
+
+/**
+ * A virtual List Config row for the current year. The prototype always shows a
+ * "Not started" row for the active year; the real backend only returns rows
+ * once a configuration exists, so we synthesise the same row here. Its missing
+ * `id` makes the year the workflow route id until the server creates the config.
+ */
+const currentYearPlaceholder = (): InterestRow => ({
+  year: CURRENT_YEAR,
+  status: "Not started",
+  rate: null,
+  eligible: 0,
+  forfeited: 0,
+  contributionsKobo: 0,
+  interestKobo: 0,
+  placeholder: true,
+});
+
 /** Matches the prototype's `DAY()` display, e.g. 2 Oct 2026. */
 const formatApprovedAt = (value?: string | null) => {
   if (!value) return "—";
@@ -40,12 +65,12 @@ const formatApprovedAt = (value?: string | null) => {
 export function InterestPage() {
   const { repos } = useServices();
   const navigate = useNavigate();
-  const [years, setYears] = useState<InterestYearSummary[]>([]);
+  const [years, setYears] = useState<InterestRow[]>([]);
   const [workflow, setWorkflow] = useState<InterestWorkflow | null>(null);
   const [done, setDone] = useState(0);
   const [confirm, setConfirm] = useState(false);
   const [loading, setLoading] = useState(true);
-  const current = years.find((y) => y.year === 2026);
+  const current = years.find((y) => y.year === CURRENT_YEAR);
 
   useEffect(() => {
     let live = true;
@@ -54,10 +79,15 @@ export function InterestPage() {
       .listInterest()
       .then((data) => {
         if (!live) return;
-        setYears(data);
-        const target = data.find((y) => y.year === 2026);
+        // Show one row for the active year even before a config exists on the
+        // server, exactly like the prototype's always-present current-year row.
+        const rows = data.some((y) => y.year === CURRENT_YEAR)
+          ? data
+          : [...data, currentYearPlaceholder()];
+        setYears(rows);
+        const target = rows.find((y) => y.year === CURRENT_YEAR);
         return repos.admin
-          .getInterest(target?.id ?? 2026)
+          .getInterest(target?.id ?? CURRENT_YEAR)
           .then(
             ({ workflow: currentWorkflow }) => {
               if (!live) return;
@@ -92,15 +122,15 @@ export function InterestPage() {
    * configuration actually is (e.g. "Submitted") rather than "Not started".
    */
   const statusOf = (y: InterestYearSummary) =>
-    y.year === 2026 && workflow ? workflow.status : y.status;
+    y.year === CURRENT_YEAR && workflow ? workflow.status : y.status;
   const statusLabelOf = (y: InterestYearSummary) =>
-    y.year === 2026 && workflow
+    y.year === CURRENT_YEAR && workflow
       ? workflow.statusLabel || workflow.status
       : y.status;
 
   const progress = (y: InterestYearSummary) => {
     const status = statusOf(y);
-    if (y.year !== 2026) return "Closed";
+    if (y.year !== CURRENT_YEAR) return "Closed";
     if (status === "Not started") return "—";
     if (status === "Paid out") return "Paid out";
     return done >= 8
@@ -109,13 +139,13 @@ export function InterestPage() {
   };
 
   const cta = (y: InterestYearSummary) => {
-    if (y.year !== 2026) return "View";
+    if (y.year !== CURRENT_YEAR) return "View";
     return statusOf(y) === "Not started" ? "Start configuration" : "Continue";
   };
 
   const newConfig = async () => {
     if (current && statusOf(current) !== "Not started") setConfirm(true);
-    else navigate(paths.admin.interestConfig(current?.id ?? 2026));
+    else navigate(paths.admin.interestConfig(current?.id ?? CURRENT_YEAR));
   };
 
   return (
@@ -176,7 +206,7 @@ export function InterestPage() {
             </p>
           </Card>
         ) : (
-          <DataTable<InterestYearSummary>
+          <DataTable<InterestRow>
             padding="relaxed"
             rows={[...years].sort((a, b) => b.year - a.year)}
             rowKey={(r) => String(r.id ?? r.year)}
@@ -193,36 +223,49 @@ export function InterestPage() {
               },
               {
                 header: "Progress",
-                render: (y) => <span className="text-mute">{progress(y)}</span>,
+                render: (y) => (
+                  <span className="text-mute">
+                    {y.placeholder ? "—" : progress(y)}
+                  </span>
+                ),
               },
               {
                 header: "Rate",
                 align: "right",
                 render: (y) =>
-                  y.rateMode === "Contribution ranges"
-                    ? "By range"
-                    : y.rate != null
-                      ? `${y.rate}%`
-                      : "Not set",
+                  y.placeholder
+                    ? "—"
+                    : y.rateMode === "Contribution ranges"
+                      ? "By range"
+                      : y.rate != null
+                        ? `${y.rate}%`
+                        : "Not set",
               },
               {
                 header: "Eligible members",
                 align: "right",
-                render: (y) => y.eligible.toLocaleString(),
+                render: (y) =>
+                  y.placeholder ? "—" : y.eligible.toLocaleString(),
               },
               {
                 header: "Total interest",
                 align: "right",
                 render: (y) =>
-                  y.interestKobo ? <b>{formatNaira(y.interestKobo)}</b> : "—",
+                  y.placeholder
+                    ? "—"
+                    : y.interestKobo
+                      ? <b>{formatNaira(y.interestKobo)}</b>
+                      : "—",
               },
               {
                 header: "Approved by",
                 render: (y) => (
                   <span className="text-mute">
-                    {y.checker
-                      ? `${y.checker} · ${formatApprovedAt(y.approvedAt)}`
-                      : "—"}
+                    {y.placeholder
+                      ? "—"
+                      : y.checker
+                        ? `${y.checker} · ${formatApprovedAt(y.approvedAt)}`
+                        : "—"}
                   </span>
                 ),
               },
@@ -232,7 +275,7 @@ export function InterestPage() {
                   <Button
                     size="sm"
                     variant={
-                      y.year === 2026 && statusOf(y) === "Not started"
+                      y.year === CURRENT_YEAR && statusOf(y) === "Not started"
                         ? "primary"
                         : "outline"
                     }
@@ -252,7 +295,7 @@ export function InterestPage() {
 
       <Modal
         open={confirm}
-        title="2026 is already configured"
+        title={`${CURRENT_YEAR} is already configured`}
         onClose={() => setConfirm(false)}
         footer={
           <>
@@ -261,17 +304,17 @@ export function InterestPage() {
             </Button>
             <Button
               onClick={() =>
-                navigate(paths.admin.interestConfig(current?.id ?? 2026))
+                navigate(paths.admin.interestConfig(current?.id ?? CURRENT_YEAR))
               }
             >
-              Open 2026
+              Open {CURRENT_YEAR}
             </Button>
           </>
         }
       >
         <p className="leading-relaxed text-[#474252]">
-          There is already an interest configuration for savings year 2026.
-          There can only be one per year.
+          There is already an interest configuration for savings year{" "}
+          {CURRENT_YEAR}. There can only be one per year.
         </p>
       </Modal>
     </>

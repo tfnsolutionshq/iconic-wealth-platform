@@ -409,7 +409,7 @@ export interface InterestWizardStage extends InterestStage {
   step: number;
 }
 /** Notification channels accepted by `POST /admin/interest/{id}/notify`. */
-export type InterestNotifyChannel = "in_app" | "email" | "sms" | "whatsapp";
+export type InterestNotifyChannel = "in_app" | "email" | "whatsapp";
 /** A user attached to an interest workflow milestone (created by / submitted by / reviewed by). */
 export interface InterestActor {
   id: string;
@@ -496,14 +496,33 @@ export interface PayoutBatch {
   history: [string, string, string][];
 }
 
-export type ReportKind =
+/** Report sections rendered by `#/admin/reports`. */
+export type AdminReportKey =
   | "compliance"
-  | "collections"
   | "eligibility"
-  | "charges";
+  | "charges"
+  | "payout"
+  | "late"
+  | "savings";
+/** `collections` is kept as a legacy alias for the charges report. */
+export type ReportKind = AdminReportKey | "collections";
 export interface ReportResult {
   headers: string[];
   rows: string[][];
+}
+/** `GET /admin/reports` accepts only these filters — there is no `kind` param. */
+export interface AdminReportsQuery {
+  year: number;
+  /** Sent for month-based reports (compliance and charges). */
+  month?: number | "all";
+  /** Sent when a status filter is active; the API names this `eligibility`. */
+  eligibility?: string;
+}
+export interface AdminReports {
+  year: number;
+  month?: number | "all";
+  eligibility?: string;
+  reports: Record<AdminReportKey, ReportResult>;
 }
 
 export type ReferralStatus = "Saving" | "Pending" | "Inactive" | "Not started";
@@ -522,7 +541,7 @@ export interface AdminListItem {
 }
 
 export interface NotificationSettings {
-  channels: ("In-app" | "Email" | "SMS" | "WhatsApp")[];
+  channels: ("In-app" | "Email" | "WhatsApp")[];
   events: { key: string; label: string }[];
   matrix: Record<string, Record<string, boolean>>;
   reminderDays: number;

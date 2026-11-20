@@ -6,3 +6,4 @@ export * from './registration';
 export * from './login';
 export * from './wallet';
 export * from './interest';
+export * from './reports';
