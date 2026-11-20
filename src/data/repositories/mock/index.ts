@@ -8,13 +8,20 @@ import type {
   ContributionPaymentMethod,
   InterestBand,
   InterestCalcRow,
+  InterestCalculationEntries,
+  InterestNotifyChannel,
+  InterestWizardStage,
   InterestWorkflow,
   Kobo,
   MonthIndex,
   NotificationSettings,
   PayoutBatch,
+  PayoutBatchStatus,
   PayoutDestination,
   Registration,
+  AdminReportKey,
+  AdminReports,
+  AdminReportsQuery,
   ReportKind,
   ReportResult,
   SavingsDashboard,
@@ -36,6 +43,9 @@ import type {
   NewRegistration,
   InterestRulesInput,
   PayoutAccountRepository,
+  PayoutBatchCounts,
+  PayoutBatchListPage,
+  PayoutBatchQuery,
   RegistrationRepository,
   RegistrationStarted,
   SavingsDashboardRepository,
@@ -59,6 +69,7 @@ import {
   deadlineFor,
   formatNaira,
   formatShortDate,
+  interestWizardSteps,
   minimumFor,
   monthState,
   monthTotal,
@@ -75,6 +86,7 @@ import {
   type PlatformSettings,
   type RegistrationDetails,
 } from "@/domain/rules";
+import { REPORT_HEADERS } from "@/domain/rules/reports";
 import type { Clock } from "@/domain/services/clock";
 import {
   adminUsers,
@@ -110,6 +122,46 @@ const banks: Bank[] = [
   { code: "035", name: "Wema Bank" },
   { code: "057", name: "Zenith Bank" },
 ];
+
+const reportKey = (kind: ReportKind): AdminReportKey =>
+  kind === "collections" ? "charges" : kind;
+const matchesReportStatus = (status: string, eligibility?: string) =>
+  !eligibility ||
+  eligibility === "All" ||
+  status === eligibility ||
+  status.startsWith(eligibility);
+
+/** The prototype's computed compliance status for a member and month. */
+function complianceStatus(
+  member: (typeof memberSummaries)[number],
+  month: number | undefined,
+): string {
+  const index = month ?? 8;
+  if (index < member.monthsPaid) return "Paid";
+  if (index > member.monthsPaid) return "Not due";
+  if (index !== 8) return "Due";
+  if (
+    member.currentMonthStatus === "Paid" ||
+    member.currentMonthStatus === "Locked"
+  )
+    return "Paid";
+  if (member.currentMonthStatus === "Missed") return "Missed";
+  return "Due";
+}
+
+function septemberStatus(member: (typeof memberSummaries)[number]): string {
+  if (
+    member.currentMonthStatus === "Paid" ||
+    member.currentMonthStatus === "Locked"
+  )
+    return "Paid";
+  if (
+    member.currentMonthStatus === "Missed" ||
+    member.currentMonthStatus === "BeforeJoining"
+  )
+    return "Missed";
+  return "Due";
+}
 
 export class MockAuthRepository implements AuthRepository {
   async login(identifier: string, _password: string): Promise<LoginResult> {
@@ -832,7 +884,7 @@ export class MockContributionRepository implements ContributionRepository {
 }
 
 const notifications: NotificationSettings = {
-  channels: ["In-app", "Email", "SMS", "WhatsApp"],
+  channels: ["In-app", "Email", "WhatsApp"],
   events: [
     { key: "due", label: "Payment due reminder" },
     { key: "ok", label: "Payment received" },
@@ -842,12 +894,12 @@ const notifications: NotificationSettings = {
     { key: "ann", label: "Year-end announcement" },
   ],
   matrix: {
-    due: { "In-app": true, Email: true, SMS: true, WhatsApp: false },
-    ok: { "In-app": true, Email: true, SMS: false, WhatsApp: false },
-    fail: { "In-app": true, Email: true, SMS: true, WhatsApp: false },
-    pay: { "In-app": true, Email: true, SMS: true, WhatsApp: true },
-    reg: { "In-app": true, Email: true, SMS: false, WhatsApp: false },
-    ann: { "In-app": true, Email: true, SMS: false, WhatsApp: false },
+    due: { "In-app": true, Email: true, WhatsApp: false },
+    ok: { "In-app": true, Email: true, WhatsApp: false },
+    fail: { "In-app": true, Email: true, WhatsApp: false },
+    pay: { "In-app": true, Email: true, WhatsApp: true },
+    reg: { "In-app": true, Email: true, WhatsApp: false },
+    ann: { "In-app": true, Email: true, WhatsApp: false },
   },
   reminderDays: 3,
 };
@@ -857,6 +909,49 @@ const interestOf = (year: number) => {
   if (!w) throw notFound("Interest configuration");
   return w;
 };
+/** Keeps the server-style progress fields in step with mock workflow transitions. */
+const completeInterestStage = (
+  w: InterestWorkflow,
+  key: string,
+  at = new Date().toISOString(),
+) => {
+  w.stages = w.stages.map((s) =>
+    s.key === key ? { ...s, status: "completed" as const, completedAt: at } : s,
+  );
+  w.completedStages = w.stages
+    .filter((s) => s.status === "completed")
+    .map((s) => s.key);
+  const next = w.stages.find((s) => s.status === "pending");
+  w.currentStage = next?.key ?? null;
+  w.stages = w.stages.map((s) =>
+    next && s.key === next.key ? { ...s, status: "current" as const } : s,
+  );
+  w.statusLabel = w.status;
+};
+const resetInterestStagesFrom = (w: InterestWorkflow, key: string) => {
+  const start = w.stages.findIndex((s) => s.key === key);
+  w.stages = w.stages.map((s, i) =>
+    i < start
+      ? s
+      : i === start
+        ? { ...s, status: "current" as const, completedAt: null }
+        : { ...s, status: "pending" as const, completedAt: null },
+  );
+  w.completedStages = w.stages
+    .filter((s) => s.status === "completed")
+    .map((s) => s.key);
+  w.currentStage = key;
+  w.statusLabel = w.status;
+};
+/** Mirrors the `wizard_stages` array returned by the config detail endpoint. */
+const buildInterestWizardStages = (
+  w: InterestWorkflow,
+): InterestWizardStage[] =>
+  interestWizardSteps(w).map((s) => ({
+    ...s,
+    completedAt: s.status === "completed" ? "2026-11-16T13:56:52+00:00" : null,
+  }));
+
 const rateForContribution = (
   amountKobo: Kobo,
   w: InterestWorkflow,
@@ -927,7 +1022,10 @@ const completeBatchIfDone = (b: PayoutBatch) => {
       "System",
     ]);
     const w = interestYears.find((x) => x.year === b.year);
-    if (w) w.status = "Paid out";
+    if (w) {
+      w.status = "Paid out";
+      w.statusLabel = w.status;
+    }
   } else if (b.rows.some((r) => r.status === "Failed")) b.status = "Partial";
 };
 
@@ -1223,12 +1321,106 @@ export class MockAdminRepository implements AdminRepository {
       120,
     );
   }
-  async getInterest(year: number) {
-    const w = interestOf(year);
+  async getInterest(interestConfigId: number) {
+    const w = interestOf(interestConfigId);
     return delay(
-      { workflow: w, preview: hasRateConfig(w) ? calcPreview(w) : [] },
+      {
+        workflow: { ...w, wizardStages: buildInterestWizardStages(w) },
+        preview: hasRateConfig(w) ? calcPreview(w) : [],
+      },
       120,
     );
+  }
+  async createInterestConfig(payload: {
+    year: number;
+    savings_start: string;
+    savings_end: string;
+    contribution_close: string;
+    rate: number;
+    rounding: string;
+    applies_to: string;
+    proportional_basis: boolean;
+    rate_type?: "fixed" | "range";
+    ranges?: {
+      from_amount: number | null;
+      to_amount: number | null;
+      rate: number;
+    }[];
+    member_ids?: string[];
+  }) {
+    let w = interestYears.find((x) => x.year === payload.year);
+    if (!w) {
+      // A brand-new year starts from the current-year shape, without inheriting
+      // any rates, totals or approval data from an existing configuration.
+      const template =
+        interestYears.find((x) => x.year === new Date().getFullYear()) ??
+        interestYears[interestYears.length - 1];
+      w = {
+        ...structuredClone(template),
+        id: `IC-${payload.year}`,
+        year: payload.year,
+        status: "Not started",
+        statusLabel: "Not started",
+        rate: null,
+        rateMode: "Fixed rate",
+        bands: [],
+        eligible: 0,
+        forfeited: 0,
+        contributionsKobo: 0,
+        interestKobo: 0,
+        closed: false,
+        stage: 1,
+        done: 0,
+        scope: "All members",
+        selectedMemberIds: [],
+        excludedMemberIds: [],
+        calc: false,
+        note: "",
+        notified: false,
+        history: [],
+        currentStage: "configure",
+        completedStages: [],
+        stages: [],
+        calculationRunAt: null,
+        createdBy: null,
+        submittedBy: null,
+        reviewedBy: null,
+        submittedAt: null,
+        reviewedAt: null,
+      };
+      interestYears.push(w);
+    }
+    if (w.closed) throw new Error("Closed years are read-only.");
+    const bands: InterestBand[] = (payload.ranges ?? []).map((r) => ({
+      minKobo: naira(r.from_amount ?? 0),
+      maxKobo: r.to_amount == null ? null : naira(r.to_amount),
+      rate: r.rate,
+    }));
+    Object.assign(w, {
+      start: payload.savings_start,
+      end: payload.savings_end,
+      close: payload.contribution_close,
+      rate: payload.rate,
+      rateMode:
+        payload.rate_type === "range" ? "Contribution ranges" : "Fixed rate",
+      bands,
+      rounding: payload.rounding,
+      scope:
+        payload.applies_to === "selected" ? "Selected members" : "All members",
+      selectedMemberIds: payload.member_ids ?? [],
+      status: "Draft",
+      statusLabel: "Draft",
+      done: 2,
+      stage: 3,
+      currentStage: "calculate",
+      completedStages: ["configure"],
+      history: [
+        ...w.history,
+        [new Date().toISOString(), "interest.config.created", "You"],
+      ],
+    });
+    w.wizardStages = buildInterestWizardStages(w);
+    return delay(w);
   }
   async saveInterestPeriod(
     year: number,
@@ -1239,9 +1431,38 @@ export class MockAdminRepository implements AdminRepository {
     Object.assign(w, period);
     if (w.status === "Not started" || w.status === "Returned")
       w.status = "Draft";
+    w.statusLabel = w.status;
     w.done = Math.max(w.done, 1);
     w.stage = 2;
     w.history.push([new Date().toISOString(), "Saved period setup", "You"]);
+    return delay(w);
+  }
+
+  async saveInterestConfig(interestConfigId: number, config: {
+    savings_start: string;
+    savings_end: string;
+    contribution_close: string;
+    rate: number;
+    rounding: string;
+    applies_to: string;
+    proportional_basis: boolean;
+  }) {
+    const w = interestOf(interestConfigId);
+    if (w.closed) throw new Error("Closed years are read-only.");
+    Object.assign(w, {
+      savings_start: config.savings_start,
+      savings_end: config.savings_end,
+      contribution_close: config.contribution_close,
+      rate: config.rate,
+      rounding: config.rounding,
+      applies_to: config.applies_to,
+      proportional_basis: config.proportional_basis,
+    });
+    if (w.status === "Not started" || w.status === "Returned") w.status = "Draft";
+    w.statusLabel = w.status;
+    w.done = Math.max(w.done, 1);
+    w.stage = 2;
+    w.history.push([new Date().toISOString(), "Saved interest configuration", "You"]);
     return delay(w);
   }
   async saveInterestRules(year: number, rules: InterestRulesInput) {
@@ -1299,6 +1520,8 @@ export class MockAdminRepository implements AdminRepository {
     w.selectedMemberIds = rules.selectedMemberIds;
     if (w.status === "Not started" || w.status === "Returned")
       w.status = "Draft";
+    w.statusLabel = w.status;
+    completeInterestStage(w, "configure");
     w.done = Math.max(w.done, 2);
     w.stage = 3;
     const rateLabel =
@@ -1342,47 +1565,73 @@ export class MockAdminRepository implements AdminRepository {
     ]);
     return delay(w);
   }
-  async runInterestCalculation(year: number) {
-    const w = interestOf(year);
+  async runInterestCalculation(interestConfigId: number | string) {
+    const w = interestOf(Number(interestConfigId));
     if (w.closed) throw new Error("Closed years are read-only.");
     if (!hasRateConfig(w)) throw new Error("Set interest rules first.");
     const preview = calcPreview(w);
     applyPreviewTotals(w, preview);
     w.calc = true;
+    w.calculationRunAt = new Date().toISOString();
+    completeInterestStage(w, "calculate");
     w.done = Math.max(w.done, 3);
     w.stage = 4;
     w.history.push([new Date().toISOString(), "Ran calculation", "You"]);
     return delay(w);
+  }
+  async getInterestEntries(
+    interestConfigId: number | string,
+  ): Promise<InterestCalculationEntries> {
+    const w = interestOf(Number(interestConfigId));
+    const entries = calcPreview(w);
+    return delay({
+      summary: {
+        eligible: entries.filter((p) => p.eligible).length,
+        forfeited: entries.filter((p) => !p.eligible).length,
+        eligibleContributionsKobo: entries.reduce(
+          (s, p) => s + p.contributionsKobo,
+          0,
+        ),
+        interestKobo: entries.reduce((s, p) => s + p.interestKobo, 0),
+      },
+      entries,
+    });
   }
   async submitInterest(year: number, note: string, by: string) {
     const w = interestOf(year);
     if (w.closed) throw new Error("Closed years are read-only.");
     if (!w.calc) throw new Error("Run the calculation first.");
     w.status = "Pending approval";
+    w.statusLabel = w.status;
     w.note = note;
     w.maker = by;
+    w.submittedBy = { id: "", name: by };
+    w.submittedAt = new Date().toISOString();
+    completeInterestStage(w, "submit");
     w.done = Math.max(w.done, 4);
     w.stage = 5;
     w.history.push([new Date().toISOString(), "Submitted for approval", by]);
     return delay(w);
   }
   async decideInterest(
-    year: number,
+    interestConfigId: number | string,
     decision: "Approved" | "Returned",
     opts: { by: string; role?: AdminRole; reason?: string },
   ) {
-    const w = interestOf(year);
+    const w = interestOf(Number(interestConfigId));
     if (w.closed) throw new Error("Closed years are read-only.");
+    if (opts.by === w.maker)
+      throw new Error("You can’t approve or return a request you prepared.");
     if (opts.role && opts.role !== "SuperAdmin")
       throw new Error("Only a Super Admin can approve.");
-    if (opts.by === w.maker && opts.role !== "SuperAdmin")
-      throw new Error(
-        "You can’t approve your own work. A Super Admin must approve it.",
-      );
     if (decision === "Approved") {
       w.status = "Approved";
+      w.statusLabel = w.status;
       w.checker = opts.by;
       w.approvedAt = new Date().toISOString().slice(0, 10);
+      w.reviewedBy = { id: "", name: opts.by };
+      w.reviewedAt = new Date().toISOString();
+      completeInterestStage(w, "approve");
       w.done = Math.max(w.done, 5);
       w.stage = 6;
       w.history.push([
@@ -1394,9 +1643,13 @@ export class MockAdminRepository implements AdminRepository {
       if (!opts.reason?.trim())
         throw new Error("A reason is required to return to maker.");
       w.status = "Returned";
+      w.statusLabel = w.status;
       w.rejectReason = opts.reason.trim();
       w.checker = opts.by;
+      w.reviewedBy = { id: "", name: opts.by };
+      w.reviewedAt = new Date().toISOString();
       w.calc = false;
+      resetInterestStagesFrom(w, "configure");
       w.done = 1;
       w.stage = 2;
       w.history.push([
@@ -1439,6 +1692,7 @@ export class MockAdminRepository implements AdminRepository {
     };
     payoutBatches.unshift(batch);
     w.batchId = batch.id;
+    completeInterestStage(w, "disburse");
     w.done = Math.max(w.done, 6);
     w.stage = 7;
     w.history.push([
@@ -1448,16 +1702,141 @@ export class MockAdminRepository implements AdminRepository {
     ]);
     return delay(batch);
   }
-  async notifyInterest(year: number, by: string) {
-    const w = interestOf(year);
+  async notifyInterest(
+    interestConfigId: number | string,
+    channels: InterestNotifyChannel[],
+    by: string,
+  ) {
+    const w = interestOf(
+      Math.trunc(Number(String(interestConfigId).match(/\d{4}/)?.[0] ?? 0)),
+    );
     w.notified = true;
     w.done = 8;
     w.stage = 8;
-    w.history.push([new Date().toISOString(), "Notified members", by]);
+    w.history.push([
+      new Date().toISOString(),
+      `Notified members via ${channels.join(", ") || "no channels"}`,
+      by,
+    ]);
     return delay(w);
   }
-  async listPayoutBatches() {
-    return delay(payoutBatches, 120);
+  async getInterestHistory(interestConfigId: number | string) {
+    const w = interestOf(
+      Math.trunc(Number(String(interestConfigId).match(/\d{4}/)?.[0] ?? 0)),
+    );
+    return delay(w.history.slice());
+  }
+  async getInterestPayouts(
+    interestConfigId: number | string,
+    batch: { id?: string; year?: number; month?: string } = {},
+  ) {
+    const year =
+      batch.year ??
+      Math.trunc(Number(String(interestConfigId).match(/\d{4}/)?.[0] ?? 0));
+    const id = batch.id ?? `PB-${year}-12`;
+    const existing = payoutBatches.find((x) => x.id === id);
+    if (existing)
+      return delay(
+        { ...existing, interestConfigId: String(interestConfigId) },
+        120,
+      );
+    const w = interestOf(year);
+    const banks = ["GTBank", "Access Bank", "First Bank", "UBA", "Zenith Bank"];
+    const maker = w.maker ?? "Administrator";
+    return delay(
+      {
+        id,
+        interestConfigId: String(interestConfigId),
+        year,
+        month: batch.month ?? "December",
+        status: "Awaiting approval" as const,
+        count: w.eligible,
+        savingsKobo: w.contributionsKobo,
+        interestKobo: w.interestKobo,
+        maker,
+        createdAt: w.submittedAt ?? new Date().toISOString(),
+        rows: calcPreview(w)
+          .filter((p) => p.eligible)
+          .map((p, i) => ({
+            memberId: p.memberId,
+            memberName: p.memberName,
+            savingsKobo: p.contributionsKobo,
+            interestKobo: p.interestKobo,
+            totalKobo: p.contributionsKobo + p.interestKobo,
+            account: `${banks[i % banks.length]} •••• ${(1000 + i * 137).toString().slice(-4)}`,
+            status: "Pending" as const,
+            reference: `IWH-P-${String(year).slice(2)}1218-${(2000 + i * 53).toString(36).toUpperCase().padStart(4, "0")}`,
+          })),
+        history: [[new Date().toISOString(), "Batch created", maker]],
+      } satisfies PayoutBatch,
+      120,
+    );
+  }
+  async createInterestPayouts(interestConfigId: number | string) {
+    const year =
+      Math.trunc(Number(String(interestConfigId).match(/\d{4}/)?.[0] ?? 0)) ||
+      new Date().getFullYear();
+    const batch = await this.getInterestPayouts(interestConfigId, { year });
+    if (!payoutBatches.some((x) => x.id === batch.id)) {
+      payoutBatches.unshift(batch);
+    }
+    const w = interestOf(year);
+    if (!w.batchId) {
+      const at = new Date().toISOString();
+      w.batchId = batch.id;
+      completeInterestStage(w, "disburse", at);
+      w.done = Math.max(w.done, 6);
+      w.stage = 7;
+      w.history.push([at, `Created payout batch ${batch.id}`, w.maker ?? "Administrator"]);
+    }
+    return batch;
+  }
+  listPayoutBatches(): Promise<PayoutBatch[]>;
+  listPayoutBatches(query: PayoutBatchQuery): Promise<PayoutBatchListPage>;
+  async listPayoutBatches(
+    query?: PayoutBatchQuery,
+  ): Promise<PayoutBatch[] | PayoutBatchListPage> {
+    if (!query) return delay(payoutBatches, 120);
+    const perPage = 15;
+    const page = Math.max(1, query.page ?? 1);
+    const countFor = (status: PayoutBatchStatus) =>
+      payoutBatches.filter((b) => b.status === status).length;
+    const counts: PayoutBatchCounts = {
+      all: payoutBatches.length,
+      awaiting_approval: countFor("Awaiting approval"),
+      returned: countFor("Returned to maker"),
+      processing: countFor("Processing"),
+      partial: countFor("Partial"),
+      completed: countFor("Completed"),
+    };
+    const filtered = payoutBatches.filter(
+      (b) =>
+        (!query.status || query.status === "All" || b.status === query.status) &&
+        (!query.year || query.year === "All" || b.year === Number(query.year)),
+    );
+    const total = filtered.length;
+    const lastPage = Math.max(1, Math.ceil(total / perPage));
+    const currentPage = Math.min(page, lastPage);
+    const data = filtered.slice(
+      (currentPage - 1) * perPage,
+      currentPage * perPage,
+    );
+    return delay(
+      {
+        data,
+        meta: {
+          current_page: currentPage,
+          per_page: perPage,
+          last_page: lastPage,
+          total,
+          counts,
+          availableYears: [...new Set(payoutBatches.map((b) => b.year))].sort(
+            (a, b) => b - a,
+          ),
+        },
+      },
+      120,
+    );
   }
   async getPayoutBatch(id: string) {
     return delay(batchOf(id), 120);
@@ -1468,12 +1847,10 @@ export class MockAdminRepository implements AdminRepository {
     opts: { by: string; role?: AdminRole; reason?: string },
   ) {
     const b = batchOf(id);
+    if (opts.by === b.maker)
+      throw new Error("You can’t approve or return a batch you prepared.");
     if (opts.role && opts.role !== "SuperAdmin")
       throw new Error("Only a Super Admin can approve a payout batch.");
-    if (opts.by === b.maker && opts.role !== "SuperAdmin")
-      throw new Error(
-        "You can’t approve your own work. A Super Admin must approve it.",
-      );
     if (decision === "Approved") {
       b.status = "Approved";
       b.checker = opts.by;
@@ -1570,95 +1947,120 @@ export class MockAdminRepository implements AdminRepository {
     completeBatchIfDone(b);
     return delay(b);
   }
+  async getReports(query: AdminReportsQuery): Promise<AdminReports> {
+    const money = (kobo: number) => formatNaira(kobo);
+    const eligibility =
+      query.eligibility && query.eligibility !== "All"
+        ? query.eligibility
+        : undefined;
+    const monthIndex =
+      typeof query.month === "number"
+        ? query.month
+        : query.month === "all"
+          ? undefined
+          : 8;
+    const monthLabel = MONTHS[monthIndex ?? 8];
+    const result = (key: AdminReportKey, rows: string[][]): ReportResult => ({
+      headers: [...REPORT_HEADERS[key]],
+      rows,
+    });
+
+    const complianceRows = memberSummaries
+      .map((m) => {
+        const status = complianceStatus(m, monthIndex);
+        return [m.id, m.name, `${monthLabel} ${query.year}`, status];
+      })
+      .filter((row) => matchesReportStatus(row[3], eligibility));
+
+    const eligibilityRows = memberSummaries
+      .map((m) => [m.id, m.name, m.eligibility, m.forfeitReason ?? "—"])
+      .filter((row) => matchesReportStatus(row[2], eligibility));
+
+    const chargesRows = transactions
+      .filter(
+        (t) =>
+          t.kind === "Contribution" &&
+          t.year === query.year &&
+          t.platformChargeKobo > 0 &&
+          (monthIndex === undefined ||
+            new Date(t.createdAt).getMonth() === monthIndex),
+      )
+      .map((t) => [
+        t.createdAt.slice(0, 10),
+        t.memberName,
+        money(t.amountKobo),
+        money(t.platformChargeKobo),
+        money(t.amountKobo + t.platformChargeKobo),
+        t.status,
+      ])
+      .filter((row) => matchesReportStatus(row[5], eligibility));
+
+    const payoutRows = payoutBatches
+      .filter((b) => b.year === query.year)
+      .flatMap((b) =>
+        b.rows.map((r) => [
+          r.memberId,
+          r.memberName,
+          money(r.savingsKobo),
+          money(r.interestKobo),
+          money(r.totalKobo),
+          r.status,
+        ]),
+      )
+      .filter((row) => matchesReportStatus(row[5], eligibility));
+
+    const lateRows = transactions
+      .filter((t) => t.late && t.year === query.year)
+      .map((t) => [
+        t.memberId,
+        t.memberName,
+        `${query.year} contribution`,
+        t.createdAt.slice(0, 10),
+        "Interest forfeited",
+      ]);
+
+    const savingsRows = memberSummaries
+      .map((m) => [
+        m.id,
+        m.name,
+        m.targetKobo ? money(m.targetKobo) : "Not set",
+        `${m.monthsPaid} of 11`,
+        money(m.savedKobo),
+        septemberStatus(m),
+      ])
+      .filter((row) => matchesReportStatus(row[5], eligibility));
+
+    const reports: Record<AdminReportKey, ReportResult> = {
+      compliance: result("compliance", complianceRows),
+      eligibility: result("eligibility", eligibilityRows),
+      charges: result("charges", chargesRows),
+      payout: result("payout", payoutRows),
+      late: result("late", lateRows),
+      savings: result("savings", savingsRows),
+    };
+    return delay(
+      {
+        year: query.year,
+        month: query.month,
+        eligibility: query.eligibility,
+        reports,
+      },
+      120,
+    );
+  }
   async runReport(
     kind: ReportKind,
     year: number,
     month?: number | "all",
     status?: string,
   ): Promise<ReportResult> {
-    void year;
-    const money = (kobo: number) => formatNaira(kobo);
-    if (kind === "collections") {
-      const rows = MONTHS_SHORT.map((m, i) => {
-        const txs = transactions.filter(
-          (t) =>
-            t.kind === "Contribution" &&
-            t.status === "Successful" &&
-            new Date(t.createdAt).getMonth() === i,
-        );
-        return [
-          m,
-          String(txs.length),
-          money(txs.reduce((s, t) => s + t.amountKobo, 0)),
-        ];
-      });
-      return delay(
-        { headers: ["Month", "Payments", "Total saved"], rows },
-        120,
-      );
-    }
-    if (kind === "charges") {
-      const rows = transactions
-        .filter(
-          (t) =>
-            t.platformChargeKobo > 0 &&
-            (month === undefined ||
-              month === "all" ||
-              new Date(t.createdAt).getMonth() === month),
-        )
-        .map((t) => [
-          t.createdAt.slice(0, 10),
-          t.memberName,
-          money(t.amountKobo),
-          money(t.platformChargeKobo),
-        ]);
-      return delay(
-        { headers: ["Date", "Member", "Amount", "Platform charge"], rows },
-        120,
-      );
-    }
-    if (kind === "eligibility") {
-      const rows = memberSummaries
-        .filter((m) => !status || status === "All" || m.eligibility === status)
-        .map((m) => [
-          m.name,
-          money(m.savedKobo),
-          `${m.monthsPaid} of 11`,
-          m.eligibility,
-          m.forfeitReason ?? "—",
-        ]);
-      return delay(
-        {
-          headers: ["Member", "Saved", "Months saved", "Status", "Reason"],
-          rows,
-        },
-        120,
-      );
-    }
-    const rows = memberSummaries
-      .filter((m) => !status || status === "All" || m.eligibility === status)
-      .map((m) => [
-        m.name,
-        m.id,
-        `${m.monthsPaid} of 11`,
-        money(m.savedKobo),
-        m.currentMonthStatus,
-        m.eligibility,
-      ]);
-    return delay(
-      {
-        headers: [
-          "Member",
-          "Member ID",
-          "Months saved",
-          "Saved",
-          "September",
-          "Interest",
-        ],
-        rows,
-      },
-      120,
-    );
+    const key = reportKey(kind);
+    const data = await this.getReports({
+      year,
+      month: key === "charges" ? (month ?? "all") : month,
+      eligibility: status,
+    });
+    return data.reports[key];
   }
   async referralGroups() {
     const map = new Map<

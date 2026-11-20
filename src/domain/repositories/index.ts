@@ -14,6 +14,8 @@ import type {
   ContributionPaymentMethod,
   InterestBand,
   InterestCalcRow,
+  InterestCalculationEntries,
+  InterestNotifyChannel,
   InterestRateMode,
   InterestScope,
   InterestWorkflow,
@@ -27,11 +29,14 @@ import type {
   MonthIndex,
   PayoutAccount,
   PayoutBatch,
+  PayoutBatchStatus,
   PayoutDestination,
   AdminListItem,
   NotificationSettings,
   ReferralGroup,
   Registration,
+  AdminReports,
+  AdminReportsQuery,
   ReportKind,
   ReportResult,
   SavingsDashboard,
@@ -386,6 +391,32 @@ export interface TransactionQuery {
   search?: string;
 }
 
+/** Counts returned alongside GET /admin/payouts, keyed by API status slug. */
+export interface PayoutBatchCounts {
+  all: number;
+  awaiting_approval: number;
+  returned: number;
+  processing: number;
+  partial: number;
+  completed: number;
+}
+
+export interface PayoutBatchPageMeta extends PageMeta {
+  counts: PayoutBatchCounts;
+  availableYears: number[];
+}
+
+export interface PayoutBatchListPage {
+  data: PayoutBatch[];
+  meta: PayoutBatchPageMeta;
+}
+
+export interface PayoutBatchQuery {
+  page?: number;
+  status?: "All" | PayoutBatchStatus;
+  year?: number | "All";
+}
+
 /** Raw member status returned by GET /admin/members, and accepted by its `status` filter. */
 export type ApiMemberStatus = MemberAccountStatus;
 
@@ -505,11 +536,40 @@ export interface AdminRepository {
   /** ADM-15 to ADM-17: one interest configuration per savings year; 8-stage maker-checker workflow. */
   listInterest(): Promise<InterestYearSummary[]>;
   getInterest(
-    year: number,
+    interestConfigId: number | string,
   ): Promise<{ workflow: InterestWorkflow; preview: InterestCalcRow[] }>;
+  createInterestConfig(payload: {
+    year: number;
+    savings_start: string;
+    savings_end: string;
+    contribution_close: string;
+    rate: number;
+    rounding: string;
+    applies_to: string;
+    proportional_basis: boolean;
+    rate_type?: "fixed" | "range";
+    ranges?: {
+      from_amount: number | null;
+      to_amount: number | null;
+      rate: number;
+    }[];
+    member_ids?: string[];
+  }): Promise<InterestWorkflow>;
   saveInterestPeriod(
     year: number,
     period: { start: string; end: string; close: string },
+  ): Promise<InterestWorkflow>;
+  saveInterestConfig(
+    interestConfigId: number | string,
+    config: {
+      savings_start: string;
+      savings_end: string;
+      contribution_close: string;
+      rate: number;
+      rounding: string;
+      applies_to: string;
+      proportional_basis: boolean;
+    },
   ): Promise<InterestWorkflow>;
   saveInterestRules(
     year: number,
@@ -520,22 +580,55 @@ export interface AdminRepository {
     year: number,
     memberIds: string[],
   ): Promise<InterestWorkflow>;
-  runInterestCalculation(year: number): Promise<InterestWorkflow>;
+  runInterestCalculation(
+    interestConfigId: number | string,
+  ): Promise<InterestWorkflow>;
+  /** Member-level rows and totals produced by the latest calculation. */
+  getInterestEntries(
+    interestConfigId: number | string,
+  ): Promise<InterestCalculationEntries>;
+  /** Payout batch generated from an approved configuration (`GET /admin/interest/{id}/payouts`). */
+  getInterestPayouts(
+    interestConfigId: number | string,
+    batch?: { id?: string; year?: number; month?: string },
+  ): Promise<PayoutBatch>;
+  /** Creates the year-end payout batch (`POST /admin/interest/{id}/payouts`). */
+  createInterestPayouts(
+    interestConfigId: number | string,
+  ): Promise<PayoutBatch>;
   submitInterest(
     year: number,
     note: string,
     by: string,
   ): Promise<InterestWorkflow>;
-  /** `role` identifies the checker: only a Super Admin may approve — including their own maker request. */
+  /**
+   * Approves (`POST /admin/interest/{interestConfigId}/approve`) or returns to
+   * maker (`POST /admin/interest/{interestConfigId}/reject`, `{ note }`).
+   * `role` identifies the checker: only a Super Admin may approve — including
+   * their own maker request.
+   */
   decideInterest(
-    year: number,
+    interestConfigId: number | string,
     decision: "Approved" | "Returned",
     opts: { by: string; role?: AdminRole; reason?: string },
   ): Promise<InterestWorkflow>;
   createPayoutBatch(year: number, by: string): Promise<PayoutBatch>;
-  notifyInterest(year: number, by: string): Promise<InterestWorkflow>;
-  /** ADM-18 to ADM-20: year-end payout batches. */
+  /**
+   * `POST /admin/interest/{interestConfigId}/notify` with `{ channels }`.
+   * `by` is only used for the local audit/history actor, not in the request.
+   */
+  notifyInterest(
+    interestConfigId: number | string,
+    channels: InterestNotifyChannel[],
+    by: string,
+  ): Promise<InterestWorkflow>;
+  /** `GET /admin/interest/{interestConfigId}/history` as [at, event, actor] rows. */
+  getInterestHistory(
+    interestConfigId: number | string,
+  ): Promise<[string, string, string][]>;
+  /** ADM-18 to ADM-20: year-end payout batches. Passing a query returns a page. */
   listPayoutBatches(): Promise<PayoutBatch[]>;
+  listPayoutBatches(query: PayoutBatchQuery): Promise<PayoutBatchListPage>;
   getPayoutBatch(id: string): Promise<PayoutBatch>;
   decideBatch(
     id: string,
@@ -550,7 +643,12 @@ export interface AdminRepository {
     memberId: string,
     opts: { method: string; proof: string; note: string; by: string },
   ): Promise<PayoutBatch>;
-  /** ADM-21: filtered report preview (exported client-side to CSV). */
+  /**
+   * ADM-21: `GET /admin/reports?year=…&month=…&eligibility=…`. The response
+   * carries every report section; the page selects one to render and export.
+   */
+  getReports(query: AdminReportsQuery): Promise<AdminReports>;
+  /** Selects one section from `getReports`; kept for callers with a local kind. */
   runReport(
     kind: ReportKind,
     year: number,

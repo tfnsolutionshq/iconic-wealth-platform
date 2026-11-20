@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  LoaderCircle,
+  Search,
+  X,
+} from "lucide-react";
 import type { ApiMember, ApiMemberStatus } from "@/domain/repositories";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
@@ -187,9 +194,16 @@ export function RegistrationsPage() {
           <div className="w-full lg:w-60 h-full flex-1 min-h-0 overflow-y-auto">
             <div className="rounded-card border border-line bg-white p-2.5 lg:h-full lg:overflow-y-auto">
               {loading ? (
-                <p className="py-8 text-center text-sm font-semibold text-mute">
-                  Loading…
-                </p>
+                <Card
+                  role="status"
+                  aria-live="polite"
+                  className="flex min-h-48 items-center justify-center gap-2"
+                >
+                  <LoaderCircle className="animate-spin text-brand" size={18} />
+                  <p className="text-sm font-semibold text-mute">
+                    Loading registrations…
+                  </p>
+                </Card>
               ) : rows.length === 0 ? (
                 <EmptyState icon={<Search size={24} />} title="No results">
                   Try a different search or filter.

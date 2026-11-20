@@ -112,4 +112,126 @@ describe('HttpAdminRepository', () => {
       Forfeited: 1,
     });
   });
+
+  it('unwraps and normalises the interest year list', async () => {
+    stubFetch(
+      200,
+      envelope([
+        {
+          year: '2026',
+          status: 'draft',
+          rate: '12.5',
+          rate_mode: 'fixed',
+          eligible: '120',
+          forfeited: '3',
+          total_contributions: '5000000.00',
+          total_interest: '625000.00',
+          maker: 'Ada Obi',
+          approved_by: null,
+        },
+      ]),
+    );
+
+    await expect(repo().listInterest()).resolves.toEqual([
+      {
+        year: 2026,
+        status: 'Draft',
+        rate: 12.5,
+        rateMode: 'Fixed rate',
+        eligible: 120,
+        forfeited: 3,
+        contributionsKobo: 500_000_000,
+        interestKobo: 62_500_000,
+        maker: 'Ada Obi',
+      },
+    ]);
+  });
+
+  it('accepts an interest list wrapped in a named collection', async () => {
+    stubFetch(
+      200,
+      envelope({
+        years: [
+          {
+            savings_year: 2025,
+            status: 'paid_out',
+            eligible_members: 40,
+            contributions_kobo: 1_000_000,
+            interest_kobo: 50_000,
+          },
+        ],
+      }),
+    );
+
+    const [year] = await repo().listInterest();
+
+    expect(year).toMatchObject({
+      year: 2025,
+      status: 'Paid out',
+      eligible: 40,
+      contributionsKobo: 1_000_000,
+      interestKobo: 50_000,
+    });
+  });
+
+  it('unwraps interest detail into a workflow and preview', async () => {
+    stubFetch(
+      200,
+      envelope({
+        workflow: {
+          year: 2026,
+          status: 'pending_approval',
+          stage: '4',
+          done: '3',
+          start: '2026-01-01',
+          end: '2026-12-31',
+          close: '2027-01-15',
+          rate: '10',
+          eligible: 2,
+          interest_kobo: 25_000,
+          bands: [],
+          selected_members: ['IWH-00001'],
+          excluded_member_ids: [],
+          history: [
+            ['2026-11-01T10:00:00Z', 'Saved period setup', 'Ada Obi'],
+          ],
+        },
+        preview: [
+          {
+            member_id: 'IWH-00001',
+            member_name: 'Ada Obi',
+            contributions: '150000.00',
+            share_pct: '60',
+            interest: '15000.00',
+            eligible: true,
+          },
+        ],
+      }),
+    );
+
+    const detail = await repo().getInterest(2026);
+
+    expect(detail.workflow).toMatchObject({
+      year: 2026,
+      status: 'Pending approval',
+      rateMode: 'Fixed rate',
+      stage: 4,
+      done: 3,
+      selectedMemberIds: ['IWH-00001'],
+      excludedMemberIds: [],
+      eligible: 2,
+      interestKobo: 25_000,
+      history: [['2026-11-01T10:00:00Z', 'Saved period setup', 'Ada Obi']],
+    });
+    expect(detail.preview).toEqual([
+      {
+        memberId: 'IWH-00001',
+        memberName: 'Ada Obi',
+        contributionsKobo: 15_000_000,
+        sharePct: 60,
+        interestKobo: 1_500_000,
+        eligible: true,
+      },
+    ]);
+  });
 });
