@@ -299,10 +299,7 @@ export interface WalletRepository {
   /** Initializes a Paystack wallet top-up (POST /wallet/fund). */
   initiateFund?(amountKobo: Kobo): Promise<WalletFundInitiated>;
   /** Verifies a Paystack wallet top-up (POST /wallet/fund/{reference}/verify). */
-  verifyFund?(
-    reference: string,
-    amountKobo: Kobo,
-  ): Promise<WalletFundVerified>;
+  verifyFund?(reference: string, amountKobo: Kobo): Promise<WalletFundVerified>;
   /** Member-initiated top-up (legacy/demo fallback). */
   requestTopUp(memberId: string, amountKobo: Kobo): Promise<WalletEntry>;
   /** Reserves the amount and targets the member's verified payout account; an admin disburses it later. */
@@ -531,9 +528,7 @@ export interface AdminRepository {
    * ADM-13: `GET /admin/savings-dashboard?year=&status=&search=`. Filters are
    * applied by the API; money in the result is kobo.
    */
-  getSavingsDashboard(
-    query: AdminSavingsQuery,
-  ): Promise<AdminSavingsDashboard>;
+  getSavingsDashboard(query: AdminSavingsQuery): Promise<AdminSavingsDashboard>;
   /** Legacy per-member savings view, kept for older callers and tests. */
   savingsOverview(year: number): Promise<{
     rows: MemberSummary[];

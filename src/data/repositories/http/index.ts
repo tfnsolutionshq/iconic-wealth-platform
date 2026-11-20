@@ -61,7 +61,12 @@ import type {
   WalletWithdrawal,
 } from "@/domain/entities";
 import type { PlatformSettings } from "@/domain/rules";
-import { interestWizardProgress, MONTHS, naira } from "@/domain/rules";
+import {
+  formatNaira,
+  interestWizardProgress,
+  MONTHS,
+  naira,
+} from "@/domain/rules";
 import { ADMIN_REPORT_KEYS, REPORT_HEADERS } from "@/domain/rules/reports";
 import type {
   ActivityPageResult,
@@ -1003,7 +1008,12 @@ function readStringList(...values: unknown[]): string[] {
     if (items.length === 0) continue;
     const strings = items
       .map((item) =>
-        readString(item, asRecord(item).key, asRecord(item).id, asRecord(item).name),
+        readString(
+          item,
+          asRecord(item).key,
+          asRecord(item).id,
+          asRecord(item).name,
+        ),
       )
       .filter((item): item is string => Boolean(item));
     if (strings.length > 0) return [...new Set(strings)];
@@ -1013,8 +1023,10 @@ function readStringList(...values: unknown[]): string[] {
 
 function readInterestStageStatus(value: unknown): InterestStageStatus {
   const text = readString(value)?.toLowerCase() ?? "";
-  if (["completed", "complete", "done", "approved"].includes(text)) return "completed";
-  if (["current", "active", "in_progress", "in-progress"].includes(text)) return "current";
+  if (["completed", "complete", "done", "approved"].includes(text))
+    return "completed";
+  if (["current", "active", "in_progress", "in-progress"].includes(text))
+    return "current";
   return "pending";
 }
 
@@ -1113,7 +1125,8 @@ function mapInterestWorkflow(raw: unknown, fallbackYear = 0): InterestWorkflow {
     readString(r.current_stage, r.currentStage) ??
     stages.find((stage) => stage.status === "current")?.key ??
     (hasCalculationResult ? "submit" : null);
-  const statusLabel = readString(r.status_label, r.statusLabel) ?? summary.status;
+  const statusLabel =
+    readString(r.status_label, r.statusLabel) ?? summary.status;
   const numericDone = Math.trunc(readNumber(r.done, r.stages_done) ?? 0);
   // Some responses only expose the workflow status, so derive the milestone it
   // implies instead of reporting a started configuration as "Not started".
@@ -1190,7 +1203,8 @@ function mapInterestWorkflow(raw: unknown, fallbackYear = 0): InterestWorkflow {
     completedStages,
     stages,
     ...(wizardStages.length ? { wizardStages } : {}),
-    calculationRunAt: readString(r.calculation_run_at, r.calculationRunAt) ?? null,
+    calculationRunAt:
+      readString(r.calculation_run_at, r.calculationRunAt) ?? null,
     createdBy: mapInterestActor(r.created_by ?? r.createdBy),
     submittedBy: mapInterestActor(r.submitted_by ?? r.submittedBy),
     reviewedBy: mapInterestActor(r.reviewed_by ?? r.reviewedBy),
@@ -1249,8 +1263,13 @@ function mapInterestCalcRow(raw: unknown): InterestCalcRow {
       "—",
     contributionsKobo,
     sharePct:
-      readNumber(r.sharePct, r.share_percent, r.share_pct, r.share, r.percentage) ??
-      0,
+      readNumber(
+        r.sharePct,
+        r.share_percent,
+        r.share_pct,
+        r.share,
+        r.percentage,
+      ) ?? 0,
     interestKobo,
     eligible,
     ...(reason ? { reason } : {}),
@@ -1289,11 +1308,15 @@ function mapInterestCalculationSummary(
 }
 
 /** Reads GET /admin/interest/:interestConfigId/entries. */
-function mapInterestEntriesPayload(payload: unknown): InterestCalculationEntries {
+function mapInterestEntriesPayload(
+  payload: unknown,
+): InterestCalculationEntries {
   const data = unwrapData<unknown>(payload);
   const record = asRecord(data);
   return {
-    summary: mapInterestCalculationSummary(record.summary ?? record.totals ?? data),
+    summary: mapInterestCalculationSummary(
+      record.summary ?? record.totals ?? data,
+    ),
     entries: readArray(
       record.entries ?? record.rows ?? record.preview ?? record.calculations,
     ).map(mapInterestCalcRow),
@@ -1307,7 +1330,7 @@ function mapInterestDetail(
 ): { workflow: InterestWorkflow; preview: InterestCalcRow[] } {
   const unwrapped = unwrapData<unknown>(payload);
   // Some endpoints return the configuration inside a one-item `data` array.
-  const data = Array.isArray(unwrapped) ? unwrapped[0] ?? null : unwrapped;
+  const data = Array.isArray(unwrapped) ? (unwrapped[0] ?? null) : unwrapped;
   const record = asRecord(data);
   const workflowRaw =
     record.workflow ??
@@ -1331,7 +1354,7 @@ function mapInterestDetail(
 /** Reads a workflow from an envelope, a `{ workflow }` wrapper or a bare payload. */
 function readInterestWorkflow(payload: unknown, fallbackYear = 0) {
   const unwrapped = unwrapData<unknown>(payload);
-  const data = Array.isArray(unwrapped) ? unwrapped[0] ?? null : unwrapped;
+  const data = Array.isArray(unwrapped) ? (unwrapped[0] ?? null) : unwrapped;
   const record = asRecord(data);
   const workflowRaw =
     record.workflow ?? record.interest ?? record.configuration ?? data;
@@ -1432,7 +1455,9 @@ function mapPayoutRow(raw: unknown): PayoutRow {
       readString(r.reference, r.gateway_reference, r.gatewayReference, r.id) ??
       "",
     ...(readString(r.proof, r.proof_reference, r.proof_url, r.receipt)
-      ? { proof: readString(r.proof, r.proof_reference, r.proof_url, r.receipt) }
+      ? {
+          proof: readString(r.proof, r.proof_reference, r.proof_url, r.receipt),
+        }
       : {}),
   };
 }
@@ -1465,8 +1490,7 @@ function mapPayoutBatch(raw: unknown): PayoutBatch {
     ...(batchCode ? { batchCode } : {}),
     ...(interestConfigId ? { interestConfigId } : {}),
     year: Math.trunc(readNumber(r.year, r.savings_year) ?? 0),
-    month:
-      readString(r.month, r.month_name, r.period, r.disbursement) ?? "",
+    month: readString(r.month, r.month_name, r.period, r.disbursement) ?? "",
     status: readPayoutBatchStatus(r.status ?? r.status_label),
     count: Math.trunc(
       readNumber(
@@ -1510,6 +1534,227 @@ function readPayoutBatchPayload(payload: unknown): PayoutBatch {
   return mapPayoutBatch(
     record.batch ?? record.payout ?? record.payout_batch ?? data,
   );
+}
+
+function formatReportDate(value?: string, fallback = "—"): string {
+  if (!value) return fallback;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+}
+
+/** Reads a naira amount from the API, preferring a server-formatted string. */
+function readReportMoney(
+  record: Record<string, unknown>,
+  keys: string[],
+  amount?: number,
+): string {
+  const formatted = readString(...keys.map((key) => `${key}_formatted`));
+  // The prototype's N() renders whole naira; sample API values carry a trailing .00.
+  if (formatted) return formatted.replace(/\.00$/, "");
+  const raw =
+    amount ?? readNumber(...keys.map((key) => record[key])) ?? undefined;
+  return raw == null ? "—" : formatNaira(naira(raw));
+}
+
+/**
+ * GET /admin/reports returns one platform payload (summary + filtered members).
+ * Each prototype report is a different projection of those member rows.
+ */
+function mapPlatformReport(
+  payload: unknown,
+  kind: ReportKind,
+  year: number,
+  month?: number | "all",
+): ReportResult {
+  const data = asRecord(unwrapData<unknown>(payload));
+  const filters = asRecord(data.filters);
+  const members = readArray(data.members ?? data.rows).map(asRecord);
+  const reportYear = Math.trunc(readNumber(filters.year) ?? year);
+  const rawFilterMonth = readNumber(filters.month);
+  const filterMonthIndex =
+    rawFilterMonth != null && rawFilterMonth >= 1 && rawFilterMonth <= 12
+      ? Math.trunc(rawFilterMonth) - 1
+      : -1;
+  const monthIndex =
+    month !== undefined && month !== "all" ? month : filterMonthIndex;
+  const monthName =
+    monthIndex >= 0 && monthIndex < MONTHS.length
+      ? MONTHS[monthIndex]
+      : (readString(filters.month_name) ?? "");
+  const period = monthName ? `${monthName} ${reportYear}` : String(reportYear);
+
+  const memberId = (m: Record<string, unknown>) =>
+    readString(
+      m.member_id,
+      m.memberId,
+      asRecord(m.member).member_id,
+      asRecord(m.member).id,
+    ) ??
+    readString(m.id) ??
+    "—";
+  const memberName = (m: Record<string, unknown>) =>
+    readPersonName(m.member ?? m.name ?? m.member_name ?? m.user) ?? "—";
+  const monthStatus = (m: Record<string, unknown>) => {
+    const value = readString(m.month_status, m.status_label, m.status) ?? "";
+    return value ? value.charAt(0).toUpperCase() + value.slice(1) : "—";
+  };
+  const eligibility = (m: Record<string, unknown>) => {
+    const value =
+      readString(m.interest) ??
+      readString(m.interest_status, m.eligibility) ??
+      "";
+    return value ? value.charAt(0).toUpperCase() + value.slice(1) : "—";
+  };
+  const reason = (m: Record<string, unknown>) =>
+    readString(m.forfeiture_reason, m.forfeit_reason, m.reason) ?? "—";
+  const monthsSaved = (m: Record<string, unknown>) =>
+    readString(m.months_saved_label) ??
+    (readNumber(m.months_saved, m.monthsPaid) != null
+      ? `${Math.trunc(readNumber(m.months_saved, m.monthsPaid) ?? 0)} of ${Math.trunc(readNumber(m.total_months, 11) ?? 11)}`
+      : "—");
+  const savedKeys = [
+    "total_saved",
+    "saved_amount",
+    "savings_amount",
+    "savings",
+    "contributions",
+  ];
+  const saved = (m: Record<string, unknown>) => readReportMoney(m, savedKeys);
+  const savedAmount = (m: Record<string, unknown>) =>
+    readNumber(...savedKeys.map((key) => m[key]));
+  const chargeKeys = [
+    "platform_charge",
+    "platform_charge_amount",
+    "charge",
+    "fee",
+  ];
+  const chargeAmount = (m: Record<string, unknown>) =>
+    readNumber(...chargeKeys.map((key) => m[key]));
+  const interestKeys = [
+    "interest_amount",
+    "interest_earned",
+    "interest_payable",
+    "interest_value",
+  ];
+  const payoutKeys = [
+    "total_payout",
+    "payout_amount",
+    "payout_total",
+    "total_paid",
+  ];
+
+  switch (kind) {
+    case "eligibility":
+      return {
+        headers: ["Member ID", "Member", "Eligibility", "Reason"],
+        rows: members.map((m) => [
+          memberId(m),
+          memberName(m),
+          eligibility(m),
+          reason(m),
+        ]),
+      };
+    case "charges":
+      return {
+        headers: [
+          "Date",
+          "Member",
+          "Contribution",
+          "Platform charge",
+          "Total paid",
+          "Status",
+        ],
+        rows: members.map((m) => {
+          const contribution = savedAmount(m);
+          const charge = chargeAmount(m);
+          const total =
+            readNumber(m.total_paid, m.total_paid_amount, m.total) ??
+            (contribution != null && charge != null
+              ? contribution + charge
+              : undefined);
+          return [
+            formatReportDate(
+              readString(m.paid_at, m.paid_on, m.date, m.created_at),
+              period,
+            ),
+            memberName(m),
+            saved(m),
+            readReportMoney(m, chargeKeys),
+            readReportMoney(m, [...payoutKeys, "total"], total),
+            monthStatus(m),
+          ];
+        }),
+      };
+    case "payout":
+      return {
+        headers: [
+          "Member ID",
+          "Member",
+          "Savings",
+          "Interest",
+          "Payout",
+          "Status",
+        ],
+        rows: members.map((m) => [
+          memberId(m),
+          memberName(m),
+          saved(m),
+          readReportMoney(m, interestKeys),
+          readReportMoney(m, payoutKeys),
+          monthStatus(m),
+        ]),
+      };
+    case "late":
+      return {
+        headers: ["Member ID", "Member", "For", "Paid on", "Impact"],
+        rows: members.map((m) => [
+          memberId(m),
+          memberName(m),
+          period,
+          formatReportDate(
+            readString(m.paid_at, m.paid_on, m.date, m.created_at),
+            "—",
+          ),
+          reason(m),
+        ]),
+      };
+    case "savings":
+      return {
+        headers: [
+          "Member ID",
+          "Member",
+          "Monthly target",
+          "Months saved",
+          "Saved",
+          "September",
+        ],
+        rows: members.map((m) => [
+          memberId(m),
+          memberName(m),
+          readReportMoney(m, ["monthly_target", "target_amount", "baseline"]),
+          monthsSaved(m),
+          saved(m),
+          monthStatus(m),
+        ]),
+      };
+    case "compliance":
+    default:
+      return {
+        headers: ["Member ID", "Member", "Month", "Status"],
+        rows: members.map((m) => [
+          memberId(m),
+          memberName(m),
+          period,
+          monthStatus(m),
+        ]),
+      };
+  }
 }
 
 /** Raw shape of the login response data from the API. */
@@ -1928,9 +2173,9 @@ function mapSavingsPeriod(p: ApiSavingsPeriod): SavingsPeriod {
     monthName: p.month_name,
     deadline: p.deadline,
     isCatchUp: p.is_catch_up ?? p.is_catchup,
-    targetAmount:
-      p.target_amount == null ? null : koboFromApi(p.target_amount),
-    savedAmount: p.saved_amount == null ? undefined : koboFromApi(p.saved_amount),
+    targetAmount: p.target_amount == null ? null : koboFromApi(p.target_amount),
+    savedAmount:
+      p.saved_amount == null ? undefined : koboFromApi(p.saved_amount),
     remainingAmount:
       p.remaining_amount == null ? undefined : koboFromApi(p.remaining_amount),
     progressPercentage: p.progress_percentage,
@@ -2050,7 +2295,10 @@ function mapActivityItem(item: ApiActivityItem): Transaction {
   const period = d.savings_month?.period ?? "";
   const periodMatch = /^(\d{4})-(\d{2})$/.exec(period);
   const createdAt =
-    d.confirmed_at || d.created_at || item.created_at || new Date().toISOString();
+    d.confirmed_at ||
+    d.created_at ||
+    item.created_at ||
+    new Date().toISOString();
   const year = periodMatch
     ? Number(periodMatch[1])
     : new Date(createdAt).getFullYear() || new Date().getFullYear();
@@ -2550,7 +2798,9 @@ export class HttpTestimonialRepository implements TestimonialRepository {
 
 /** The API uses snake_case status values; normalise them for the domain. */
 function readAdminSavingsStatus(value: unknown): AdminSavingsStatus {
-  const raw = readString(value)?.toLowerCase().replace(/[^a-z]/g, "");
+  const raw = readString(value)
+    ?.toLowerCase()
+    .replace(/[^a-z]/g, "");
   if (raw === "uptodate" || raw === "paid" || raw === "ontime")
     return "up_to_date";
   if (raw === "late") return "late";
@@ -2599,7 +2849,7 @@ function mapAdminSavingsDashboard(
       interest_eligible:
         m.interest_eligible == null
           ? null
-          : readBoolean(m.interest_eligible) ?? false,
+          : (readBoolean(m.interest_eligible) ?? false),
     };
   });
   return {
@@ -2814,7 +3064,9 @@ export class HttpAdminRepository implements AdminRepository {
     );
     return envelope.data!;
   }
-  getSavingsDashboard(query: AdminSavingsQuery): Promise<AdminSavingsDashboard> {
+  getSavingsDashboard(
+    query: AdminSavingsQuery,
+  ): Promise<AdminSavingsDashboard> {
     const p = new URLSearchParams({ year: String(query.year) });
     if (query.status && query.status !== "All") p.set("status", query.status);
     if (query.search?.trim()) p.set("search", query.search.trim());
@@ -2980,7 +3232,9 @@ export class HttpAdminRepository implements AdminRepository {
           ...mapPayoutBatch({
             ...data,
             id:
-              batch.id ?? readString(data.id, data.batch_id, data.batchId) ?? "",
+              batch.id ??
+              readString(data.id, data.batch_id, data.batchId) ??
+              "",
             year,
             month: batch.month ?? readString(data.month, data.month_name) ?? "",
           }),
@@ -3141,11 +3395,19 @@ export class HttpAdminRepository implements AdminRepository {
     month?: number | "all",
     status?: string,
   ) {
-    return this.getReports({
-      year,
-      month,
-      eligibility: status && status !== "All" ? status : undefined,
-    }).then((data) => data.reports[reportKey(kind)]);
+    // The repository uses 0-based month indexes (like the prototype select);
+    // the reports API echoes calendar months, e.g. 11 = November.
+    const apiMonth = typeof month === "number" ? month + 1 : month;
+    const p = new URLSearchParams({
+      year: String(year),
+      ...(apiMonth !== undefined ? { month: String(apiMonth) } : {}),
+      ...(status && status !== "All" && kind === "eligibility"
+        ? { eligibility: status.toLowerCase() }
+        : {}),
+    });
+    return this.http
+      .get<unknown>(`/admin/reports?${p}`)
+      .then((payload) => mapPlatformReport(payload, kind, year, month));
   }
   referralGroups() {
     return this.http.get<ReferralGroup[]>("/admin/referrals");
@@ -3282,7 +3544,9 @@ export class HttpWalletRepository implements WalletRepository {
 
   async getSnapshot(memberId: string): Promise<WalletSnapshot> {
     const [walletPayload, txPage] = await Promise.all([
-      this.http.get<ApiEnvelope<ApiWalletSummary> | ApiWalletSummary>("/wallet"),
+      this.http.get<ApiEnvelope<ApiWalletSummary> | ApiWalletSummary>(
+        "/wallet",
+      ),
       this.listTransactions({ per_page: 100, page: 1 }).catch(() => ({
         data: [] as WalletEntry[],
         meta: { current_page: 1, per_page: 100, last_page: 1, total: 0 },
@@ -3389,7 +3653,10 @@ export class HttpWalletRepository implements WalletRepository {
     };
   }
 
-  async requestTopUp(_memberId: string, amountKobo: Kobo): Promise<WalletEntry> {
+  async requestTopUp(
+    _memberId: string,
+    amountKobo: Kobo,
+  ): Promise<WalletEntry> {
     const res = await this.initiateFund(amountKobo);
     return res.transaction;
   }
@@ -3406,7 +3673,9 @@ export class HttpWalletRepository implements WalletRepository {
     const d = unwrapData(payload);
     const statusLower = (d?.status_label ?? d?.status ?? "").toLowerCase();
     const status: WalletWithdrawal["status"] =
-      statusLower === "paid" || statusLower === "completed" || statusLower === "successful"
+      statusLower === "paid" ||
+      statusLower === "completed" ||
+      statusLower === "successful"
         ? "Paid"
         : statusLower === "failed" || statusLower === "rejected"
           ? "Failed"

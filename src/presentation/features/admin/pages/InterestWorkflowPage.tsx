@@ -11,7 +11,6 @@ import {
   RefreshCw,
   Search,
   Shield,
-  TriangleAlert,
   X,
 } from "lucide-react";
 import type {
@@ -895,12 +894,6 @@ export function InterestWorkflowPage() {
     }
     setStage(2);
   };
-  const saveConfig = () =>
-    run(
-      () => repos.admin.createInterestConfig(buildInterestConfigPayload()),
-      () => setStage(3),
-      "Configuration saved.",
-    );
   const goToStage = (nextStage: number) => {
     if (nextStage <= stage) {
       setStage(nextStage);

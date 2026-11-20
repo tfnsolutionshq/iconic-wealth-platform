@@ -125,7 +125,7 @@ export interface SavingsMonth {
   targetMet: boolean;
   contributionsCount: number;
   closeNote: string;
-  deadline: string;                    // ISO date-time
+  deadline: string; // ISO date-time
   isCatchUp?: boolean;
 }
 
@@ -133,10 +133,10 @@ export interface SavingsMonth {
 export interface SavingsPeriod {
   id?: string | null;
   year: number;
-  month: number;                       // 1-12
-  period: string;                      // e.g. "2027-01"
-  monthName: string;                   // e.g. "January"
-  deadline: string;                    // ISO date-time
+  month: number; // 1-12
+  period: string; // e.g. "2027-01"
+  monthName: string; // e.g. "January"
+  deadline: string; // ISO date-time
   isCatchUp?: boolean;
   targetAmount?: Kobo | null;
   savedAmount?: Kobo;

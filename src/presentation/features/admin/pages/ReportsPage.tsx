@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Banknote,
-  BarChart3,
   CalendarDays,
-  Clock,
+  ChartColumn,
+  Clock3,
   CreditCard,
   Download,
   LoaderCircle,
   ShieldCheck,
+  type LucideIcon,
 } from "lucide-react";
-import type { AdminReportKey, AdminReports } from "@/domain/entities";
+import type { ReportKind, ReportResult } from "@/domain/entities";
 import { MONTHS } from "@/domain/rules";
 import {
   ADMIN_REPORT_KEYS,
@@ -21,10 +22,10 @@ import { useAuth } from "../../../contexts/AuthContext";
 import {
   Button,
   Card,
+  cn,
   DataTable,
   OpenDecisionTag,
   Select,
-  cn,
 } from "../../../design-system";
 import { AdminPageHeader } from "../../../layouts/AdminLayout";
 import { downloadCsv } from "../../../utils/csv";
@@ -140,13 +141,18 @@ export function ReportsPage() {
   };
 
   const exportCsv = async () => {
-    if (!result) return;
-    downloadCsv(`iwh-report-${kind}-${year}.csv`, result.headers, result.rows);
+    if (!visible) return;
+    downloadCsv(
+      `iwh-report-${kind}-${year}.csv`,
+      visible.headers,
+      visible.rows,
+    );
     if (session?.kind === "admin") {
       await repos.admin.logAudit({
         at: clock.now().toISOString(),
         actor: session.admin.name,
-        role: session.admin.role === "SuperAdmin" ? "Super Admin" : "Administrator",
+        role:
+          session.admin.role === "SuperAdmin" ? "Super Admin" : "Administrator",
         action: "Exported report",
         entity: `${REPORT_META[kind].title} ${year}`,
         change: `CSV, ${result.rows.length} rows`,
