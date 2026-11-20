@@ -22,6 +22,10 @@ import type {
   AdminReportKey,
   AdminReports,
   AdminReportsQuery,
+  AdminSavingsDashboard,
+  AdminSavingsMember,
+  AdminSavingsQuery,
+  AdminSavingsStatus,
   ReportKind,
   ReportResult,
   SavingsDashboard,
@@ -1212,6 +1216,69 @@ export class MockAdminRepository implements AdminRepository {
       r.memberId = `IWH-0${1251 + registrations.length + Math.floor(Math.random() * 40)}`;
     else r.reason = reason!.trim();
     return delay(r);
+  }
+  async getSavingsDashboard(
+    query: AdminSavingsQuery,
+  ): Promise<AdminSavingsDashboard> {
+    const toStatus = (raw: string): AdminSavingsStatus => {
+      if (raw === "Paid" || raw === "Locked") return "up_to_date";
+      if (raw === "Late") return "late";
+      if (raw === "Missed") return "missed";
+      return "due";
+    };
+    const all: AdminSavingsMember[] = memberSummaries.map((m) => ({
+      id: m.id,
+      member_id: m.id,
+      name: m.name,
+      monthly_target: m.targetKobo,
+      months_saved: m.monthsPaid,
+      total_months: 11,
+      total_saved: m.savedKobo,
+      focus_month_status: toStatus(m.currentMonthStatus),
+      interest_eligible: m.eligibility === "Eligible",
+    }));
+    const summary = {
+      total_saved: all.reduce((s, m) => s + m.total_saved, 0),
+      member_count: all.length,
+      up_to_date: all.filter((m) => m.focus_month_status === "up_to_date")
+        .length,
+      locked_early: transactions.filter(
+        (t) =>
+          t.kind === "Contribution" &&
+          t.status === "Successful" &&
+          t.allocations.length > 1,
+      ).length,
+      behind: all.filter(
+        (m) =>
+          m.focus_month_status === "late" ||
+          m.focus_month_status === "missed",
+      ).length,
+    };
+    const monthly_chart = MONTHS_SHORT.map((_, i) => ({
+      month: i + 1,
+      up_to_date: 0,
+      paid: all.filter((m) => m.months_saved > i).length,
+      late: 0,
+      missed: all.filter((m) => m.months_saved <= i).length,
+    }));
+    const q = query.search?.trim().toLowerCase() ?? "";
+    const members = all.filter(
+      (m) =>
+        (!query.status ||
+          query.status === "All" ||
+          m.focus_month_status === query.status) &&
+        (!q || `${m.name} ${m.member_id}`.toLowerCase().includes(q)),
+    );
+    return delay(
+      {
+        year: query.year,
+        focus_month: 11,
+        summary,
+        monthly_chart,
+        members,
+      },
+      120,
+    );
   }
   async savingsOverview(year: number) {
     void year;

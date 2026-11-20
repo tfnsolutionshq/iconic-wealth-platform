@@ -218,6 +218,7 @@ All amounts in kobo. Auth: `Authorization: Bearer <token>`. Implemented in `src/
 | POST | `/admin/interest/{interestConfigId}/notify` | Notify eligible members (`{ channels: ["in_app", "email", "whatsapp"] }`) |
 | GET | `/admin/interest/{interestConfigId}/history` | Workflow event log for the History step |
 | GET | `/admin/reports?year=&month=&eligibility=` | All report sections; `month` only for compliance/charges, `eligibility` only when a status filter is active (no `kind` param) |
+| GET | `/admin/savings-dashboard?year=&status=&search=` | Admin savings dashboard: summary, `monthly_chart` and filtered `members`; `status` is one of `up_to_date`, `due`, `late`, `missed` |
 
 Extend the ports in `domain/repositories` first, then both adapters (mock and http), for every new endpoint.
 
