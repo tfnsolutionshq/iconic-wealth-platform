@@ -404,6 +404,27 @@ export interface AuditEntry {
   change: string;
   category: AuditCategory;
 }
+/** Server-side filters accepted by `GET /admin/audit-logs`. */
+export interface AuditLogQuery {
+  type?: "all" | "financial" | "members" | "access" | "roles";
+  date?: "all" | "today" | "last_7_days" | "last_30_days";
+  from?: string;
+  to?: string;
+  search?: string;
+  per_page?: number;
+  page?: number;
+}
+export interface AuditLogMeta {
+  current_page: number;
+  per_page: number;
+  last_page: number;
+  total: number;
+  counts?: Record<string, number>;
+}
+export interface AuditLogPage {
+  rows: AuditEntry[];
+  meta: AuditLogMeta;
+}
 
 export type InterestStatus =
   | "Not started"

@@ -347,3 +347,84 @@ describe('HttpAdminRepository reports', () => {
     expect(url).toContain('month=all');
   });
 });
+
+describe('HttpAdminRepository audit logs', () => {
+  const auditPayload = envelope(
+    [
+      {
+        id: 'log-1',
+        when: '19 Nov, 19:53',
+        created_at: '2026-11-19T19:53:32+00:00',
+        who: {
+          id: 'u-1',
+          name: 'Test Admin',
+          role: 'Super Administrator',
+          roles: ['super-admin'],
+        },
+        action: 'interest.config.approved',
+        action_label: 'Approved interest config',
+        summary: 'Test Admin - Approved interest config',
+        record: 'record-1',
+        change: '—',
+        type: 'financial',
+        type_label: 'Financial',
+      },
+    ],
+    {
+      current_page: 2,
+      per_page: 15,
+      last_page: 17,
+      total: 247,
+      counts: { all: 247, financial: 232, members: 13, access: 1, roles: 1 },
+    },
+  );
+
+  it('maps the audit log payload and sends the filters', async () => {
+    const fetchMock = stubFetch(200, auditPayload);
+
+    const page = await repo().listAuditLog({
+      type: 'financial',
+      date: 'last_7_days',
+      search: 'interest',
+      per_page: 15,
+      page: 2,
+    });
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+
+    expect(url).toContain('/admin/audit-logs?');
+    expect(url).toContain('type=financial');
+    expect(url).toContain('date=last_7_days');
+    expect(url).toContain('search=interest');
+    expect(url).toContain('per_page=15');
+    expect(url).toContain('page=2');
+    expect(page.rows).toEqual([
+      {
+        id: 'log-1',
+        at: '2026-11-19T19:53:32+00:00',
+        actor: 'Test Admin',
+        role: 'Super Administrator',
+        action: 'Approved interest config',
+        entity: 'record-1',
+        change: '—',
+        category: 'Financial',
+      },
+    ]);
+    expect(page.meta).toMatchObject({
+      current_page: 2,
+      last_page: 17,
+      total: 247,
+      counts: { all: 247, financial: 232 },
+    });
+  });
+
+  it('omits blank filters from the request', async () => {
+    const fetchMock = stubFetch(200, auditPayload);
+
+    await repo().listAuditLog({ type: 'all', date: 'all', search: '  ' });
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+
+    expect(url).toContain('type=all');
+    expect(url).toContain('date=all');
+    expect(url).not.toContain('search=');
+  });
+});
