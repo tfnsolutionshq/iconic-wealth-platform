@@ -39,6 +39,8 @@ import type {
   AdminReportsQuery,
   ReportKind,
   ReportResult,
+  AdminSavingsDashboard,
+  AdminSavingsQuery,
   SavingsDashboard,
   SavingsMonth,
   SavingsYear,
@@ -525,7 +527,14 @@ export interface AdminRepository {
     decision: "Approved" | "Rejected",
     reason?: string,
   ): Promise<Registration>;
-  /** ADM-13: per-member savings rows plus members-saving-per-month counts for the chart. */
+  /**
+   * ADM-13: `GET /admin/savings-dashboard?year=&status=&search=`. Filters are
+   * applied by the API; money in the result is kobo.
+   */
+  getSavingsDashboard(
+    query: AdminSavingsQuery,
+  ): Promise<AdminSavingsDashboard>;
+  /** Legacy per-member savings view, kept for older callers and tests. */
   savingsOverview(year: number): Promise<{
     rows: MemberSummary[];
     monthly: { month: string; members: number }[];

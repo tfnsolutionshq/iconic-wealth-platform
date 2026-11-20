@@ -42,6 +42,9 @@ import type {
   AdminReportKey,
   AdminReports,
   AdminReportsQuery,
+  AdminSavingsDashboard,
+  AdminSavingsQuery,
+  AdminSavingsStatus,
   ReportKind,
   ReportResult,
   SavingsDashboard,
@@ -2544,6 +2547,76 @@ export class HttpTestimonialRepository implements TestimonialRepository {
     await this.http.post(`/content/testimonials/${id}/delete`);
   }
 }
+
+/** The API uses snake_case status values; normalise them for the domain. */
+function readAdminSavingsStatus(value: unknown): AdminSavingsStatus {
+  const raw = readString(value)?.toLowerCase().replace(/[^a-z]/g, "");
+  if (raw === "uptodate" || raw === "paid" || raw === "ontime")
+    return "up_to_date";
+  if (raw === "late") return "late";
+  if (raw === "missed") return "missed";
+  return "due";
+}
+
+const readKobo = (value: unknown): Kobo => naira(readNumber(value) ?? 0);
+
+/** Maps `GET /admin/savings-dashboard` into kobo-based domain entities. */
+function mapAdminSavingsDashboard(
+  payload: unknown,
+  query: AdminSavingsQuery,
+): AdminSavingsDashboard {
+  const data = unwrapData<unknown>(payload) ?? payload;
+  const root = asRecord(data);
+  const summary = asRecord(root.summary);
+  const monthlyChart = readArray(root.monthly_chart ?? root.monthly).map(
+    (item, index) => {
+      const m = asRecord(item);
+      return {
+        month: readNumber(m.month) ?? index + 1,
+        up_to_date: readNumber(m.up_to_date) ?? 0,
+        paid: readNumber(m.paid) ?? 0,
+        late: readNumber(m.late) ?? 0,
+        missed: readNumber(m.missed) ?? 0,
+      };
+    },
+  );
+  const members = readArray(root.members).map((item) => {
+    const m = asRecord(item);
+    const id = readString(m.id) ?? "";
+    const memberId = readString(m.member_id, m.memberId, m.code) ?? id;
+    return {
+      id,
+      member_id: memberId,
+      name: readString(m.name, m.full_name, m.member_name) ?? memberId,
+      monthly_target:
+        m.monthly_target == null ? null : readKobo(m.monthly_target),
+      months_saved: readNumber(m.months_saved) ?? 0,
+      total_months: readNumber(m.total_months) ?? 11,
+      total_saved: readKobo(m.total_saved),
+      focus_month_status: readAdminSavingsStatus(
+        m.focus_month_status ?? m.status,
+      ),
+      interest_eligible:
+        m.interest_eligible == null
+          ? null
+          : readBoolean(m.interest_eligible) ?? false,
+    };
+  });
+  return {
+    year: readNumber(root.year) ?? query.year,
+    focus_month: readNumber(root.focus_month) ?? 8,
+    summary: {
+      total_saved: readKobo(summary.total_saved),
+      member_count: readNumber(summary.member_count) ?? members.length,
+      up_to_date: readNumber(summary.up_to_date) ?? 0,
+      locked_early: readNumber(summary.locked_early) ?? 0,
+      behind: readNumber(summary.behind) ?? 0,
+    },
+    monthly_chart: monthlyChart,
+    members,
+  };
+}
+
 export class HttpAdminRepository implements AdminRepository {
   constructor(private readonly http: HttpClient) {}
   async dashboard(year: number) {
@@ -2740,6 +2813,14 @@ export class HttpAdminRepository implements AdminRepository {
       { reason },
     );
     return envelope.data!;
+  }
+  getSavingsDashboard(query: AdminSavingsQuery): Promise<AdminSavingsDashboard> {
+    const p = new URLSearchParams({ year: String(query.year) });
+    if (query.status && query.status !== "All") p.set("status", query.status);
+    if (query.search?.trim()) p.set("search", query.search.trim());
+    return this.http
+      .get<unknown>(`/admin/savings-dashboard?${p}`)
+      .then((payload) => mapAdminSavingsDashboard(payload, query));
   }
   savingsOverview(year: number) {
     return this.http.get<{

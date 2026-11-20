@@ -158,6 +158,53 @@ export interface PayoutJourneyStep {
 }
 
 /** The signed-in member's dashboard from GET /savings. */
+/** Filters accepted by `GET /admin/savings-dashboard`. */
+export type AdminSavingsStatus = "up_to_date" | "due" | "late" | "missed";
+export interface AdminSavingsQuery {
+  year: number;
+  /** `All` omits the param; the API uses snake_case status values. */
+  status?: AdminSavingsStatus | "All";
+  search?: string;
+}
+/** All money fields below are kobo (the API sends naira; adapters convert). */
+export interface AdminSavingsSummary {
+  total_saved: Kobo;
+  member_count: number;
+  up_to_date: number;
+  locked_early: number;
+  behind: number;
+}
+export interface AdminSavingsMonth {
+  /** 1-based month number, as returned by the API. */
+  month: number;
+  up_to_date: number;
+  paid: number;
+  late: number;
+  missed: number;
+}
+export interface AdminSavingsMember {
+  /** Internal id used for the member-detail route. */
+  id: string;
+  /** Human-friendly code shown under the member name. */
+  member_id: string;
+  name: string;
+  monthly_target: Kobo | null;
+  months_saved: number;
+  total_months: number;
+  total_saved: Kobo;
+  focus_month_status: AdminSavingsStatus;
+  interest_eligible: boolean | null;
+}
+/** ADM-13: the admin savings dashboard from `GET /admin/savings-dashboard`. */
+export interface AdminSavingsDashboard {
+  year: number;
+  /** 1-based month the status column/chart highlight applies to. */
+  focus_month: number;
+  summary: AdminSavingsSummary;
+  monthly_chart: AdminSavingsMonth[];
+  members: AdminSavingsMember[];
+}
+
 export interface SavingsDashboard {
   isCatchUp?: boolean;
   activeMonth: SavingsPeriod | null;
