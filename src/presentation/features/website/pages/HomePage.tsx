@@ -107,6 +107,9 @@ export function HomePage() {
               <ButtonLink to={paths.howItWorks} variant="outline">
                 Discover how it works
               </ButtonLink>
+              <ButtonLink to={paths.communityGuidelines} variant="outline">
+                Read our community guidelines
+              </ButtonLink>
             </div>
             <div className="flex flex-wrap gap-6 text-[13px] font-semibold text-white/90">
               <span className="flex items-center gap-1.5">

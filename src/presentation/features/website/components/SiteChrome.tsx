@@ -10,6 +10,7 @@ const NAV = [
   ["How it works", paths.howItWorks],
   ["Savings", paths.savings],
   ["Membership", paths.membership],
+  ["Community Guidelines", paths.communityGuidelines],
   ["FAQs", paths.faqs],
   ["Contact", paths.contact],
 ] as const;

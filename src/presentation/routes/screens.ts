@@ -12,6 +12,7 @@ export const SCREENS: Screen[] = [
   { path: '/how-it-works', title: 'How it works', area: 'website', status: 'implemented', prd: 'WEB-04', ref: '#/how-it-works', notes: 'Month at a glance (4 interactive glance cards) + year strip with autoplay highlight and December payout pulse.' },
   { path: '/savings', title: 'Savings', area: 'website', status: 'implemented', prd: 'WEB-05', ref: '#/savings', notes: 'Explainers + charges table computed with chargeBreakdown(); interest card (OD-01/02).' },
   { path: '/membership', title: 'Membership', area: 'website', status: 'implemented', prd: 'WEB-06', ref: '#/membership', notes: 'Who can join (OD-01), checklist, after-you-register card.' },
+  { path: '/community-guidelines', title: 'Community Guidelines', area: 'website', status: 'implemented', prd: 'WEB-03', ref: '#/community-guidelines', notes: 'Iconic Wealth Hub community operational guidelines and terms.' },
   { path: '/faqs', title: 'FAQs', area: 'website', status: 'implemented', prd: 'WEB-07', ref: '#/faqs', notes: 'Category chips, live search, accordion.' },
   { path: '/contact', title: 'Contact', area: 'website', status: 'implemented', prd: 'WEB-08', ref: '#/contact', notes: 'Validated form with toast; WhatsApp + contact details card (CI-01).' },
   { path: '/sitemap', title: 'Site map', area: 'website', status: 'scaffold', prd: 'WEB-15', ref: '#/sitemap' },

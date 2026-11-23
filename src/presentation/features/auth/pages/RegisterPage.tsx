@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Check, TriangleAlert } from "lucide-react";
 import { UnauthorizedError, ValidationError } from "@/domain/errors";
@@ -141,7 +141,7 @@ export function RegisterPage() {
     if (!kin.name.trim()) e.name = "Enter your next of kin’s name.";
     if (!isPhone(kin.phone)) e.phone = "Enter an 11-digit phone number.";
     if (!agree)
-      e.agree = "Please accept the savings guidelines and privacy policy.";
+      e.agree = "Please accept the terms and conditions (community guidelines) and privacy policy.";
     setKinErr(e);
     if (Object.keys(e).length) return;
     setPwError(null);
@@ -406,7 +406,7 @@ export function RegisterPage() {
                   setPolicy("guidelines");
                 }}
               >
-                savings guidelines
+                terms and conditions (community guidelines)
               </button>{" "}
               and{" "}
               <button

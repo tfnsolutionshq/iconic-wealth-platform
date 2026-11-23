@@ -11,6 +11,7 @@ import { AboutPage } from '../features/website/pages/AboutPage';
 import { HowItWorksPage } from '../features/website/pages/HowItWorksPage';
 import { SavingsPage } from '../features/website/pages/SavingsPage';
 import { MembershipPage } from '../features/website/pages/MembershipPage';
+import { CommunityGuidelinesPage } from '../features/website/pages/CommunityGuidelinesPage';
 import { FAQPage } from '../features/website/pages/FAQPage';
 import { ContactPage } from '../features/website/pages/ContactPage';
 import { LoginPage } from '../features/auth/pages/LoginPage';
@@ -46,7 +47,7 @@ const ContentPage = lazy(() => import('../features/admin/pages/ContentPage').the
 
 /** Implemented pages. Any screen in SCREENS without an entry here renders ScaffoldPage. */
 const PAGES: Record<string, ReactElement> = {
-  '/': <HomePage />, '/about': <AboutPage />, '/how-it-works': <HowItWorksPage />, '/savings': <SavingsPage />, '/membership': <MembershipPage />, '/faqs': <FAQPage />, '/contact': <ContactPage />, '/login': <LoginPage />, '/register': <RegisterPage />, '/register/done': <RegistrationDonePage />, '/login/pending': <AwaitingApprovalPage />,
+  '/': <HomePage />, '/about': <AboutPage />, '/how-it-works': <HowItWorksPage />, '/savings': <SavingsPage />, '/membership': <MembershipPage />, '/community-guidelines': <CommunityGuidelinesPage />, '/faqs': <FAQPage />, '/contact': <ContactPage />, '/login': <LoginPage />, '/register': <RegisterPage />, '/register/done': <RegistrationDonePage />, '/login/pending': <AwaitingApprovalPage />,
   '/member': <MemberHomePage />, '/member/savings': <MemberSavingsPage />, '/member/contribute': <ContributePage />, '/member/contribute/review': <ReviewPaymentPage />, '/member/contribute/result': <PaymentResultPage />,
   '/member/wallet': <WalletPage />,
   '/member/activity': <ActivityPage />, '/member/activity/:id': <ReceiptPage />, '/member/notifications': <NotificationsPage />,
