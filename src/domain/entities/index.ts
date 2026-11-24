@@ -6,43 +6,76 @@ export type Kobo = number;
 export type MemberId = string;
 export type MonthIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
 
-export type MemberStatus = 'Active' | 'Suspended';
+export type MemberStatus = "Active" | "Suspended";
 /** Full account lifecycle status returned by the admin API for a member record. */
 export type MemberAccountStatus =
-  | 'pending_email_verification'
-  | 'pending_profile_completion'
-  | 'pending_approval'
-  | 'active'
-  | 'rejected'
-  | 'suspended';
-export type Eligibility = 'Eligible' | 'Forfeited';
-export type MonthStatus = 'Paid' | 'Open' | 'Locked' | 'Due' | 'Late' | 'Missed' | 'NotDue' | 'BeforeJoining';
-export type TransactionStatus = 'Successful' | 'Pending' | 'Failed' | 'Processing';
-export type TransactionKind = 'Contribution' | 'Payout';
+  | "pending_email_verification"
+  | "pending_profile_completion"
+  | "pending_approval"
+  | "active"
+  | "rejected"
+  | "suspended";
+export type Eligibility = "Eligible" | "Forfeited";
+export type MonthStatus =
+  | "Paid"
+  | "Open"
+  | "Locked"
+  | "Due"
+  | "Late"
+  | "Missed"
+  | "NotDue"
+  | "BeforeJoining";
+export type TransactionStatus =
+  | "Successful"
+  | "Pending"
+  | "Failed"
+  | "Processing";
+export type TransactionKind = "Contribution" | "Payout";
 /**
  * How a member pays a contribution: a manual bank transfer to the platform account, from their wallet
  * balance, or online through Paystack. Only online payments carry the platform charge.
  */
-export type ContributionPaymentMethod = 'Bank Account' | 'Wallet' | 'Online';
+export type ContributionPaymentMethod = "Bank Account" | "Wallet" | "Online";
 /** Where a year-end payout is sent: the member's verified bank account or their platform wallet. */
-export type PayoutDestination = 'Bank account' | 'Wallet';
-export type RegistrationStatus = 'New' | 'Approved' | 'Rejected' | 'ChangesRequested';
-export type AdminRole = 'Administrator' | 'SuperAdmin';
-export type OnboardingState = 'PayoutAccount' | 'Target' | 'NewYearTarget' | 'Complete';
+export type PayoutDestination = "Bank account" | "Wallet";
+export type RegistrationStatus =
+  | "New"
+  | "Approved"
+  | "Rejected"
+  | "ChangesRequested";
+export type AdminRole = "Administrator" | "SuperAdmin";
+export type OnboardingState =
+  | "PayoutAccount"
+  | "Target"
+  | "NewYearTarget"
+  | "Complete";
 /** WhatsApp community access: unlocked by the first confirmed payment of at least the minimum. */
-export type CommunityAccess = 'Locked' | 'Eligible' | 'Granted' | 'Restricted';
+export type CommunityAccess = "Locked" | "Eligible" | "Granted" | "Restricted";
 
-export interface NextOfKin { name: string; relationship: string; phone: string }
-export interface PayoutAccount { bankCode: string; bankName: string; accountNumber: string; accountName: string; verifiedAt?: string }
+export interface NextOfKin {
+  name: string;
+  relationship: string;
+  phone: string;
+}
+export interface PayoutAccount {
+  bankCode: string;
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  verifiedAt?: string;
+}
 /** A bank offered for payout accounts. The code is the NUBAN `bank_code` sent when saving. */
-export interface Bank { name: string; code: string }
+export interface Bank {
+  name: string;
+  code: string;
+}
 
 export interface Member {
   id: MemberId;
   firstName: string;
   lastName: string;
-  gender: 'Female';
-  dateOfBirth: string;          // ISO date
+  gender: "Female";
+  dateOfBirth: string; // ISO date
   email: string;
   phone: string;
   stateOfResidence: string;
@@ -61,26 +94,29 @@ export interface Member {
  * One member's savings year. Months January–November (0–10) are savings "buckets"; December is payout month.
  * Totals and statuses are DERIVED from successful transactions + locks (see rules/savings.ts), never stored.
  */
-export interface MonthLock { by: 'member' | 'auto'; on: string }
+export interface MonthLock {
+  by: "member" | "auto";
+  on: string;
+}
 export interface SavingsYear {
   memberId: MemberId;
   year: number;
-  startMonth: MonthIndex;              // 0 normally; a later month is never used now (mid-year joiners use catch-up)
-  joinMonth: MonthIndex | null;        // set for mid-year joiners: months before it are catch-up months
-  target: Kobo;                        // standing monthly savings target (0 = not set). Optional, never enforced
-  targets: Partial<Record<number, Kobo>>;   // per-month overrides
+  startMonth: MonthIndex; // 0 normally; a later month is never used now (mid-year joiners use catch-up)
+  joinMonth: MonthIndex | null; // set for mid-year joiners: months before it are catch-up months
+  target: Kobo; // standing monthly savings target (0 = not set). Optional, never enforced
+  targets: Partial<Record<number, Kobo>>; // per-month overrides
   locks: Partial<Record<number, MonthLock>>;
-  interestException?: boolean;         // approved by a Super Admin
+  interestException?: boolean; // approved by a Super Admin
 }
 
 /** One savings month returned by GET /savings/months. */
 export interface SavingsMonth {
   id: string | null;
   year: number;
-  month: number;                       // 1-12 (savings months are 1-11)
-  period: string;                      // e.g. "2026-01"
+  month: number; // 1-12 (savings months are 1-11)
+  period: string; // e.g. "2026-01"
   monthName: string;
-  status: string;                      // e.g. "defaulted", "upcoming", "saved", "open"
+  status: string; // e.g. "defaulted", "upcoming", "saved", "open"
   statusLabel: string;
   targetAmount: Kobo | null;
   savedAmount: Kobo;
@@ -89,7 +125,7 @@ export interface SavingsMonth {
   targetMet: boolean;
   contributionsCount: number;
   closeNote: string;
-  deadline: string;                    // ISO date-time
+  deadline: string; // ISO date-time
   isCatchUp?: boolean;
 }
 
@@ -97,10 +133,10 @@ export interface SavingsMonth {
 export interface SavingsPeriod {
   id?: string | null;
   year: number;
-  month: number;                       // 1-12
-  period: string;                      // e.g. "2027-01"
-  monthName: string;                   // e.g. "January"
-  deadline: string;                    // ISO date-time
+  month: number; // 1-12
+  period: string; // e.g. "2027-01"
+  monthName: string; // e.g. "January"
+  deadline: string; // ISO date-time
   isCatchUp?: boolean;
   targetAmount?: Kobo | null;
   savedAmount?: Kobo;
@@ -122,6 +158,53 @@ export interface PayoutJourneyStep {
 }
 
 /** The signed-in member's dashboard from GET /savings. */
+/** Filters accepted by `GET /admin/savings-dashboard`. */
+export type AdminSavingsStatus = "up_to_date" | "due" | "late" | "missed";
+export interface AdminSavingsQuery {
+  year: number;
+  /** `All` omits the param; the API uses snake_case status values. */
+  status?: AdminSavingsStatus | "All";
+  search?: string;
+}
+/** All money fields below are kobo (the API sends naira; adapters convert). */
+export interface AdminSavingsSummary {
+  total_saved: Kobo;
+  member_count: number;
+  up_to_date: number;
+  locked_early: number;
+  behind: number;
+}
+export interface AdminSavingsMonth {
+  /** 1-based month number, as returned by the API. */
+  month: number;
+  up_to_date: number;
+  paid: number;
+  late: number;
+  missed: number;
+}
+export interface AdminSavingsMember {
+  /** Internal id used for the member-detail route. */
+  id: string;
+  /** Human-friendly code shown under the member name. */
+  member_id: string;
+  name: string;
+  monthly_target: Kobo | null;
+  months_saved: number;
+  total_months: number;
+  total_saved: Kobo;
+  focus_month_status: AdminSavingsStatus;
+  interest_eligible: boolean | null;
+}
+/** ADM-13: the admin savings dashboard from `GET /admin/savings-dashboard`. */
+export interface AdminSavingsDashboard {
+  year: number;
+  /** 1-based month the status column/chart highlight applies to. */
+  focus_month: number;
+  summary: AdminSavingsSummary;
+  monthly_chart: AdminSavingsMonth[];
+  members: AdminSavingsMember[];
+}
+
 export interface SavingsDashboard {
   isCatchUp?: boolean;
   activeMonth: SavingsPeriod | null;
@@ -146,20 +229,23 @@ export interface SavingsDashboard {
   };
 }
 
-export interface Allocation { month: MonthIndex; amountKobo: Kobo }
+export interface Allocation {
+  month: MonthIndex;
+  amountKobo: Kobo;
+}
 export interface Transaction {
   id: string;
-  reference: string;            // our reference, e.g. IWH-C-...
-  gatewayReference?: string;    // Paystack reference
+  reference: string; // our reference, e.g. IWH-C-...
+  gatewayReference?: string; // Paystack reference
   memberId: MemberId;
   memberName: string;
   kind: TransactionKind;
   year: number;
-  allocations: Allocation[];    // which month(s) the amount was applied to (oldest open month first)
-  amountKobo: Kobo;             // amount saved (or paid out)
-  platformChargeKobo: Kobo;     // flat ₦100, online payments only; member pays amount + charge
-  paymentMethod?: ContributionPaymentMethod;  // how a contribution was paid (absent on older records)
-  payoutDestination?: PayoutDestination;      // where a payout was sent (payout records only)
+  allocations: Allocation[]; // which month(s) the amount was applied to (oldest open month first)
+  amountKobo: Kobo; // amount saved (or paid out)
+  platformChargeKobo: Kobo; // flat ₦100, online payments only; member pays amount + charge
+  paymentMethod?: ContributionPaymentMethod; // how a contribution was paid (absent on older records)
+  payoutDestination?: PayoutDestination; // where a payout was sent (payout records only)
   status: TransactionStatus;
   late: boolean;
   failureReason?: string;
@@ -176,7 +262,7 @@ export interface Registration {
   id: string;
   firstName: string;
   lastName: string;
-  gender: 'Female';
+  gender: "Female";
   dateOfBirth: string;
   email: string;
   phone: string;
@@ -205,9 +291,22 @@ export interface MemberNotification {
   tone: 'brand' | 'gold' | 'fail' | 'neutral';
 }
 
-export interface Testimonial { id: string; name: string; descriptor: string; quote: string; status: 'Published' | 'Draft'; order: number }
+export interface Testimonial {
+  id: string;
+  name: string;
+  descriptor: string;
+  quote: string;
+  status: "Published" | "Draft";
+  order: number;
+}
 
-export interface AdminUser { id: string; name: string; email: string; role: AdminRole; status: 'Active' | 'Invited' | 'Deactivated' }
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  role: AdminRole;
+  status: "Active" | "Invited" | "Deactivated";
+}
 
 /**
  * A row in the admin members list.
@@ -217,37 +316,59 @@ export interface AdminUser { id: string; name: string; email: string; role: Admi
  * repository still returns a full `MemberSummary`.
  */
 export interface MemberListRow {
-  id: MemberId; name: string; status: MemberStatus; accountStatus?: MemberAccountStatus; targetKobo?: Kobo; savedKobo?: Kobo; monthsPaid?: number;
-  currentMonthStatus?: MonthStatus; eligibility?: Eligibility; forfeitReason?: string; referredBy?: string; joinedOn: string;
+  id: MemberId;
+  name: string;
+  status: MemberStatus;
+  accountStatus?: MemberAccountStatus;
+  targetKobo?: Kobo;
+  savedKobo?: Kobo;
+  monthsPaid?: number;
+  currentMonthStatus?: MonthStatus;
+  eligibility?: Eligibility;
+  forfeitReason?: string;
+  referredBy?: string;
+  joinedOn: string;
 }
 
 export interface MemberSummary extends MemberListRow {
-  targetKobo: Kobo; savedKobo: Kobo; monthsPaid: number;
-  currentMonthStatus: MonthStatus; eligibility: Eligibility;
+  targetKobo: Kobo;
+  savedKobo: Kobo;
+  monthsPaid: number;
+  currentMonthStatus: MonthStatus;
+  eligibility: Eligibility;
 }
 
 export type Session =
-  | { kind: 'member'; member: Member }
-  | { kind: 'admin'; admin: AdminUser }
-  | { kind: 'pending'; registration: Registration };
+  | { kind: "member"; member: Member }
+  | { kind: "admin"; admin: AdminUser }
+  | { kind: "pending"; registration: Registration };
 
 /* ---------------- Member wallet ---------------- */
 
-export type WalletEntryKind = 'TopUp' | 'Withdrawal' | 'Contribution' | 'Payout' | 'Adjustment';
-export type WalletEntryStatus = 'Pending' | 'Processing' | 'Successful' | 'Failed';
+export type WalletEntryKind =
+  | "TopUp"
+  | "Withdrawal"
+  | "Contribution"
+  | "Payout"
+  | "Adjustment";
+export type WalletEntryStatus =
+  | "Pending"
+  | "Processing"
+  | "Successful"
+  | "Failed";
 
 /** One money movement in or out of the member's wallet. Statuses mirror Transaction; Pending/Failed never count. */
 export interface WalletEntry {
   id: string;
-  reference: string;            // our reference, e.g. IWH-W-...
+  reference: string; // our reference, e.g. IWH-W-...
   memberId: MemberId;
   kind: WalletEntryKind;
-  direction: 'Credit' | 'Debit';
+  direction: "Credit" | "Debit";
   amountKobo: Kobo;
   status: WalletEntryStatus;
-  note?: string;                // human detail, e.g. "To GTBank •••• 6789"
+  note?: string; // human detail, e.g. "To GTBank •••• 6789"
   failureReason?: string;
-  createdAt: string;            // ISO
+  createdAt: string; // ISO
 }
 
 /** A member's request to move wallet money to their verified payout account; an admin disburses it later. */
@@ -256,7 +377,7 @@ export interface WalletWithdrawal {
   reference: string;
   memberId: MemberId;
   amountKobo: Kobo;
-  status: 'Processing' | 'Paid' | 'Failed';
+  status: "Processing" | "Paid" | "Failed";
   bankName: string;
   accountNumber: string;
   accountName: string;
@@ -267,73 +388,273 @@ export interface WalletWithdrawal {
 /** Balances are DERIVED from entries (see rules/wallet.ts), never stored. */
 export interface WalletSnapshot {
   memberId: MemberId;
-  availableKobo: Kobo;         // spendable: settled credits − settled debits − in-flight withdrawals
-  pendingDepositKobo: Kobo;    // top-ups awaiting confirmation
+  availableKobo: Kobo; // spendable: settled credits − settled debits − in-flight withdrawals
+  pendingDepositKobo: Kobo; // top-ups awaiting confirmation
   pendingWithdrawalKobo: Kobo; // requested, awaiting disbursement to the bank
-  entries: WalletEntry[];      // newest first
+  entries: WalletEntry[]; // newest first
   withdrawals: WalletWithdrawal[]; // newest first
 }
 
 /* ---------------- Admin portal (ADM-13 and later) ---------------- */
 
-export type AuditCategory = 'Financial' | 'Members' | 'Access' | 'Roles';
+export type AuditCategory = "Financial" | "Members" | "Access" | "Roles";
 export interface AuditEntry {
-  id: string; at: string; actor: string; role: string;
-  action: string; entity: string; change: string; category: AuditCategory;
+  id: string;
+  at: string;
+  actor: string;
+  role: string;
+  action: string;
+  entity: string;
+  change: string;
+  category: AuditCategory;
+}
+/** Server-side filters accepted by `GET /admin/audit-logs`. */
+export interface AuditLogQuery {
+  type?: "all" | "financial" | "members" | "access" | "roles";
+  date?: "all" | "today" | "last_7_days" | "last_30_days";
+  from?: string;
+  to?: string;
+  search?: string;
+  per_page?: number;
+  page?: number;
+}
+export interface AuditLogMeta {
+  current_page: number;
+  per_page: number;
+  last_page: number;
+  total: number;
+  counts?: Record<string, number>;
+}
+export interface AuditLogPage {
+  rows: AuditEntry[];
+  meta: AuditLogMeta;
 }
 
-export type InterestStatus = 'Not started' | 'Draft' | 'Pending approval' | 'Returned' | 'Approved' | 'Paid out';
+export type InterestStatus =
+  | "Not started"
+  | "Draft"
+  | "Submitted"
+  | "Pending approval"
+  | "Returned"
+  | "Approved"
+  | "Paid out";
 /** Whether interest applies to every eligible member or only to members picked manually (Rule configuration). */
-export type InterestScope = 'All members' | 'Selected members';
+export type InterestScope = "All members" | "Selected members";
 /** One fixed rate for everyone, or different rates for bands of total contributions. */
-export type InterestRateMode = 'Fixed rate' | 'Contribution ranges';
+export type InterestRateMode = "Fixed rate" | "Contribution ranges";
 /** A contribution band and the rate applied to members whose total savings fall inside it. `maxKobo: null` = no upper limit. */
-export interface InterestBand { minKobo: Kobo; maxKobo: Kobo | null; rate: number }
+export interface InterestBand {
+  minKobo: Kobo;
+  maxKobo: Kobo | null;
+  rate: number;
+}
 export interface InterestYearSummary {
-  year: number; status: InterestStatus; rate: number | null; rateMode?: InterestRateMode;
-  eligible: number; forfeited: number; contributionsKobo: Kobo; interestKobo: Kobo;
-  maker?: string; checker?: string; approvedAt?: string; batchId?: string;
+  id?: string;
+  year: number;
+  status: InterestStatus;
+  rate: number | null;
+  rateMode?: InterestRateMode;
+  eligible: number;
+  forfeited: number;
+  contributionsKobo: Kobo;
+  interestKobo: Kobo;
+  maker?: string;
+  checker?: string;
+  approvedAt?: string;
+  batchId?: string;
 }
 export interface InterestCalcRow {
-  memberId: string; memberName: string; contributionsKobo: Kobo;
-  sharePct: number; interestKobo: Kobo; eligible: boolean; reason?: string;
+  memberId: string;
+  memberName: string;
+  contributionsKobo: Kobo;
+  sharePct: number;
+  interestKobo: Kobo;
+  eligible: boolean;
+  reason?: string;
   /** The rate applied to this member (fixed or the matching contribution band). */
   rate?: number | null;
 }
+/** Totals returned alongside the member-level calculation entries. */
+export interface InterestCalculationSummary {
+  eligible: number;
+  forfeited: number;
+  eligibleContributionsKobo: Kobo;
+  interestKobo: Kobo;
+}
+/** Payload of GET /admin/interest/:interestConfigId/entries. */
+export interface InterestCalculationEntries {
+  summary: InterestCalculationSummary;
+  entries: InterestCalcRow[];
+}
+/** Progress state of one backend milestone (`stages[].status` in the API). */
+export type InterestStageStatus = "completed" | "current" | "pending";
+/** One milestone in the server-provided interest workflow. */
+export interface InterestStage {
+  key: string;
+  label: string;
+  status: InterestStageStatus;
+  completedAt: string | null;
+}
+/** One of the eight wizard steps returned by the config detail endpoint. */
+export interface InterestWizardStage extends InterestStage {
+  step: number;
+}
+/** Notification channels accepted by `POST /admin/interest/{id}/notify`. */
+export type InterestNotifyChannel = "in_app" | "email" | "whatsapp";
+/** A user attached to an interest workflow milestone (created by / submitted by / reviewed by). */
+export interface InterestActor {
+  id: string;
+  name: string;
+}
 /** 8-stage maker-checker workflow (ADM-16, ADM-17). `closed` years are read-only. */
 export interface InterestWorkflow extends InterestYearSummary {
-  closed: boolean; stage: number; done: number;
-  start: string; end: string; close: string; rounding: string;
-  rateMode: InterestRateMode; bands: InterestBand[];
-  scope: InterestScope; selectedMemberIds: string[];
+  closed: boolean;
+  stage: number;
+  done: number;
+  start: string;
+  end: string;
+  close: string;
+  rounding: string;
+  rateMode: InterestRateMode;
+  bands: InterestBand[];
+  scope: InterestScope;
+  selectedMemberIds: string[];
   /** Members removed from the payout preview; they are excluded from the batch and interest totals. */
   excludedMemberIds: string[];
-  calc: boolean; note: string; rejectReason?: string; notified: boolean;
+  calc: boolean;
+  note: string;
+  rejectReason?: string;
+  notified: boolean;
   history: [string, string, string][]; // [at, event, actor]
+  /** Server-provided progress: display label, current milestone key and completed milestone keys. */
+  statusLabel: string;
+  currentStage: string | null;
+  completedStages: string[];
+  /** Ordered milestones with their own status and completion timestamp. */
+  stages: InterestStage[];
+  /** Authoritative 8-step wizard display states from `wizard_stages`. */
+  wizardStages?: InterestWizardStage[];
+  calculationRunAt: string | null;
+  createdBy: InterestActor | null;
+  submittedBy: InterestActor | null;
+  reviewedBy: InterestActor | null;
+  submittedAt: string | null;
+  reviewedAt: string | null;
 }
 
-export type PayoutBatchStatus = 'Awaiting approval' | 'Returned to maker' | 'Approved' | 'Processing' | 'Partial' | 'Completed';
-export type PayoutRowStatus = 'Paid' | 'Paid manually' | 'Failed' | 'Retrying' | 'Pending';
+export type PayoutBatchStatus =
+  | "Awaiting approval"
+  | "Returned to maker"
+  | "Approved"
+  | "Processing"
+  | "Partial"
+  | "Completed";
+export type PayoutRowStatus =
+  | "Paid"
+  | "Paid manually"
+  | "Failed"
+  | "Retrying"
+  | "Pending";
 export interface PayoutRow {
-  memberId: string; memberName: string; savingsKobo: Kobo; interestKobo: Kobo; totalKobo: Kobo;
-  account: string; status: PayoutRowStatus; reason?: string; reference: string; proof?: string;
+  memberId: string;
+  memberName: string;
+  savingsKobo: Kobo;
+  interestKobo: Kobo;
+  totalKobo: Kobo;
+  account: string;
+  status: PayoutRowStatus;
+  reason?: string;
+  reference: string;
+  proof?: string;
 }
 export interface PayoutBatch {
-  id: string; year: number; month: string; status: PayoutBatchStatus; count: number;
-  savingsKobo: Kobo; interestKobo: Kobo; maker: string; checker?: string; createdAt: string;
-  returnReason?: string; rows: PayoutRow[]; history: [string, string, string][];
+  id: string;
+  /** Human-readable batch code (`batch_code` in the API), e.g. PB-2026-12. */
+  batchCode?: string;
+  /** Interest configuration this batch was generated from; use it for detail links. */
+  interestConfigId?: string;
+  year: number;
+  month: string;
+  status: PayoutBatchStatus;
+  count: number;
+  savingsKobo: Kobo;
+  interestKobo: Kobo;
+  maker: string;
+  checker?: string;
+  createdAt: string;
+  returnReason?: string;
+  rows: PayoutRow[];
+  history: [string, string, string][];
 }
 
-export type ReportKind = 'compliance' | 'collections' | 'eligibility' | 'charges';
-export interface ReportResult { headers: string[]; rows: string[][] }
+/** Report sections rendered by `#/admin/reports`. */
+export type AdminReportKey =
+  | "compliance"
+  | "eligibility"
+  | "charges"
+  | "payout"
+  | "late"
+  | "savings";
+/** `collections` is kept as a legacy alias for the charges report. */
+export type ReportKind = AdminReportKey | "collections";
+export interface ReportResult {
+  headers: string[];
+  rows: string[][];
+}
+/** `GET /admin/reports` accepts only these filters — there is no `kind` param. */
+export interface AdminReportsQuery {
+  year: number;
+  /** Sent for month-based reports (compliance and charges). */
+  month?: number | "all";
+  /** Sent when a status filter is active; the API names this `eligibility`. */
+  eligibility?: string;
+}
+export interface AdminReports {
+  year: number;
+  month?: number | "all";
+  eligibility?: string;
+  reports: Record<AdminReportKey, ReportResult>;
+}
 
-export type ReferralStatus = 'Saving' | 'Pending' | 'Inactive' | 'Not started';
-export interface ReferralGroup { referrer: string; referred: { name: string; date: string; status: ReferralStatus }[] }
+export type ReferralStatus = "Saving" | "Pending" | "Inactive" | "Not started";
+export interface ReferralGroup {
+  /** Referrer id returned by the API, used for `?referral_id=…` lookups. */
+  id?: string;
+  referrer: string;
+  referred: { name: string; date: string; status: ReferralStatus }[];
+  /** Aggregates supplied by `/admin/referrals-dashboard`, when available. */
+  total?: number;
+  saving?: number;
+  pending?: number;
+  latest?: string;
+}
+export interface ReferralDashboardSummary {
+  totalReferred: number;
+  savingNow: number;
+  pending: number;
+  topReferrer?: string;
+}
+export interface ReferralDashboard {
+  summary: ReferralDashboardSummary;
+  groups: ReferralGroup[];
+}
+/** Optional filters accepted by `GET /admin/referrals-dashboard`. */
+export interface ReferralDashboardQuery {
+  referral_id?: string;
+  search?: string;
+}
 
-export interface AdminListItem { id: string; name: string; email: string; role: AdminRole; status: 'Active' | 'Invited' | 'Deactivated'; lastActive: string }
+export interface AdminListItem {
+  id: string;
+  name: string;
+  email: string;
+  role: AdminRole;
+  status: "Active" | "Invited" | "Deactivated";
+  lastActive: string;
+}
 
 export interface NotificationSettings {
-  channels: ('In-app' | 'Email' | 'SMS' | 'WhatsApp')[];
+  channels: ("In-app" | "Email" | "WhatsApp")[];
   events: { key: string; label: string }[];
   matrix: Record<string, Record<string, boolean>>;
   reminderDays: number;

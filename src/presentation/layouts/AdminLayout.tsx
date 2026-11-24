@@ -81,8 +81,9 @@ const NOTICE_TILE: Record<AdminNotice["tone"], string> = {
 export function AdminLayout() {
   const { session, logout } = useAuth();
   const [open, setOpen] = useState(false);
-  if (session?.kind === 'member') return <Navigate to={paths.member.home} replace />;
-  if (session?.kind !== 'admin') return <Navigate to={paths.login} replace />;
+  if (session?.kind === "member")
+    return <Navigate to={paths.member.home} replace />;
+  if (session?.kind !== "admin") return <Navigate to={paths.login} replace />;
   const a = session.admin;
   return (
     <div className="flex min-h-screen items-start bg-[#fbfafd]">
@@ -230,7 +231,8 @@ export function AdminPageHeader({
   const admin = session?.kind === "admin" ? session.admin : null;
   /** The role switcher is a demo of maker-checker: available in demo mode. */
   const canSwitch = env.demoMode;
-  const roleLabel = (r: AdminRole) => (r === "SuperAdmin" ? "Super Admin" : "Administrator");
+  const roleLabel = (r: AdminRole) =>
+    r === "SuperAdmin" ? "Super Admin" : "Administrator";
 
   useEffect(() => {
     if (!menu) return;
@@ -249,9 +251,13 @@ export function AdminPageHeader({
   useEffect(() => {
     if (!menu || people.Administrator) return;
     let live = true;
-    Promise.all([repos.admin.currentAdmin("Administrator"), repos.admin.currentAdmin("SuperAdmin")])
+    Promise.all([
+      repos.admin.currentAdmin("Administrator"),
+      repos.admin.currentAdmin("SuperAdmin"),
+    ])
       .then(([maker, checker]) => {
-        if (live) setPeople({ Administrator: maker?.name, SuperAdmin: checker?.name });
+        if (live)
+          setPeople({ Administrator: maker?.name, SuperAdmin: checker?.name });
       })
       .catch(() => {});
     return () => {
@@ -264,7 +270,8 @@ export function AdminPageHeader({
     const onDown = (e: MouseEvent) => {
       if (!notifRef.current?.contains(e.target as Node)) setNotifOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setNotifOpen(false);
+    const onKey = (e: KeyboardEvent) =>
+      e.key === "Escape" && setNotifOpen(false);
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
     return () => {
@@ -298,29 +305,53 @@ export function AdminPageHeader({
             }),
           );
         years
-          .filter((y) => y.status === "Pending approval" || y.status === "Returned")
+          .filter(
+            (y) => y.status === "Pending approval" || y.status === "Returned",
+          )
           .slice(0, 3)
           .forEach((y) =>
             items.push({
-              id: `interest-${y.year}`,
+              id: `interest-${y.id ?? y.year}`,
               icon: <Percent size={18} />,
-              title: y.status === "Returned" ? `Interest ${y.year} returned` : `Interest ${y.year} needs approval`,
-              body: y.rate != null ? `${y.rate}% · ${y.eligible.toLocaleString()} eligible members` : "Awaiting review.",
-              to: paths.admin.interestYear(y.year),
+              title:
+                y.status === "Returned"
+                  ? `Interest ${y.year} returned`
+                  : `Interest ${y.year} needs approval`,
+              body:
+                y.rate != null
+                  ? `${y.rate}% · ${y.eligible.toLocaleString()} eligible members`
+                  : "Awaiting review.",
+              to: paths.admin.interestConfig(y.id ?? y.year),
               tone: y.status === "Returned" ? "fail" : "brand",
             }),
           );
         batches
-          .filter((b) => b.status === "Awaiting approval" || b.status === "Returned to maker" || b.status === "Partial")
+          .filter(
+            (b) =>
+              b.status === "Awaiting approval" ||
+              b.status === "Returned to maker" ||
+              b.status === "Partial",
+          )
           .slice(0, 3)
           .forEach((b) =>
             items.push({
               id: `payout-${b.id}`,
               icon: <Banknote size={18} />,
-              title: b.status === "Partial" ? `Payout ${b.id} has failures` : `Payout ${b.id} needs attention`,
+              title:
+                b.status === "Partial"
+                  ? `Payout ${b.id} has failures`
+                  : `Payout ${b.id} needs attention`,
               body: `${b.month} ${b.year} · ${b.count.toLocaleString()} members`,
-              to: paths.admin.payoutBatch(b.id),
-              tone: b.status === "Partial" ? "fail" : b.status === "Returned to maker" ? "gold" : "brand",
+              to: paths.admin.payoutBatch(b.id, {
+                interestConfigId: b.interestConfigId,
+                year: b.year,
+              }),
+              tone:
+                b.status === "Partial"
+                  ? "fail"
+                  : b.status === "Returned to maker"
+                    ? "gold"
+                    : "brand",
             }),
           );
         setNotices(items.slice(0, 8));
@@ -354,13 +385,19 @@ export function AdminPageHeader({
         </Link>
       )}
       <div className="min-w-0 flex-1 basis-40">
-        <h1 className="truncate text-xl font-extrabold tracking-tight sm:text-2xl">{title}</h1>
+        <h1 className="truncate text-xl font-extrabold tracking-tight sm:text-2xl">
+          {title}
+        </h1>
         {sub && (
-          <div className="truncate text-[13px] font-semibold text-mute">{sub}</div>
+          <div className="truncate text-[13px] font-semibold text-mute">
+            {sub}
+          </div>
         )}
       </div>
       {actions && (
-        <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {actions}
+        </div>
       )}
       <div ref={notifRef} className="relative shrink-0">
         <button
@@ -382,15 +419,18 @@ export function AdminPageHeader({
               Notifications
             </div>
             <div className="max-h-80 overflow-y-auto">
-              {notices === null ? (
+              {notices === null && (
                 <p className="border-t border-line px-3.5 py-3 text-sm font-semibold text-mute">
                   Loading notifications…
                 </p>
-              ) : notices.length === 0 ? (
+              )}
+              {notices !== null && notices.length === 0 && (
                 <p className="border-t border-line px-3.5 py-3 text-sm font-semibold text-mute">
                   You’re all caught up.
                 </p>
-              ) : (
+              )}
+              {notices !== null &&
+                notices.length > 0 &&
                 notices.map((n) => (
                   <Link
                     key={n.id}
@@ -399,16 +439,22 @@ export function AdminPageHeader({
                     onClick={() => setNotifOpen(false)}
                     className="flex items-start gap-2.5 border-t border-line px-3.5 py-3 no-underline hover:bg-soft"
                   >
-                    <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-full", NOTICE_TILE[n.tone])}>
+                    <span
+                      className={cn(
+                        "flex size-8 shrink-0 items-center justify-center rounded-full",
+                        NOTICE_TILE[n.tone],
+                      )}
+                    >
                       {n.icon}
                     </span>
                     <span className="flex min-w-0 flex-1 flex-col">
                       <b className="truncate text-[13px] text-ink">{n.title}</b>
-                      <span className="text-xs font-semibold leading-snug text-mute">{n.body}</span>
+                      <span className="text-xs font-semibold leading-snug text-mute">
+                        {n.body}
+                      </span>
                     </span>
                   </Link>
-                ))
-              )}
+                ))}
             </div>
           </div>
         )}
@@ -437,7 +483,10 @@ export function AdminPageHeader({
               </span>
             </span>
             {canSwitch && (
-              <ChevronDown size={16} className={cn("transition", menu && "rotate-180")} />
+              <ChevronDown
+                size={16}
+                className={cn("transition", menu && "rotate-180")}
+              />
             )}
           </button>
           {menu && (
@@ -466,10 +515,13 @@ export function AdminPageHeader({
                     <span className="flex min-w-0 flex-1 flex-col">
                       <b className="truncate text-[13px]">{name}</b>
                       <span className="text-[11px] font-semibold text-mute">
-                        {roleLabel(r)} · {r === "SuperAdmin" ? "checker" : "maker"}
+                        {roleLabel(r)} ·{" "}
+                        {r === "SuperAdmin" ? "checker" : "maker"}
                       </span>
                     </span>
-                    {admin.role === r && <Check size={16} className="shrink-0" />}
+                    {admin.role === r && (
+                      <Check size={16} className="shrink-0" />
+                    )}
                   </button>
                 );
               })}

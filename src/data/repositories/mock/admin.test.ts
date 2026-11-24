@@ -28,7 +28,7 @@ describe('MockAdminRepository savings, reports, referrals, audit', () => {
     expect(d.monthly).toHaveLength(12);
   });
   it('runs each report kind', async () => {
-    for (const kind of ['compliance', 'collections', 'eligibility', 'charges'] as const) {
+    for (const kind of ['compliance', 'eligibility', 'charges', 'payout', 'late', 'savings'] as const) {
       const r = await admin.runReport(kind, 2026, 'all', 'All');
       expect(r.headers.length).toBeGreaterThan(0);
       expect(r.rows.length).toBeGreaterThan(0);
@@ -40,9 +40,9 @@ describe('MockAdminRepository savings, reports, referrals, audit', () => {
     expect(groups.flatMap(g => g.referred).some(r => r.status === 'Pending')).toBe(true);
   });
   it('appends audit entries', async () => {
-    const before = (await admin.listAuditLog()).length;
+    const before = (await admin.listAuditLog()).rows.length;
     await admin.logAudit({ at: new Date().toISOString(), actor: 'Test Admin', role: 'Administrator', action: 'Test action', entity: 'T-1', change: '—', category: 'Access' });
-    expect((await admin.listAuditLog()).length).toBe(before + 1);
+    expect((await admin.listAuditLog()).rows.length).toBe(before + 1);
   });
 });
 
@@ -72,27 +72,27 @@ describe('MockAdminRepository interest → payout flow', () => {
     }
     const done = await admin.getPayoutBatch(batch.id);
     expect(done.status).toBe('Completed');
-    const notified = await admin.notifyInterest(2026, 'Adaeze Okafor');
+    const notified = await admin.notifyInterest(2026, ['in_app', 'email', 'whatsapp'], 'Adaeze Okafor');
     expect(notified.notified).toBe(true);
     expect(notified.done).toBe(8);
   });
-  it('lets a Super Admin make and approve their own interest request, but not other roles', async () => {
+  it('blocks makers, including Super Admins, from approving their own interest request', async () => {
     await admin.saveInterestPeriod(2026, { start: '2026-01-01', end: '2026-11-30', close: '2027-01-05' });
     await admin.saveInterestRules(2026, { rate: 12, rounding: 'Nearest kobo', scope: 'All members', selectedMemberIds: [] });
     await admin.runInterestCalculation(2026);
     await admin.submitInterest(2026, 'Self review', 'Olumide Bakare');
-    await expect(admin.decideInterest(2026, 'Approved', { by: 'Olumide Bakare', role: 'Administrator' })).rejects.toThrow('Only a Super Admin');
-    await expect(admin.decideInterest(2026, 'Approved', { by: 'Olumide Bakare' })).rejects.toThrow('approve your own work');
-    const approved = await admin.decideInterest(2026, 'Approved', { by: 'Olumide Bakare', role: 'SuperAdmin' });
+    await expect(admin.decideInterest(2026, 'Approved', { by: 'Olumide Bakare', role: 'Administrator' })).rejects.toThrow('prepared');
+    await expect(admin.decideInterest(2026, 'Approved', { by: 'Olumide Bakare', role: 'SuperAdmin' })).rejects.toThrow('prepared');
+    const approved = await admin.decideInterest(2026, 'Approved', { by: 'Adaeze Okafor', role: 'SuperAdmin' });
     expect(approved.status).toBe('Approved');
-    expect(approved.checker).toBe('Olumide Bakare');
-  });
-  it('lets a Super Admin decide on their own payout batch, but not other roles', async () => {
-    const batch = await admin.createPayoutBatch(2026, 'Adaeze Okafor'); // the batch created above
-    await expect(admin.decideBatch(batch.id, 'Approved', { by: 'Adaeze Okafor' })).rejects.toThrow('approve your own work');
-    await expect(admin.decideBatch(batch.id, 'Approved', { by: 'Olumide Bakare', role: 'Administrator' })).rejects.toThrow('Only a Super Admin');
-    const approved = await admin.decideBatch(batch.id, 'Approved', { by: 'Adaeze Okafor', role: 'SuperAdmin' });
     expect(approved.checker).toBe('Adaeze Okafor');
+  });
+  it('blocks makers, including Super Admins, from approving their own payout batch', async () => {
+    const batch = await admin.createPayoutBatch(2026, 'Adaeze Okafor'); // the batch created above
+    await expect(admin.decideBatch(batch.id, 'Approved', { by: 'Adaeze Okafor', role: 'Administrator' })).rejects.toThrow('prepared');
+    await expect(admin.decideBatch(batch.id, 'Approved', { by: 'Adaeze Okafor', role: 'SuperAdmin' })).rejects.toThrow('prepared');
+    const approved = await admin.decideBatch(batch.id, 'Approved', { by: 'Olumide Bakare', role: 'SuperAdmin' });
+    expect(approved.checker).toBe('Olumide Bakare');
   });
 });
 

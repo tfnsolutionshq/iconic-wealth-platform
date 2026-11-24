@@ -3,8 +3,16 @@
  * route in the reference build (iconic-wealth-hub.html#<ref>). `status` tracks handover progress:
  *   implemented = built to the design in this starter;  scaffold = route, layout and guard are wired, page to build.
  */
-export type Area = 'website' | 'auth' | 'member' | 'admin';
-export interface Screen { path: string; title: string; area: Area; status: 'implemented' | 'scaffold'; prd: string; ref: string; notes?: string }
+export type Area = "website" | "auth" | "member" | "admin";
+export interface Screen {
+  path: string;
+  title: string;
+  area: Area;
+  status: "implemented" | "scaffold";
+  prd: string;
+  ref: string;
+  notes?: string;
+}
 
 export const SCREENS: Screen[] = [
   { path: '/', title: 'Home', area: 'website', status: 'implemented', prd: 'WEB-01, WEB-02', ref: '#/' },
@@ -49,4 +57,4 @@ export const SCREENS: Screen[] = [
   { path: '/admin/settings', title: 'Settings', area: 'admin', status: 'implemented', prd: 'ADM-24 to ADM-27 (v5)', ref: '#/admin/settings', notes: 'Roles matrix; platform settings (Super Admin, audited); admin users; notification matrix.' },
   { path: '/admin/content', title: 'Content (testimonials)', area: 'admin', status: 'implemented', prd: 'ADM-28 (v5)', ref: '#/admin/content', notes: 'Add, edit, publish/unpublish, reorder, delete; consent tick. Website reads TestimonialRepository.listPublished().' },
 ];
-export const screenFor = (path: string) => SCREENS.find(s => s.path === path);
+export const screenFor = (path: string) => SCREENS.find((s) => s.path === path);

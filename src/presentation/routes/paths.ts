@@ -36,9 +36,21 @@ export const paths = {
     savings: "/admin/savings",
     transactions: "/admin/transactions",
     interest: "/admin/interest",
+    interestConfig: (interestConfigId: number | string) =>
+      `/admin/interest/${interestConfigId}`,
     interestYear: (year: number | string) => `/admin/interest/${year}`,
     payouts: "/admin/payouts",
-    payoutBatch: (id: string) => `/admin/payouts/${id}`,
+    payoutBatch: (
+      id: string,
+      opts?: { interestConfigId?: number | string; year?: number | string },
+    ) => {
+      const params = new URLSearchParams();
+      if (opts?.interestConfigId != null)
+        params.set("interestConfig", String(opts.interestConfigId));
+      if (opts?.year != null) params.set("year", String(opts.year));
+      const query = params.toString();
+      return `/admin/payouts/${id}${query ? `?${query}` : ""}`;
+    },
     reports: "/admin/reports",
     referrals: "/admin/referrals",
     audit: "/admin/audit-log",

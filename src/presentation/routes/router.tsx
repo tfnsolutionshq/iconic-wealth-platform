@@ -65,9 +65,23 @@ const children = (filter: (p: string) => boolean): RouteObject[] => SCREENS.filt
 const AUTH_ONLY = ['/login', '/register'];
 
 export const router = createBrowserRouter([
-  { element: <SiteLayout />, children: children(p => !p.startsWith('/member') && !p.startsWith('/admin') && !AUTH_ONLY.includes(p)) },
-  { element: <AuthLayout />, children: children(p => AUTH_ONLY.includes(p)) },
-  { element: <MemberLayout />, children: children(p => p.startsWith('/member')) },
-  { element: <AdminLayout />, children: children(p => p.startsWith('/admin')) },
-  { path: '*', element: <Navigate to="/" replace /> },
+  {
+    element: <SiteLayout />,
+    children: children(
+      (p) =>
+        !p.startsWith("/member") &&
+        !p.startsWith("/admin") &&
+        !AUTH_ONLY.includes(p),
+    ),
+  },
+  { element: <AuthLayout />, children: children((p) => AUTH_ONLY.includes(p)) },
+  {
+    element: <MemberLayout />,
+    children: children((p) => p.startsWith("/member")),
+  },
+  {
+    element: <AdminLayout />,
+    children: children((p) => p.startsWith("/admin")),
+  },
+  { path: "*", element: <Navigate to="/" replace /> },
 ]);

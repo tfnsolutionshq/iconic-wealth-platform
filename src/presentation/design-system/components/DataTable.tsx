@@ -14,13 +14,18 @@ export function DataTable<T>({
   rowKey,
   onRowClick,
   empty = "Nothing matches these filters",
+  padding = "default",
 }: {
   columns: Column<T>[];
   rows: T[];
   rowKey: (r: T) => string;
   onRowClick?: (r: T) => void;
   empty?: string;
+  /** `relaxed` gives configuration detail rows the roomier prototype spacing. */
+  padding?: "default" | "relaxed";
 }) {
+  const headPad = padding === "relaxed" ? "px-4 py-4" : "px-3.5 py-2.5";
+  const cellPad = padding === "relaxed" ? "px-4 py-4" : "px-3.5 py-3";
   return (
     <div className="max-w-full overflow-x-auto rounded-2xl border border-line bg-white [-webkit-overflow-scrolling:touch]">
       <table className="w-full min-w-140 border-collapse text-sm">
@@ -29,7 +34,7 @@ export function DataTable<T>({
             {columns.map((c) => (
               <th
                 key={c.header}
-                className={`whitespace-nowrap border-b border-line bg-soft px-3.5 py-2.5 text-xs font-bold text-mute ${c.align === "right" ? "text-right" : "text-left"}`}
+                className={`whitespace-nowrap border-b border-line bg-soft ${headPad} text-xs font-bold text-mute ${c.align === "right" ? "text-right" : "text-left"}`}
               >
                 {c.header}
               </th>
@@ -61,7 +66,7 @@ export function DataTable<T>({
               {columns.map((c) => (
                 <td
                   key={c.header}
-                  className={`border-b border-line px-3.5 py-3 font-semibold last:border-b-0 ${c.align === "right" ? "text-right tabular-nums" : ""}`}
+                  className={`border-b border-line ${cellPad} font-semibold last:border-b-0 ${c.align === "right" ? "text-right tabular-nums" : ""}`}
                 >
                   {c.render(r)}
                 </td>

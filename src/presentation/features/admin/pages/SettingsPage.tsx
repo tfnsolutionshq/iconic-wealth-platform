@@ -668,7 +668,7 @@ function NotificationsTab({
   return (
     <div className="flex flex-col gap-4">
       <Card className="overflow-x-auto">
-        <div className="grid min-w-160 grid-cols-[1fr_repeat(4,110px)] items-center gap-2 text-sm">
+        <div className="grid min-w-120 grid-cols-[1fr_repeat(3,110px)] items-center gap-2 text-sm">
           <span />
           {s.channels.map((c) => (
             <b key={c} className="text-xs font-extrabold text-mute">
