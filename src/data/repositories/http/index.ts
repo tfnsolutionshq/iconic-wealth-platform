@@ -99,6 +99,8 @@ import type {
   SavingsDashboardRepository,
   SavingsTargetRepository,
   SettingsRepository,
+  TestimonialListPage,
+  TestimonialQuery,
   TestimonialRepository,
   VerifiedContribution,
   ApiMember,
@@ -3148,39 +3150,152 @@ export class HttpSettingsRepository implements SettingsRepository {
     return this.http.put<PlatformSettings>("/settings/platform", patch);
   }
 }
+interface ApiTestimonial {
+  id?: string;
+  name?: string;
+  descriptor?: string;
+  content?: string;
+  quote?: string;
+  agreed_to_appear?: boolean;
+  status?: string;
+  order?: number;
+  published_at?: string | null;
+  created_by?: {
+    id?: string;
+    full_name?: string;
+  } | null;
+  created_at?: string;
+}
+
+function mapTestimonial(t: ApiTestimonial, index = 0): Testimonial {
+  const statusLower = (t.status ?? "").toLowerCase();
+  return {
+    id: t.id ?? "",
+    name: t.name ?? "",
+    descriptor: t.descriptor ?? "",
+    quote: t.content ?? t.quote ?? "",
+    status: statusLower === "published" ? "Published" : "Draft",
+    order: typeof t.order === "number" ? t.order : index + 1,
+    agreedToAppear: t.agreed_to_appear,
+    publishedAt: t.published_at ?? null,
+    createdAt: t.created_at,
+    createdByName: t.created_by?.full_name,
+  };
+}
+
 export class HttpTestimonialRepository implements TestimonialRepository {
   constructor(private readonly http: HttpClient) {}
-  listPublished() {
-    return this.http.get<Testimonial[]>(
-      "/content/testimonials?status=Published",
-    );
+
+  async listPublished(): Promise<Testimonial[]> {
+    try {
+      const payload = await this.http.get<
+        ApiEnvelope<ApiTestimonial[]> | ApiTestimonial[]
+      >("/content/testimonials?status=Published");
+      const raw = unwrapData(payload) ?? [];
+      return Array.isArray(raw) ? raw.map((t, i) => mapTestimonial(t, i)) : [];
+    } catch {
+      return [];
+    }
   }
-  listAll() {
-    return this.http.get<Testimonial[]>("/content/testimonials");
+
+  async listAll(query: TestimonialQuery = {}): Promise<Testimonial[]> {
+    const page = await this.listAllPage(query);
+    return page.data;
   }
-  save(t: {
+
+  async listAllPage(
+    query: TestimonialQuery = {},
+  ): Promise<TestimonialListPage> {
+    const p = new URLSearchParams();
+    if (query.status) p.set("status", query.status);
+    if (query.page) p.set("page", String(query.page));
+    if (query.per_page) p.set("per_page", String(query.per_page));
+    const qs = p.toString();
+    const payload = await this.http.get<
+      ApiEnvelope<ApiTestimonial[]> | ApiTestimonial[]
+    >(`/admin/testimonials${qs ? `?${qs}` : ""}`);
+    const raw = unwrapData(payload) ?? [];
+    const data = Array.isArray(raw)
+      ? raw.map((t, i) => mapTestimonial(t, i))
+      : [];
+    return {
+      data,
+      meta: readPageMeta(payload, {
+        current_page: query.page ?? 1,
+        per_page: query.per_page ?? 15,
+        last_page: 1,
+        total: data.length,
+      }),
+    };
+  }
+
+  async save(t: {
     id?: string;
     name: string;
     descriptor: string;
     quote: string;
     status: Testimonial["status"];
-  }) {
-    return t.id
-      ? this.http.put<Testimonial>(`/content/testimonials/${t.id}`, t)
-      : this.http.post<Testimonial>("/content/testimonials", t);
+    agreedToAppear?: boolean;
+  }): Promise<Testimonial> {
+    try {
+      if (t.id) {
+        const payload = await this.http.patch<
+          ApiEnvelope<ApiTestimonial> | ApiTestimonial
+        >(`/admin/testimonials/${encodeURIComponent(t.id)}`, {
+          name: t.name,
+          descriptor: t.descriptor,
+          content: t.quote,
+          agreed_to_appear: t.agreedToAppear ?? true,
+        });
+        const item = unwrapData(payload);
+        if (!item) {
+          throw new Error("Empty response returned when updating testimonial.");
+        }
+        return mapTestimonial(item);
+      }
+
+      const payload = await this.http.post<
+        ApiEnvelope<ApiTestimonial> | ApiTestimonial
+      >("/admin/testimonials", {
+        name: t.name,
+        descriptor: t.descriptor,
+        content: t.quote,
+        status: t.status === "Published" ? "published" : "draft",
+        agreed_to_appear: t.agreedToAppear ?? true,
+      });
+      const item = unwrapData(payload);
+      if (!item) {
+        throw new Error("Empty response returned when creating testimonial.");
+      }
+      return mapTestimonial(item);
+    } catch (error) {
+      rethrowWithFieldErrors(error);
+    }
   }
-  setStatus(id: string, status: Testimonial["status"]) {
-    return this.http.post<Testimonial>(`/content/testimonials/${id}/status`, {
-      status,
-    });
+
+  async setStatus(
+    id: string,
+    status: Testimonial["status"],
+  ): Promise<Testimonial> {
+    const action = status === "Published" ? "publish" : "unpublish";
+    const payload = await this.http.post<
+      ApiEnvelope<ApiTestimonial> | ApiTestimonial
+    >(`/admin/testimonials/${encodeURIComponent(id)}/${action}`);
+    const item = unwrapData(payload);
+    if (!item) {
+      throw new Error(`Empty response returned when trying to ${action} testimonial.`);
+    }
+    return mapTestimonial(item);
   }
+
   move(id: string, direction: -1 | 1) {
     return this.http.post<Testimonial[]>(`/content/testimonials/${id}/move`, {
       direction,
     });
   }
-  async remove(id: string) {
-    await this.http.post(`/content/testimonials/${id}/delete`);
+
+  async remove(id: string): Promise<void> {
+    await this.http.delete(`/admin/testimonials/${encodeURIComponent(id)}`);
   }
 }
 
