@@ -11,6 +11,7 @@ import { AboutPage } from '../features/website/pages/AboutPage';
 import { HowItWorksPage } from '../features/website/pages/HowItWorksPage';
 import { SavingsPage } from '../features/website/pages/SavingsPage';
 import { MembershipPage } from '../features/website/pages/MembershipPage';
+import { CommunityGuidelinesPage } from '../features/website/pages/CommunityGuidelinesPage';
 import { FAQPage } from '../features/website/pages/FAQPage';
 import { ContactPage } from '../features/website/pages/ContactPage';
 import { LoginPage } from '../features/auth/pages/LoginPage';
@@ -46,44 +47,17 @@ const ContentPage = lazy(() => import('../features/admin/pages/ContentPage').the
 
 /** Implemented pages. Any screen in SCREENS without an entry here renders ScaffoldPage. */
 const PAGES: Record<string, ReactElement> = {
-  "/": <HomePage />,
-  "/about": <AboutPage />,
-  "/how-it-works": <HowItWorksPage />,
-  "/savings": <SavingsPage />,
-  "/membership": <MembershipPage />,
-  "/faqs": <FAQPage />,
-  "/contact": <ContactPage />,
-  "/login": <LoginPage />,
-  "/register": <RegisterPage />,
-  "/register/done": <RegistrationDonePage />,
-  "/login/pending": <AwaitingApprovalPage />,
-  "/member": <MemberHomePage />,
-  "/member/savings": <MemberSavingsPage />,
-  "/member/contribute": <ContributePage />,
-  "/member/contribute/review": <ReviewPaymentPage />,
-  "/member/contribute/result": <PaymentResultPage />,
-  "/member/wallet": <WalletPage />,
-  "/member/activity": <ActivityPage />,
-  "/member/activity/:id": <ReceiptPage />,
-  "/member/notifications": <NotificationsPage />,
-  "/member/profile": <ProfilePage />,
-  "/member/support": <SupportPage />,
-  "/member/payout": <PayoutPage />,
-  "/member/payout/payout-day": <PayoutDayPage />,
-  "/admin": <AdminDashboardPage />,
-  "/admin/members": <MembersPage />,
-  "/admin/registrations": <RegistrationsPage />,
-  "/admin/savings": <AdminSavingsPage />,
-  "/admin/transactions": <AdminTransactionsPage />,
-  "/admin/interest": <InterestPage />,
-  "/admin/interest/:interestConfigId": <InterestWorkflowPage />,
-  "/admin/payouts": <PayoutsPage />,
-  "/admin/payouts/:id": <PayoutBatchPage />,
-  "/admin/reports": <ReportsPage />,
-  "/admin/referrals": <ReferralsPage />,
-  "/admin/audit-log": <AuditLogPage />,
-  "/admin/settings": <SettingsPage />,
-  "/admin/content": <ContentPage />,
+  '/': <HomePage />, '/about': <AboutPage />, '/how-it-works': <HowItWorksPage />, '/savings': <SavingsPage />, '/membership': <MembershipPage />, '/community-guidelines': <CommunityGuidelinesPage />, '/faqs': <FAQPage />, '/contact': <ContactPage />, '/login': <LoginPage />, '/register': <RegisterPage />, '/register/done': <RegistrationDonePage />, '/login/pending': <AwaitingApprovalPage />,
+  '/member': <MemberHomePage />, '/member/savings': <MemberSavingsPage />, '/member/contribute': <ContributePage />, '/member/contribute/review': <ReviewPaymentPage />, '/member/contribute/result': <PaymentResultPage />,
+  '/member/wallet': <WalletPage />,
+  '/member/activity': <ActivityPage />, '/member/activity/:id': <ReceiptPage />, '/member/notifications': <NotificationsPage />,
+  '/member/profile': <ProfilePage />, '/member/support': <SupportPage />, '/member/payout': <PayoutPage />, '/member/payout/payout-day': <PayoutDayPage />,
+  '/admin': <AdminDashboardPage />, '/admin/members': <MembersPage />, '/admin/registrations': <RegistrationsPage />,
+  '/admin/savings': <AdminSavingsPage />, '/admin/transactions': <AdminTransactionsPage />,
+  '/admin/interest': <InterestPage />, '/admin/interest/:year': <InterestWorkflowPage />,
+  '/admin/payouts': <PayoutsPage />, '/admin/payouts/:id': <PayoutBatchPage />,
+  '/admin/reports': <ReportsPage />, '/admin/referrals': <ReferralsPage />, '/admin/audit-log': <AuditLogPage />,
+  '/admin/settings': <SettingsPage />, '/admin/content': <ContentPage />,
 };
 /** Member and admin pages load on demand (separate chunks) so website visitors don't download portal code. */
 const element = (path: string) => <Suspense fallback={<LoadingScreen />}>{PAGES[path] ?? <ScaffoldPage path={path} />}</Suspense>;
