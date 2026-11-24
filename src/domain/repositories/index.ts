@@ -330,16 +330,29 @@ export interface WalletRepository {
   ): Promise<WalletWithdrawal>;
 }
 
+export interface TestimonialQuery {
+  status?: "draft" | "published";
+  page?: number;
+  per_page?: number;
+}
+
+export interface TestimonialListPage {
+  data: Testimonial[];
+  meta: PageMeta;
+}
+
 export interface TestimonialRepository {
   listPublished(): Promise<Testimonial[]>;
   /** ADM-28: full list for admins, in display order. */
-  listAll(): Promise<Testimonial[]>;
+  listAll(query?: TestimonialQuery): Promise<Testimonial[]>;
+  listAllPage(query?: TestimonialQuery): Promise<TestimonialListPage>;
   save(t: {
     id?: string;
     name: string;
     descriptor: string;
     quote: string;
     status: Testimonial["status"];
+    agreedToAppear?: boolean;
   }): Promise<Testimonial>;
   setStatus(id: string, status: Testimonial["status"]): Promise<Testimonial>;
   move(id: string, direction: -1 | 1): Promise<Testimonial[]>;
