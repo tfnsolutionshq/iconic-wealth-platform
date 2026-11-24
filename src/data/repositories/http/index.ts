@@ -6,6 +6,7 @@
 import type {
   AdminListItem,
   AdminRole,
+  AdminRoleDefinition,
   AdminUser,
   AuditEntry,
   AuditLogPage,
@@ -52,6 +53,7 @@ import type {
   AdminSavingsStatus,
   ReportKind,
   ReportResult,
+  RuleChangeRequest,
   SavingsDashboard,
   SavingsMonth,
   SavingsPeriod,
@@ -67,10 +69,13 @@ import type {
 } from "@/domain/entities";
 import type { PlatformSettings } from "@/domain/rules";
 import {
+  DEFAULT_SETTINGS,
   formatNaira,
+  formatShortDate,
   interestWizardProgress,
   MONTHS,
   naira,
+  toNaira,
 } from "@/domain/rules";
 import { ADMIN_REPORT_KEYS, REPORT_HEADERS } from "@/domain/rules/reports";
 import type {
@@ -96,7 +101,9 @@ import type {
   PayoutBatchQuery,
   RegistrationRepository,
   RegistrationStarted,
+  SavingsCycleUpdate,
   SavingsDashboardRepository,
+  SavingsRuleChangeInput,
   SavingsTargetRepository,
   SettingsRepository,
   TestimonialListPage,
@@ -772,6 +779,20 @@ function findReportSection(payload: unknown, key: AdminReportKey): unknown {
     if (name && wanted.includes(name)) return item;
   }
   return undefined;
+}
+
+/** Maps `GET /admin/roles` into the roles used by the settings screen. */
+function mapAdminRoles(payload: unknown): AdminRoleDefinition[] {
+  const data = unwrapData<unknown>(payload) ?? payload;
+  return readArray(data)
+    .map(asRecord)
+    .map((raw) => ({
+      id: readString(raw.id) ?? "",
+      name: readString(raw.name) ?? "",
+      immutable: readBoolean(raw.immutable) ?? false,
+      permissions: readStringList(raw.permissions).filter(Boolean),
+    }))
+    .filter((role) => role.name !== "");
 }
 
 /** Maps the `type`/`type_label` values from the audit logs API. */
@@ -3137,17 +3158,142 @@ export class HttpContributionRepository implements ContributionRepository {
     );
   }
 }
+
+function readMonthIndex(...values: unknown[]): MonthIndex | undefined {
+  const raw = readString(...values);
+  if (!raw) return undefined;
+  const byName = MONTHS.findIndex(
+    (month) => month.toLowerCase() === raw.toLowerCase(),
+  );
+  if (byName >= 0) return byName as MonthIndex;
+  const numeric = Number(raw);
+  return Number.isInteger(numeric) && numeric >= 0 && numeric <= 11
+    ? (numeric as MonthIndex)
+    : undefined;
+}
+
+/** Maps GET /admin/savings-cycles (envelope, cycle or cycle list) to domain settings. */
+function mapSavingsCycles(payload: unknown): PlatformSettings {
+  const data = unwrapData<unknown>(payload) ?? payload;
+  const container = asRecord(data);
+  const source = container.cycles ?? container.savings_cycles ?? data;
+  const rows = Array.isArray(source) ? source : [source];
+  const settings: PlatformSettings = {
+    ...DEFAULT_SETTINGS,
+    minimumByYear: { ...DEFAULT_SETTINGS.minimumByYear },
+    payoutDates: { ...DEFAULT_SETTINGS.payoutDates },
+    bankTransfer: { ...DEFAULT_SETTINGS.bankTransfer },
+  };
+
+  for (const raw of rows) {
+    const row = asRecord(raw);
+    const year = readNumber(row.year, row.savings_year);
+    if (year === undefined) continue;
+    const minimum = readNumber(row.minimum_per_payment, row.minimumPerPayment);
+    if (minimum !== undefined) settings.minimumByYear[year] = naira(minimum);
+    const charge = readNumber(
+      row.platform_charge_per_payment,
+      row.platformChargePerPayment,
+    );
+    if (charge !== undefined) settings.platformCharge = naira(charge);
+    const cutoff = readMonthIndex(
+      row.mid_year_cutoff_month,
+      row.midYearCutoffMonth,
+      row.cutoff_month,
+      row.cutoffMonth,
+    );
+    if (cutoff !== undefined) settings.cutoffMonth = cutoff;
+    const payoutDate = readString(row.payout_date, row.payoutDate);
+    if (payoutDate) settings.payoutDates[year] = payoutDate;
+  }
+  return settings;
+}
+
+/** Maps a row from GET /admin/savings-settings/change-requests. */
+function mapRuleChangeRequest(payload: unknown): RuleChangeRequest | null {
+  const row = asRecord(payload);
+  const id = readString(row.id);
+  if (!id) return null;
+  const rule = readString(row.rule) ?? "";
+  return {
+    id,
+    rule,
+    ruleLabel: readString(row.rule_label, row.ruleLabel, rule) ?? "Rule change",
+    currentValue: readString(row.current_value) ?? "—",
+    proposedValue: readString(row.proposed_value) ?? "—",
+    reason: readString(row.reason) ?? "",
+    status: readString(row.status) ?? "pending",
+    requestedBy: readPersonName(row.requested_by) ?? "—",
+    reviewedBy: row.reviewed_by
+      ? (readPersonName(row.reviewed_by) ?? null)
+      : null,
+    reviewedAt: readString(row.reviewed_at) ?? null,
+    decisionReason: readString(row.decision_reason) ?? null,
+    createdAt: readString(row.created_at) ?? "",
+  };
+}
+
 export class HttpSettingsRepository implements SettingsRepository {
   constructor(private readonly http: HttpClient) {}
-  get() {
-    return this.http.get<PlatformSettings>("/settings/platform");
+  async get() {
+    const payload = await this.http.get<unknown>("/admin/savings-cycles");
+    return mapSavingsCycles(payload);
   }
-  save(patch: {
-    minimumByYear?: Record<number, Kobo>;
-    cutoffMonth?: MonthIndex;
-    payoutDates?: Record<number, string>;
-  }) {
-    return this.http.put<PlatformSettings>("/settings/platform", patch);
+  async save(update: SavingsCycleUpdate) {
+    const payload = await this.http.post<unknown>("/admin/savings-cycles", {
+      year: update.year,
+      minimum_per_payment: toNaira(update.minimumPerPayment),
+      platform_charge_per_payment: toNaira(update.platformChargePerPayment),
+      mid_year_cutoff_month: MONTHS[update.cutoffMonth],
+      payout_date: update.payoutDate,
+    });
+    const settings = mapSavingsCycles(payload);
+    settings.minimumByYear[update.year] = update.minimumPerPayment;
+    settings.platformCharge = update.platformChargePerPayment;
+    settings.cutoffMonth = update.cutoffMonth;
+    settings.payoutDates[update.year] = update.payoutDate;
+    return settings;
+  }
+  async requestRuleChange({
+    rule,
+    proposedValue,
+    reason,
+  }: SavingsRuleChangeInput): Promise<string> {
+    const payload = await this.http.post<unknown>(
+      "/admin/savings-settings/change-requests",
+      {
+        rule,
+        proposed_value: proposedValue,
+        reason,
+      },
+    );
+    if (typeof payload === "string" && payload.trim()) return payload;
+    const message = (payload as { message?: unknown } | null)?.message;
+    if (typeof message === "string" && message.trim()) return message;
+    const data = unwrapData<unknown>(payload);
+    if (typeof data === "string" && data.trim()) return data;
+    return "Rule change request submitted.";
+  }
+  async listRuleChangeRequests() {
+    const payload = await this.http.get<unknown>(
+      "/admin/savings-settings/change-requests",
+    );
+    const data = unwrapData<unknown>(payload) ?? payload;
+    const rows = Array.isArray(data) ? data : [];
+    return rows
+      .map(mapRuleChangeRequest)
+      .filter((request): request is RuleChangeRequest => request !== null);
+  }
+  async approveRuleChangeRequest(id: string) {
+    await this.http.post<unknown>(
+      `/admin/savings-settings/change-requests/${encodeURIComponent(id)}/approve`,
+    );
+  }
+  async rejectRuleChangeRequest(id: string, reason: string) {
+    await this.http.post<unknown>(
+      `/admin/savings-settings/change-requests/${encodeURIComponent(id)}/reject`,
+      { reason },
+    );
   }
 }
 interface ApiTestimonial {
@@ -3185,22 +3331,17 @@ function mapTestimonial(t: ApiTestimonial, index = 0): Testimonial {
 
 export class HttpTestimonialRepository implements TestimonialRepository {
   constructor(private readonly http: HttpClient) {}
-
-  async listPublished(): Promise<Testimonial[]> {
-    try {
-      const payload = await this.http.get<
-        ApiEnvelope<ApiTestimonial[]> | ApiTestimonial[]
-      >("/content/testimonials?status=Published");
-      const raw = unwrapData(payload) ?? [];
-      return Array.isArray(raw) ? raw.map((t, i) => mapTestimonial(t, i)) : [];
-    } catch {
-      return [];
-    }
+  async listPublished() {
+    const payload = await this.http.get<ApiEnvelope<Testimonial[]> | Testimonial[]>(
+      "/content/testimonials?status=Published",
+    );
+    return unwrapData(payload) ?? [];
   }
-
-  async listAll(query: TestimonialQuery = {}): Promise<Testimonial[]> {
-    const page = await this.listAllPage(query);
-    return page.data;
+  async listAll() {
+    const payload = await this.http.get<ApiEnvelope<Testimonial[]> | Testimonial[]>(
+      "/content/testimonials",
+    );
+    return unwrapData(payload) ?? [];
   }
 
   async listAllPage(
@@ -3367,6 +3508,94 @@ function mapAdminSavingsDashboard(
     },
     monthly_chart: monthlyChart,
     members,
+  };
+}
+
+/** Maps GET /admin/notification-settings into the matrix used by the settings screen. */
+function mapNotificationSettings(payload: unknown): NotificationSettings {
+  const data = asRecord(unwrapData<unknown>(payload) ?? payload);
+  const rawSettings = Array.isArray(data.settings) ? data.settings : [];
+  const events: NotificationSettings["events"] = [];
+  const matrix: NotificationSettings["matrix"] = {};
+
+  for (const raw of rawSettings) {
+    const row = asRecord(raw);
+    const key = readString(row.event);
+    if (!key) continue;
+    const channels = asRecord(row.channels);
+    events.push({
+      key,
+      label: readString(row.event_label, row.eventLabel, key),
+    });
+    matrix[key] = {
+      "In-app": Boolean(channels.in_app ?? row.in_app),
+      Email: Boolean(channels.email ?? row.email),
+      SMS: Boolean(channels.sms ?? row.sms),
+      WhatsApp: Boolean(channels.whatsapp ?? row.whatsapp),
+    };
+  }
+
+  const reminderDays = Array.isArray(data.reminder_days)
+    ? data.reminder_days.filter(
+        (day): day is number => typeof day === "number" && day > 0,
+      )
+    : [];
+  const availableDays = Array.isArray(data.available_reminder_days)
+    ? data.available_reminder_days.filter(
+        (day): day is number => typeof day === "number" && day > 0,
+      )
+    : reminderDays;
+
+  return {
+    channels: ["In-app", "Email", "SMS", "WhatsApp"],
+    events,
+    matrix,
+    reminderDays: reminderDays[0] ?? availableDays[0] ?? 3,
+    availableReminderDays: availableDays.length ? availableDays : [1, 3, 5],
+  };
+}
+
+/** Maps a row from GET /admin/staff (or an invite response) into the UI model. */
+function mapStaffAdmin(payload: unknown): AdminListItem | null {
+  const row = asRecord(payload);
+  const id = readString(row.id);
+  if (!id) return null;
+
+  const firstName = readString(row.first_name);
+  const lastName = readString(row.last_name);
+  const name =
+    readString(
+      row.full_name,
+      [firstName, lastName].filter(Boolean).join(" "),
+    ) ?? "Unnamed admin";
+
+  const roles = Array.isArray(row.roles) ? row.roles : [];
+  const role: AdminListItem["role"] = roles.some(
+    (r) =>
+      String(r).toLowerCase().replace(/[^a-z]/g, "") === "superadmin",
+  )
+    ? "SuperAdmin"
+    : "Administrator";
+
+  const rawStatus = readString(row.status)?.toLowerCase();
+  let status: AdminListItem["status"] = "Invited";
+  if (rawStatus === "active") status = "Active";
+  if (rawStatus === "suspended" || row.suspended_at) status = "Deactivated";
+
+  const lastLogin = readString(row.last_login_at, row.lastLoginAt);
+  const loginDate = lastLogin ? new Date(lastLogin) : null;
+  const lastActive =
+    loginDate && !Number.isNaN(loginDate.getTime())
+      ? formatShortDate(loginDate)
+      : "—";
+
+  return {
+    id,
+    name,
+    email: readString(row.email) ?? "",
+    role,
+    status,
+    lastActive,
   };
 }
 
@@ -3950,28 +4179,83 @@ export class HttpAdminRepository implements AdminRepository {
   }) {
     return this.http.post<AuditEntry>("/admin/audit-log", e);
   }
-  listAdmins() {
-    return this.http.get<AdminListItem[]>("/admin/users");
+  async listAdmins() {
+    const payload = await this.http.get<unknown>("/admin/staff");
+    const data = unwrapData<unknown>(payload) ?? payload;
+    const rows = Array.isArray(data) ? data : [];
+    return rows
+      .map(mapStaffAdmin)
+      .filter((admin): admin is AdminListItem => admin !== null);
   }
-  inviteAdmin(input: {
+  listRoles() {
+    return this.http.get<unknown>("/admin/roles").then(mapAdminRoles);
+  }
+  async inviteAdmin(input: {
     name: string;
     email: string;
     role: AdminListItem["role"];
   }) {
-    return this.http.post<AdminListItem>("/admin/users/invite", input);
-  }
-  setAdminStatus(id: string, status: AdminListItem["status"]) {
-    return this.http.post<AdminListItem>(`/admin/users/${id}/status`, {
-      status,
+    const payload = await this.http.post<unknown>("/admin/staff", {
+      full_name: input.name,
+      email: input.email,
+      role: input.role === "SuperAdmin" ? "super-admin" : "admin",
     });
+    return (
+      mapStaffAdmin(unwrapData<unknown>(payload) ?? payload) ?? {
+        id: input.email,
+        name: input.name,
+        email: input.email,
+        role: input.role,
+        status: "Invited" as const,
+        lastActive: "—",
+      }
+    );
   }
-  getNotifications() {
-    return this.http.get<NotificationSettings>("/admin/notification-settings");
+  async setAdminStatus(id: string, status: AdminListItem["status"]) {
+    const action = status === "Deactivated" ? "suspend" : "reinstate";
+    const payload = await this.http.post<unknown>(
+      `/admin/members/${id}/${action}`,
+    );
+    return (
+      mapStaffAdmin(unwrapData<unknown>(payload) ?? payload) ?? {
+        id,
+        name: "",
+        email: "",
+        role: "Administrator" as const,
+        status,
+        lastActive: "—",
+      }
+    );
   }
-  saveNotifications(s: NotificationSettings) {
-    return this.http.put<NotificationSettings>(
+  async getNotifications() {
+    const payload = await this.http.get<unknown>("/admin/notification-settings");
+    return mapNotificationSettings(payload);
+  }
+  async saveNotifications(s: NotificationSettings) {
+    // PUT /admin/notification-settings takes a batch of per-event channel flags.
+    const payload = await this.http.put<unknown>(
       "/admin/notification-settings",
-      s,
+      {
+        settings: s.events.map((ev) => {
+          const flags = s.matrix[ev.key] ?? {};
+          return {
+            event: ev.key,
+            in_app: Boolean(flags["In-app"]),
+            email: Boolean(flags.Email),
+            sms: Boolean(flags.SMS),
+            whatsapp: Boolean(flags.WhatsApp),
+          };
+        }),
+      },
+    );
+    const data = unwrapData<unknown>(payload) ?? payload;
+    const returned = asRecord(data).settings;
+    return Array.isArray(returned) ? mapNotificationSettings(payload) : s;
+  }
+  async saveReminderDays(days: number) {
+    await this.http.patch<unknown>(
+      "/admin/notification-settings/reminder-days",
+      { reminder_days: [days] },
     );
   }
   currentAdmin(_role: AdminRole) {

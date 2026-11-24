@@ -44,6 +44,13 @@ export type RegistrationStatus =
   | "Rejected"
   | "ChangesRequested";
 export type AdminRole = "Administrator" | "SuperAdmin";
+/** A role returned by `GET /admin/roles`. */
+export interface AdminRoleDefinition {
+  id: string;
+  name: string;
+  immutable: boolean;
+  permissions: string[];
+}
 export type OnboardingState =
   | "PayoutAccount"
   | "Target"
@@ -658,8 +665,25 @@ export interface AdminListItem {
 }
 
 export interface NotificationSettings {
-  channels: ("In-app" | "Email" | "WhatsApp")[];
+  channels: ("In-app" | "Email" | "SMS" | "WhatsApp")[];
   events: { key: string; label: string }[];
   matrix: Record<string, Record<string, boolean>>;
   reminderDays: number;
+  availableReminderDays: number[];
+}
+
+/** A submitted savings-rule change awaiting (or past) Super Admin review. */
+export interface RuleChangeRequest {
+  id: string;
+  rule: string;
+  ruleLabel: string;
+  currentValue: string;
+  proposedValue: string;
+  reason: string;
+  status: string;
+  requestedBy: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  decisionReason: string | null;
+  createdAt: string;
 }

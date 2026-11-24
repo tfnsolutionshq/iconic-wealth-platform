@@ -5,6 +5,7 @@ export * from './components/Feedback';
 export * from './components/Surface';
 export * from './components/Modal';
 export * from './components/Chips';
+export * from './components/Switch';
 export * from './components/YearStrip';
 export * from './components/Logo';
 export * from './components/DataTable';
