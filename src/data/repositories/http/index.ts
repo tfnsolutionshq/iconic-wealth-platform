@@ -567,6 +567,56 @@ function readString(...values: unknown[]): string | undefined {
   return undefined;
 }
 
+/** Reads a display string from primitives or label objects such as `{ pending: 'Pending' }`. */
+function readDisplayText(value: unknown, status?: unknown): string | undefined {
+  const direct = readString(value);
+  if (direct) return direct;
+  const record = asRecord(value);
+  if (!record) return undefined;
+
+  const key = readString(status)?.toLowerCase();
+  if (key) {
+    const byStatus = readString(record[key], record[key.toUpperCase()]);
+    if (byStatus) return byStatus;
+  }
+
+  for (const candidate of [
+    record.label,
+    record.name,
+    record.text,
+    record.value,
+    record.title,
+    record.id,
+    record.batch,
+    record.batch_number,
+    record.batchNumber,
+    record.reference,
+  ]) {
+    const text = readString(candidate);
+    if (text) return text;
+  }
+  for (const candidate of Object.values(record)) {
+    const text = readString(candidate);
+    if (text) return text;
+  }
+  return undefined;
+}
+
+/** Coerces an API count, including single-value objects such as `{ pending: 2 }`. */
+function readCount(...values: unknown[]): number {
+  const direct = readNumber(...values);
+  if (direct !== undefined) return direct;
+  for (const value of values) {
+    const record = asRecord(value);
+    if (!record) continue;
+    for (const candidate of Object.values(record)) {
+      const nested = readNumber(candidate);
+      if (nested !== undefined) return nested;
+    }
+  }
+  return 0;
+}
+
 /** Reads a display name from a name string or a nested user/member object. */
 function readPersonName(value: unknown): string | undefined {
   if (typeof value === "string" && value.trim() !== "") return value.trim();
@@ -3655,55 +3705,82 @@ export class HttpAdminRepository implements AdminRepository {
       `/admin/dashboard?year=${year}`,
     );
     const d = envelope.data!;
+    const interest = asRecord(d.interest);
+    const eligibility = asRecord(d.interest_eligibility);
+    const compliance = d.current_month_compliance
+      ? asRecord(d.current_month_compliance)
+      : undefined;
+    const interestStatus = readString(interest.status);
+    const nullableCount = (value: unknown) =>
+      value === null || value === undefined ? null : readCount(value);
+    const fallbackStatusLabel = interestStatus
+      ? interestStatus
+          .replace(/_/g, " ")
+          .replace(/^./, (character) => character.toUpperCase())
+      : "Not started";
+    const monthlyCompliance = Array.isArray(d.monthly_compliance)
+      ? d.monthly_compliance
+      : [];
+    const failedPayments = Array.isArray(d.failed_payments)
+      ? d.failed_payments
+      : [];
+    const recentActivity = Array.isArray(d.recent_activity)
+      ? d.recent_activity
+      : [];
     return {
-      year: d.year,
-      members: d.total_members,
-      newThisMonth: d.new_this_month,
-      activeSavers: d.active_savers,
-      activeSaversPercent: d.active_savers_percent,
-      totalSavingsKobo: Math.round(parseFloat(d.total_savings || "0") * 100),
-      pendingPayments: d.pending_payments,
-      currentMonthCompliance: d.current_month_compliance
+      year: readNumber(d.year) ?? Number(year),
+      members: readCount(d.total_members),
+      newThisMonth: readCount(d.new_this_month),
+      activeSavers: readCount(d.active_savers),
+      activeSaversPercent: readCount(d.active_savers_percent),
+      totalSavingsKobo: Math.round(readCount(d.total_savings) * 100),
+      pendingPayments: readCount(d.pending_payments),
+      currentMonthCompliance: compliance
         ? {
-            month: d.current_month_compliance.month,
-            monthName: d.current_month_compliance.month_name,
-            dueDate: d.current_month_compliance.due_date,
-            paid: d.current_month_compliance.paid,
-            notPaid: d.current_month_compliance.not_paid,
-            of: d.current_month_compliance.of,
+            month: readCount(compliance.month),
+            monthName: readDisplayText(compliance.month_name) ?? "",
+            dueDate: readDisplayText(compliance.due_date) ?? "",
+            paid: readCount(compliance.paid),
+            notPaid: readCount(compliance.not_paid),
+            of: readCount(compliance.of),
           }
         : undefined,
-      monthlyPaid: d.monthly_compliance.map((m) => ({
-        month: m.month,
-        monthName: m.month_name,
-        paid: m.paid,
-        due: m.not_paid,
+      monthlyPaid: monthlyCompliance.map((m) => ({
+        month: readCount(m.month),
+        monthName: readDisplayText(m.month_name) ?? "",
+        paid: readCount(m.paid),
+        due: readCount(m.not_paid),
       })),
       interestEligibility: {
-        eligible: d.interest_eligibility.eligible,
-        forfeited: d.interest_eligibility.forfeited,
-        latePayments: d.interest_eligibility.late_payments,
-        missedMonths: d.interest_eligibility.missed_months,
+        eligible: nullableCount(eligibility.eligible),
+        forfeited: nullableCount(eligibility.forfeited),
+        latePayments: readCount(eligibility.late_payments),
+        missedMonths: readCount(eligibility.missed_months),
       },
       interest: {
-        status: d.interest.status,
-        statusLabel: d.interest.status_label,
-        rate: d.interest.rate,
-        id: d.interest.id,
-        payoutBatch: d.interest.payout_batch,
+        status: interestStatus ?? null,
+        statusLabel:
+          readDisplayText(interest.status_label, interestStatus) ??
+          fallbackStatusLabel,
+        rate:
+          interest.rate === null || interest.rate === undefined
+            ? null
+            : (readNumber(interest.rate) ?? 0),
+        id: readString(interest.id) ?? null,
+        payoutBatch: readDisplayText(interest.payout_batch) ?? null,
       },
-      failedPayments: (d.failed_payments ?? []).map((item) => ({
-        member: item.member,
-        covers: item.covers,
-        amountKobo: Math.round(parseFloat(item.amount || "0") * 100),
-        reason: item.reason,
+      failedPayments: failedPayments.map((item) => ({
+        member: readDisplayText(item.member) ?? "—",
+        covers: readDisplayText(item.covers) ?? "—",
+        amountKobo: Math.round(readCount(item.amount) * 100),
+        reason: readDisplayText(item.reason) ?? "—",
       })),
-      recentActivity: (d.recent_activity ?? []).map((item) => ({
-        action: item.action,
-        record: item.record,
-        actor: item.actor,
-        type: item.type,
-        createdAt: item.created_at,
+      recentActivity: recentActivity.map((item) => ({
+        action: readDisplayText(item.action) ?? "Activity",
+        record: readDisplayText(item.record) ?? "—",
+        actor: readDisplayText(item.actor) ?? "—",
+        type: readDisplayText(item.type) ?? "system",
+        createdAt: readDisplayText(item.created_at) ?? "",
       })),
     };
   }
