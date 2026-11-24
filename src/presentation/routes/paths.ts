@@ -5,6 +5,7 @@ export const paths = {
   howItWorks: "/how-it-works",
   savings: "/savings",
   membership: "/membership",
+  communityGuidelines: "/community-guidelines",
   faqs: "/faqs",
   contact: "/contact",
   sitemap: "/sitemap",

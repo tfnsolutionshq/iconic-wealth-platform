@@ -386,11 +386,31 @@ export class MockTestimonialRepository implements TestimonialRepository {
       80,
     );
   }
-  async listAll() {
-    return delay(
-      [...testimonials].sort((a, b) => a.order - b.order),
-      80,
-    );
+  async listAll(query?: { status?: "draft" | "published" }) {
+    const filtered = [...testimonials]
+      .filter((t) =>
+        query?.status
+          ? t.status.toLowerCase() === query.status
+          : true,
+      )
+      .sort((a, b) => a.order - b.order);
+    return delay(filtered, 80);
+  }
+  async listAllPage(query?: {
+    status?: "draft" | "published";
+    page?: number;
+    per_page?: number;
+  }) {
+    const data = await this.listAll(query);
+    return {
+      data,
+      meta: {
+        current_page: query?.page ?? 1,
+        per_page: query?.per_page ?? 15,
+        last_page: 1,
+        total: data.length,
+      },
+    };
   }
   async save(t: {
     id?: string;
@@ -398,6 +418,7 @@ export class MockTestimonialRepository implements TestimonialRepository {
     descriptor: string;
     quote: string;
     status: Testimonial["status"];
+    agreedToAppear?: boolean;
   }) {
     if (t.id) {
       const x = testimonials.find((y) => y.id === t.id);

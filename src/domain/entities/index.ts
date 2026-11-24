@@ -305,6 +305,10 @@ export interface Testimonial {
   quote: string;
   status: "Published" | "Draft";
   order: number;
+  agreedToAppear?: boolean;
+  publishedAt?: string | null;
+  createdAt?: string;
+  createdByName?: string;
 }
 
 export interface AdminUser {
