@@ -1,5 +1,5 @@
 /** Sample data matching the approved build v5 (names, amounts and dates are fictional). */
-import type { AdminListItem, AuditEntry, InterestStage, InterestWorkflow, Member, MemberSummary, MonthIndex, PayoutBatch, PayoutRow, Registration, SavingsYear, Testimonial, Transaction, WalletEntry, WalletWithdrawal } from '@/domain/entities';
+import type { AdminListItem, AdminRoleDefinition, AuditEntry, InterestStage, InterestWorkflow, Member, MemberSummary, MonthIndex, PayoutBatch, PayoutRow, Registration, SavingsYear, Testimonial, Transaction, WalletEntry, WalletWithdrawal } from '@/domain/entities';
 import { naira } from '@/domain/rules';
 
 export const DEMO_TODAY = '2026-10-02T09:40:00';
@@ -198,6 +198,46 @@ export const adminUsers: AdminListItem[] = [
   { id: 'A-2', name: 'Olumide Bakare', email: 'olumide@iconicwealthhub.coop', role: 'SuperAdmin', status: 'Active', lastActive: 'Yesterday, 18:40' },
   { id: 'A-3', name: 'Yemi Fashina', email: 'yemi@iconicwealthhub.coop', role: 'Administrator', status: 'Active', lastActive: '1 Oct, 11:20' },
   { id: 'A-4', name: 'Kemi Ajayi', email: 'kemi@iconicwealthhub.coop', role: 'Administrator', status: 'Deactivated', lastActive: '12 Aug, 10:02' },
+];
+
+/** Admin roles and permission codes (ADM-24), matching `GET /admin/roles`. */
+export const adminRoles: AdminRoleDefinition[] = [
+  {
+    id: '01a15455-fa58-7008-9573-c46bd68d27b4',
+    name: 'admin',
+    immutable: false,
+    permissions: [
+      'announcements:delete', 'announcements:view-any', 'interest:configure', 'interest:disburse',
+      'members:approve', 'members:reject', 'members:suspend', 'members:view', 'members:view-any',
+      'notification-settings:update', 'notification-settings:view', 'notifications:announce',
+      'notifications:manage-own', 'notifications:view-own', 'payout-account:approve-change',
+      'payout-account:reject-change', 'payout-account:view-any', 'profile:change-password',
+      'profile:update', 'reports:view-any', 'savings-settings:request-change',
+      'savings-settings:view', 'savings:view-any', 'staff:assign-role', 'staff:create',
+      'staff:view-any', 'transactions:view-any', 'wallet:manage-withdrawals',
+    ],
+  },
+  {
+    id: '01a15455-fa2c-728f-9f1b-8ab3944712c3',
+    name: 'super-admin',
+    immutable: true,
+    permissions: [
+      'announcements:delete', 'announcements:view-any', 'audit-logs:view-any', 'interest:approve',
+      'interest:configure', 'interest:disburse', 'members:approve', 'members:reject',
+      'members:suspend', 'members:view', 'members:view-any', 'notification-settings:update',
+      'notification-settings:view', 'notifications:announce', 'notifications:manage-own',
+      'notifications:view-own', 'payout-account:approve-change', 'payout-account:reject-change',
+      'payout-account:request-change', 'payout-account:setup', 'payout-account:verify',
+      'payout-account:view-any', 'payout-account:view-own', 'profile:change-password',
+      'profile:update', 'reports:view-any', 'roles:manage-permissions',
+      'savings-settings:approve', 'savings-settings:request-change', 'savings-settings:view',
+      'savings:contribute', 'savings:lock-month', 'savings:set-target', 'savings:view-any',
+      'savings:view-own', 'staff:assign-role', 'staff:create', 'staff:view-any',
+      'testimonials:create', 'testimonials:delete', 'testimonials:publish',
+      'testimonials:update', 'testimonials:view-any', 'transactions:view-any',
+      'wallet:fund', 'wallet:manage-withdrawals', 'wallet:view', 'wallet:withdraw',
+    ],
+  },
 ];
 /** Demo log-in identities (any password works in demo mode). */
 export const DEMO_ACCOUNTS = [

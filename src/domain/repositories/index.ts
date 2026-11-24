@@ -6,6 +6,7 @@
  */
 import type {
   AdminRole,
+  AdminRoleDefinition,
   AdminUser,
   Allocation,
   AuditCategory,
@@ -36,6 +37,7 @@ import type {
   AdminListItem,
   NotificationSettings,
   ReferralDashboard,
+  RuleChangeRequest,
   ReferralDashboardQuery,
   ReferralGroup,
   Registration,
@@ -225,14 +227,41 @@ export interface MemberRepository {
   markPayoutReceived(id: string, transactionId: string): Promise<Transaction>;
 }
 
+/** Rule codes accepted by POST /admin/savings-settings/change-requests. */
+export type NumericSavingsRule =
+  | "minimum_per_payment"
+  | "platform_charge_per_payment";
+export type DateSavingsRule = "mid_year_joining_cutoff" | "payout_date";
+export type SavingsRuleCode = NumericSavingsRule | DateSavingsRule;
+
+export interface SavingsRuleChangeInput {
+  rule: SavingsRuleCode;
+  /** Sent as `proposed_value`; numeric rules also send their value as a string. */
+  proposedValue: string;
+  reason: string;
+}
+
+/** Values accepted by POST /admin/savings-cycles, kept in kobo at the domain boundary. */
+export interface SavingsCycleUpdate {
+  year: number;
+  minimumPerPayment: Kobo;
+  platformChargePerPayment: Kobo;
+  cutoffMonth: MonthIndex;
+  payoutDate: string;
+}
+
 export interface SettingsRepository {
   get(): Promise<PlatformSettings>;
-  /** ADM-25: Super Admin updates minimum per payment, cut-off or payout dates (audited). */
-  save(patch: {
-    minimumByYear?: Record<number, Kobo>;
-    cutoffMonth?: MonthIndex;
-    payoutDates?: Record<number, string>;
-  }): Promise<PlatformSettings>;
+  /** ADM-25: Super Admin updates a savings cycle (POST /admin/savings-cycles). */
+  save(update: SavingsCycleUpdate): Promise<PlatformSettings>;
+  /** Submits a rule change for review (POST /admin/savings-settings/change-requests). */
+  requestRuleChange(input: SavingsRuleChangeInput): Promise<string>;
+  /** GET /admin/savings-settings/change-requests. */
+  listRuleChangeRequests(): Promise<RuleChangeRequest[]>;
+  /** POST /admin/savings-settings/change-requests/{id}/approve. */
+  approveRuleChangeRequest(id: string): Promise<void>;
+  /** POST /admin/savings-settings/change-requests/{id}/reject with `{ reason }`. */
+  rejectRuleChangeRequest(id: string, reason: string): Promise<void>;
 }
 
 export interface ContributionIntent {
@@ -703,20 +732,27 @@ export interface AdminRepository {
     change: string;
     category: AuditCategory;
   }): Promise<AuditEntry>;
-  /** ADM-24/26: admin users (Super Admin manages). */
+  /** ADM-24/26: staff from `GET /admin/staff` (Super Admin manages). */
   listAdmins(): Promise<AdminListItem[]>;
+  /** Roles and their permission codes, from `GET /admin/roles`. */
+  listRoles(): Promise<AdminRoleDefinition[]>;
+  /** Invites staff via `POST /admin/staff` (`full_name`, `email`, `role`). */
   inviteAdmin(input: {
     name: string;
     email: string;
     role: AdminRole;
   }): Promise<AdminListItem>;
+  /** `POST /admin/members/{id}/suspend` or `/reinstate`. */
   setAdminStatus(
     id: string,
     status: AdminListItem["status"],
   ): Promise<AdminListItem>;
   /** ADM-27: member notification preferences matrix. */
   getNotifications(): Promise<NotificationSettings>;
+  /** Batch update via `PUT /admin/notification-settings` (`settings[].event` + channel flags). */
   saveNotifications(s: NotificationSettings): Promise<NotificationSettings>;
+  /** `PATCH /admin/notification-settings/reminder-days` with `{ reminder_days: [days] }`. */
+  saveReminderDays(days: number): Promise<void>;
   currentAdmin(role: AdminRole): Promise<AdminUser>;
 }
 

@@ -407,6 +407,9 @@ describe('HttpAdminRepository referrals dashboard', () => {
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
 
     expect(url).not.toContain('?');
+  });
+});
+
 /** Shape returned by GET /admin/reports: summary + filters + member rows. */
 const platformReportPayload = {
   success: true,
@@ -597,5 +600,49 @@ describe('HttpAdminRepository audit logs', () => {
     expect(url).toContain('type=all');
     expect(url).toContain('date=all');
     expect(url).not.toContain('search=');
+  });
+});
+
+describe('HttpAdminRepository roles', () => {
+  it('maps GET /admin/roles into role definitions', async () => {
+    const fetchMock = stubFetch(
+      200,
+      envelope([
+        {
+          id: 'role-1',
+          name: 'admin',
+          immutable: false,
+          permissions: ['members:view', 'interest:configure'],
+        },
+        {
+          id: 'role-2',
+          name: 'super-admin',
+          immutable: true,
+          permissions: ['interest:approve', 'roles:manage-permissions'],
+        },
+        { id: 'role-3', name: 'Maker', immutable: false, permissions: [] },
+      ]),
+    );
+
+    const roles = await repo().listRoles();
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+
+    expect(url).toContain('/admin/roles');
+    expect(url).not.toContain('?');
+    expect(roles).toEqual([
+      {
+        id: 'role-1',
+        name: 'admin',
+        immutable: false,
+        permissions: ['members:view', 'interest:configure'],
+      },
+      {
+        id: 'role-2',
+        name: 'super-admin',
+        immutable: true,
+        permissions: ['interest:approve', 'roles:manage-permissions'],
+      },
+      { id: 'role-3', name: 'Maker', immutable: false, permissions: [] },
+    ]);
   });
 });

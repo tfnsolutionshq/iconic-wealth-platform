@@ -39,6 +39,15 @@ describe('MockAdminRepository savings, reports, referrals, audit', () => {
     expect(groups.length).toBeGreaterThan(0);
     expect(groups.flatMap(g => g.referred).some(r => r.status === 'Pending')).toBe(true);
   });
+  it('lists the admin and super-admin role definitions', async () => {
+    const roles = await admin.listRoles();
+    const names = roles.map(r => r.name);
+
+    expect(names).toContain('admin');
+    expect(names).toContain('super-admin');
+    expect(roles.find(r => r.name === 'super-admin')?.immutable).toBe(true);
+    expect(roles.find(r => r.name === 'admin')?.permissions).toContain('members:view');
+  });
   it('appends audit entries', async () => {
     const before = (await admin.listAuditLog()).rows.length;
     await admin.logAudit({ at: new Date().toISOString(), actor: 'Test Admin', role: 'Administrator', action: 'Test action', entity: 'T-1', change: '—', category: 'Access' });

@@ -1,6 +1,7 @@
 import type {
   AdminListItem,
   AdminRole,
+  AdminRoleDefinition,
   AdminUser,
   Allocation,
   AuditEntry,
@@ -32,6 +33,7 @@ import type {
   AdminSavingsStatus,
   ReportKind,
   ReportResult,
+  RuleChangeRequest,
   SavingsDashboard,
   SavingsMonth,
   Session,
@@ -56,7 +58,9 @@ import type {
   PayoutBatchQuery,
   RegistrationRepository,
   RegistrationStarted,
+  SavingsCycleUpdate,
   SavingsDashboardRepository,
+  SavingsRuleChangeInput,
   SavingsTargetRepository,
   SettingsRepository,
   TestimonialRepository,
@@ -97,6 +101,7 @@ import {
 import { REPORT_HEADERS } from "@/domain/rules/reports";
 import type { Clock } from "@/domain/services/clock";
 import {
+  adminRoles,
   adminUsers,
   auditEntries,
   interestYears,
@@ -274,6 +279,36 @@ export class MockRegistrationRepository implements RegistrationRepository {
 }
 
 const settings: PlatformSettings = structuredClone(DEFAULT_SETTINGS);
+const ruleChangeRequests: RuleChangeRequest[] = [
+  {
+    id: "RCR-1",
+    rule: "minimum_per_payment",
+    ruleLabel: "Minimum per payment",
+    currentValue: "10000.00",
+    proposedValue: "5000.00",
+    reason: "Lower payment barrier for less privileged members.",
+    status: "pending",
+    requestedBy: "Chioma Balogun",
+    reviewedBy: null,
+    reviewedAt: null,
+    decisionReason: null,
+    createdAt: "2026-11-24T14:29:15+00:00",
+  },
+  {
+    id: "RCR-2",
+    rule: "platform_charge_per_payment",
+    ruleLabel: "Platform charge per payment",
+    currentValue: "100.00",
+    proposedValue: "150.00",
+    reason: "Gateway charges have increased.",
+    status: "approved",
+    requestedBy: "Grace Bello",
+    reviewedBy: "Super Admin",
+    reviewedAt: "2026-11-24T11:41:45+00:00",
+    decisionReason: "Applied directly by a super administrator.",
+    createdAt: "2026-11-24T11:41:45+00:00",
+  },
+];
 const yearOf = (id: string, year: number) => {
   const y = savingsYears.find((x) => x.memberId === id && x.year === year);
   if (!y) throw notFound("Savings year");
@@ -289,21 +324,57 @@ export class MockSettingsRepository implements SettingsRepository {
   async get() {
     return delay(settings, 50);
   }
-  async save(patch: {
-    minimumByYear?: Record<number, Kobo>;
-    cutoffMonth?: MonthIndex;
-    payoutDates?: Record<number, string>;
-  }) {
-    if (patch.minimumByYear)
-      settings.minimumByYear = {
-        ...settings.minimumByYear,
-        ...patch.minimumByYear,
-      };
-    if (patch.cutoffMonth !== undefined)
-      settings.cutoffMonth = patch.cutoffMonth;
-    if (patch.payoutDates)
-      settings.payoutDates = { ...settings.payoutDates, ...patch.payoutDates };
+  async save(update: SavingsCycleUpdate) {
+    settings.minimumByYear = {
+      ...settings.minimumByYear,
+      [update.year]: update.minimumPerPayment,
+    };
+    settings.platformCharge = update.platformChargePerPayment;
+    settings.cutoffMonth = update.cutoffMonth;
+    settings.payoutDates = {
+      ...settings.payoutDates,
+      [update.year]: update.payoutDate,
+    };
     return delay(settings, 50);
+  }
+  async requestRuleChange(input: SavingsRuleChangeInput) {
+    ruleChangeRequests.unshift({
+      id: `RCR-${ruleChangeRequests.length + 1}`,
+      rule: input.rule,
+      ruleLabel: input.rule.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()),
+      currentValue: "—",
+      proposedValue: input.proposedValue,
+      reason: input.reason,
+      status: "pending",
+      requestedBy: "You",
+      reviewedBy: null,
+      reviewedAt: null,
+      decisionReason: null,
+      createdAt: new Date().toISOString(),
+    });
+    await delay(null, 50);
+    return "Rule change request submitted.";
+  }
+  async listRuleChangeRequests() {
+    return delay([...ruleChangeRequests], 50);
+  }
+  async approveRuleChangeRequest(id: string) {
+    const request = ruleChangeRequests.find((r) => r.id === id);
+    if (!request) throw notFound("Rule change request");
+    request.status = "approved";
+    request.reviewedBy = "Super Admin";
+    request.reviewedAt = new Date().toISOString();
+    request.decisionReason = "Approved by a super administrator.";
+    await delay(null, 50);
+  }
+  async rejectRuleChangeRequest(id: string, reason: string) {
+    const request = ruleChangeRequests.find((r) => r.id === id);
+    if (!request) throw notFound("Rule change request");
+    request.status = "rejected";
+    request.reviewedBy = "Super Admin";
+    request.reviewedAt = new Date().toISOString();
+    request.decisionReason = reason;
+    await delay(null, 50);
   }
 }
 export class MockTestimonialRepository implements TestimonialRepository {
@@ -919,24 +990,55 @@ export class MockContributionRepository implements ContributionRepository {
 }
 
 const notifications: NotificationSettings = {
-  channels: ["In-app", "Email", "WhatsApp"],
+  channels: ["In-app", "Email", "SMS", "WhatsApp"],
   events: [
-    { key: "due", label: "Payment due reminder" },
-    { key: "ok", label: "Payment received" },
-    { key: "fail", label: "Payment failed" },
-    { key: "pay", label: "Payout ready" },
-    { key: "reg", label: "New registration" },
-    { key: "ann", label: "Year-end announcement" },
+    { key: "payment_due_reminder", label: "Payment due reminder" },
+    { key: "payment_received", label: "Payment received" },
+    { key: "payment_failed", label: "Payment failed" },
+    { key: "payout_ready", label: "Payout ready" },
+    { key: "new_registration", label: "New registration" },
+    { key: "year_end_announcement", label: "Year-end announcement" },
   ],
   matrix: {
-    due: { "In-app": true, Email: true, WhatsApp: false },
-    ok: { "In-app": true, Email: true, WhatsApp: false },
-    fail: { "In-app": true, Email: true, WhatsApp: false },
-    pay: { "In-app": true, Email: true, WhatsApp: true },
-    reg: { "In-app": true, Email: true, WhatsApp: false },
-    ann: { "In-app": true, Email: true, WhatsApp: false },
+    payment_due_reminder: {
+      "In-app": true,
+      Email: true,
+      SMS: false,
+      WhatsApp: false,
+    },
+    payment_received: {
+      "In-app": true,
+      Email: true,
+      SMS: false,
+      WhatsApp: false,
+    },
+    payment_failed: {
+      "In-app": true,
+      Email: true,
+      SMS: false,
+      WhatsApp: false,
+    },
+    payout_ready: {
+      "In-app": true,
+      Email: true,
+      SMS: false,
+      WhatsApp: true,
+    },
+    new_registration: {
+      "In-app": true,
+      Email: true,
+      SMS: false,
+      WhatsApp: false,
+    },
+    year_end_announcement: {
+      "In-app": true,
+      Email: true,
+      SMS: false,
+      WhatsApp: false,
+    },
   },
   reminderDays: 3,
+  availableReminderDays: [1, 3, 5],
 };
 
 const interestOf = (year: number) => {
@@ -2349,6 +2451,9 @@ export class MockAdminRepository implements AdminRepository {
   async listAdmins(): Promise<AdminListItem[]> {
     return delay(adminUsers, 80);
   }
+  async listRoles(): Promise<AdminRoleDefinition[]> {
+    return delay(adminRoles, 80);
+  }
   async inviteAdmin(input: {
     name: string;
     email: string;
@@ -2392,6 +2497,10 @@ export class MockAdminRepository implements AdminRepository {
   async saveNotifications(s: NotificationSettings) {
     Object.assign(notifications, structuredClone(s));
     return delay(notifications, 80);
+  }
+  async saveReminderDays(days: number) {
+    notifications.reminderDays = days;
+    await delay(null, 80);
   }
   async currentAdmin(role: AdminUser["role"]) {
     return delay(admins.find((a) => a.role === role)!);

@@ -1,6 +1,7 @@
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type InputHTMLAttributes,
@@ -145,6 +146,9 @@ function CustomSelectUI({
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const selected = items.find((o) => o.value === (value ?? ""));
+  const [placement, setPlacement] = useState<"bottom" | "top">("bottom");
+  const [listMaxHeight, setListMaxHeight] = useState<number>();
+  const [listShiftX, setListShiftX] = useState(0);
 
   useEffect(() => {
     if (!open) return;
@@ -162,6 +166,43 @@ function CustomSelectUI({
       document.removeEventListener("keydown", onKey);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Keep the popup inside the viewport: flip above the trigger when there is
+  // more room there, cap its height to the available space, and nudge it
+  // horizontally if the trigger sits near a screen edge.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const position = () => {
+      const trigger = rootRef.current?.querySelector("button");
+      const list = listRef.current;
+      if (!trigger || !list) return;
+      const rect = trigger.getBoundingClientRect();
+      const gutter = 8;
+      const gap = 8;
+      const spaceBelow = window.innerHeight - rect.bottom - gap - gutter;
+      const spaceAbove = rect.top - gap - gutter;
+      const next =
+        list.scrollHeight > spaceBelow && spaceAbove > spaceBelow
+          ? "top"
+          : "bottom";
+      setPlacement(next);
+      setListMaxHeight(
+        Math.max(0, Math.min(256, next === "top" ? spaceAbove : spaceBelow)),
+      );
+      const overflowRight = rect.right - (window.innerWidth - gutter);
+      const overflowLeft = gutter - rect.left;
+      setListShiftX(
+        overflowRight > 0 ? -overflowRight : overflowLeft > 0 ? overflowLeft : 0,
+      );
+    };
+    position();
+    window.addEventListener("resize", position);
+    window.addEventListener("scroll", position, true);
+    return () => {
+      window.removeEventListener("resize", position);
+      window.removeEventListener("scroll", position, true);
+    };
   }, [open]);
 
   useEffect(() => {
@@ -252,7 +293,14 @@ function CustomSelectUI({
           aria-label={ariaLabel ?? placeholder ?? "Options"}
           tabIndex={-1}
           onKeyDown={onListKey}
-          className="absolute inset-x-0 top-full z-50 mt-2 max-h-64 overflow-auto rounded-2xl border border-line bg-white p-1.5 shadow-lift"
+          className={cn(
+            "absolute inset-x-0 z-50 max-h-64 overflow-auto rounded-2xl border border-line bg-white p-1.5 shadow-lift",
+            placement === "top" ? "bottom-full mb-2" : "top-full mt-2",
+          )}
+          style={{
+            maxHeight: listMaxHeight,
+            transform: listShiftX ? `translateX(${listShiftX}px)` : undefined,
+          }}
         >
           {placeholder && (
             <li role="option" aria-selected={(value ?? "") === ""} data-index={-1}>
