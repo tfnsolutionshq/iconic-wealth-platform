@@ -47,9 +47,11 @@ import type {
   AuthRepository,
   ChangeField,
   ContributionIntent,
+  CreatedAdminMember,
   ContributionRepository,
   MemberQuery,
   MemberRepository,
+  NewAdminMemberInput,
   NewRegistration,
   InterestRulesInput,
   PayoutAccountRepository,
@@ -82,6 +84,8 @@ import {
   formatNaira,
   formatShortDate,
   interestWizardSteps,
+  isEmail,
+  isPhone,
   minimumFor,
   monthState,
   monthTotal,
@@ -1326,6 +1330,62 @@ export class MockAdminRepository implements AdminRepository {
       },
       50,
     );
+  }
+  async addMember(input: NewAdminMemberInput): Promise<CreatedAdminMember> {
+    const firstName = input.firstName.trim();
+    const lastName = input.lastName.trim();
+    const email = input.email.trim();
+    const phone = input.phone?.trim();
+    if (!firstName || !lastName)
+      throw new Error("Enter the member's first and last name.");
+    if (!isEmail(email)) throw new Error("Enter a valid email address.");
+    if (
+      members.some((m) => m.email.toLowerCase() === email.toLowerCase())
+    )
+      throw new Error("A member with this email already exists.");
+    if (phone && !isPhone(phone))
+      throw new Error("Enter an 11-digit phone number.");
+
+    const name = `${firstName} ${lastName}`;
+    const id = `IWH-${String(1251 + members.length).padStart(5, "0")}`;
+    const joinedOn = new Date().toISOString().slice(0, 10);
+    const referredBy = input.referredBy?.trim() || undefined;
+
+    members.unshift({
+      id,
+      firstName,
+      lastName,
+      gender: input.gender,
+      dateOfBirth: input.dateOfBirth,
+      email,
+      phone: phone ?? "",
+      stateOfResidence: input.stateOfResidence,
+      address: input.residentialAddress.trim(),
+      nextOfKin: {
+        name: input.nextOfKinName.trim(),
+        relationship: input.nextOfKinRelationship,
+        phone: input.nextOfKinPhone.trim(),
+      },
+      status: "Active",
+      joinedOn,
+      referredBy,
+      community: "Granted",
+      onboarding: "PayoutAccount",
+      isProfileComplete: false,
+    });
+    memberSummaries.unshift({
+      id,
+      name,
+      status: "Active",
+      targetKobo: naira(0),
+      savedKobo: naira(0),
+      monthsPaid: 0,
+      currentMonthStatus: "Due",
+      eligibility: "Eligible",
+      referredBy,
+      joinedOn,
+    });
+    return delay({ id, name, message: `${name} added.` });
   }
   async listRegistrations() {
     return delay(registrations);

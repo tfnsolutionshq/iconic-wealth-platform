@@ -27,6 +27,7 @@ import type {
   Member,
   MemberAccountStatus,
   MemberNotification,
+  MemberGender,
   MemberListRow,
   MemberSummary,
   MonthIndex,
@@ -517,6 +518,31 @@ export interface ApiMemberPage {
   meta: PageMeta;
 }
 
+/** Payload accepted by `POST /admin/members`. Phone and referred_by are optional. */
+export interface NewAdminMemberInput {
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  gender: MemberGender;
+  email: string;
+  phone?: string;
+  stateOfResidence: string;
+  residentialAddress: string;
+  howHeardAboutUs: string;
+  nextOfKinName: string;
+  nextOfKinRelationship: string;
+  nextOfKinPhone: string;
+  password: string;
+  referredBy?: string | null;
+}
+
+/** The member id/name returned by the API, plus its exact response message. */
+export interface CreatedAdminMember {
+  id: string;
+  name: string;
+  message?: string;
+}
+
 export interface AdminRepository {
   dashboard(year: number): Promise<{
     year: number;
@@ -570,6 +596,8 @@ export interface AdminRepository {
   /** Paginated rows for the admin members list. Savings figures may be absent on the live API. */
   listMembers(query: MemberQuery): Promise<MemberListPage>;
   countMembers(): Promise<Record<MemberQuery["tab"], number>>;
+  /** `POST /admin/members`: creates an active member and returns its id for navigation. */
+  addMember(input: NewAdminMemberInput): Promise<CreatedAdminMember>;
   listRegistrations(): Promise<Registration[]>;
   /** ADM-12: lists all members from GET /admin/members with server-side search, status filter, and pagination. */
   listAllMembers(params: {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ChevronLeft,
@@ -12,22 +12,38 @@ import {
   Upload,
 } from "lucide-react";
 import type { MemberListRow } from "@/domain/entities";
+import { ValidationError } from "@/domain/errors";
 import type {
   ApiMemberStatus,
   MemberQuery,
+  NewAdminMemberInput,
   PageMeta,
 } from "@/domain/repositories";
 import { useServices } from "../../../contexts/ServicesContext";
 import { useToast } from "../../../contexts/ToastContext";
 import {
+  Banner,
   Button,
   Card,
   Chips,
   DataTable,
+  Modal,
   Pill,
   SelectField,
+  TextField,
 } from "../../../design-system";
-import { formatNaira, MONTHS_SHORT } from "@/domain/rules";
+import {
+  ageOn,
+  formatNaira,
+  HEARD_OPTIONS,
+  isEmail,
+  isPhone,
+  isStrongPassword,
+  MIN_AGE,
+  MONTHS_SHORT,
+  NG_STATES,
+  REFERRAL_OPTION,
+} from "@/domain/rules";
 import { AdminPageHeader } from "../../../layouts/AdminLayout";
 import { paths } from "../../../routes/paths";
 import {
@@ -64,7 +80,145 @@ const MONTH_TONE = {
   BeforeJoining: "mute",
 } as const;
 
-/** ADM-04: tabs with counts, search, more filters. Add/Import/Export are wired to toasts until their modals are built (ADM-05 to ADM-07). */
+type AddMemberForm = {
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  gender: NewAdminMemberInput["gender"];
+  email: string;
+  phone: string;
+  stateOfResidence: string;
+  residentialAddress: string;
+  howHeardAboutUs: string;
+  referredBy: string;
+  nextOfKinName: string;
+  nextOfKinRelationship: string;
+  nextOfKinPhone: string;
+  password: string;
+  passwordConfirmation: string;
+};
+type AddMemberFormField = keyof AddMemberForm;
+type AddMemberErrors = Partial<Record<AddMemberFormField, string>>;
+
+const EMPTY_ADD_MEMBER_FORM: AddMemberForm = {
+  firstName: "",
+  lastName: "",
+  dateOfBirth: "",
+  gender: "Female",
+  email: "",
+  phone: "",
+  stateOfResidence: "",
+  residentialAddress: "",
+  howHeardAboutUs: "",
+  referredBy: "",
+  nextOfKinName: "",
+  nextOfKinRelationship: "",
+  nextOfKinPhone: "",
+  password: "",
+  passwordConfirmation: "",
+};
+
+const GENDER_OPTIONS: NewAdminMemberInput["gender"][] = [
+  "Female",
+  "Male",
+  "Other",
+];
+const RELATIONSHIP_OPTIONS = [
+  "Spouse",
+  "Parent",
+  "Sibling",
+  "Child",
+  "Relative",
+  "Friend",
+  "Other",
+] as const;
+
+/** API field names → the names used by the Add member form. */
+const ADD_MEMBER_API_FIELDS: Record<string, AddMemberFormField> = {
+  first_name: "firstName",
+  last_name: "lastName",
+  dob: "dateOfBirth",
+  date_of_birth: "dateOfBirth",
+  gender: "gender",
+  email: "email",
+  phone: "phone",
+  state_of_residence: "stateOfResidence",
+  residential_address: "residentialAddress",
+  address: "residentialAddress",
+  how_heard_about_us: "howHeardAboutUs",
+  referred_by: "referredBy",
+  next_of_kin_name: "nextOfKinName",
+  next_of_kin_relationship: "nextOfKinRelationship",
+  relationship: "nextOfKinRelationship",
+  next_of_kin_phone: "nextOfKinPhone",
+  password: "password",
+  password_confirmation: "passwordConfirmation",
+};
+
+function validateAddMember(form: AddMemberForm): AddMemberErrors {
+  const errors: AddMemberErrors = {};
+  if (!form.firstName.trim()) errors.firstName = "Enter the first name.";
+  if (!form.lastName.trim()) errors.lastName = "Enter the last name.";
+
+  const dob = new Date(form.dateOfBirth);
+  if (!form.dateOfBirth || Number.isNaN(dob.getTime())) {
+    errors.dateOfBirth = "Enter a valid date of birth.";
+  } else if (form.dateOfBirth > new Date().toISOString().slice(0, 10)) {
+    errors.dateOfBirth = "Date of birth cannot be in the future.";
+  } else if (ageOn(form.dateOfBirth, new Date()) < MIN_AGE) {
+    errors.dateOfBirth = `Must be ${MIN_AGE} or older.`;
+  }
+
+  if (!form.gender) errors.gender = "Select a gender.";
+  if (!isEmail(form.email)) errors.email = "Enter a valid email address.";
+  if (form.phone.trim() && !isPhone(form.phone))
+    errors.phone = "Enter an 11-digit phone number.";
+  if (!(NG_STATES as readonly string[]).includes(form.stateOfResidence))
+    errors.stateOfResidence = "Select a state of residence.";
+  if (form.residentialAddress.trim().length < 5)
+    errors.residentialAddress = "Enter the residential address.";
+  if (!(HEARD_OPTIONS as readonly string[]).includes(form.howHeardAboutUs))
+    errors.howHeardAboutUs = "Select how you heard about us.";
+  if (
+    form.howHeardAboutUs === REFERRAL_OPTION &&
+    !form.referredBy.trim()
+  )
+    errors.referredBy = "Enter the referring member’s ID or phone number.";
+
+  if (!form.nextOfKinName.trim())
+    errors.nextOfKinName = "Enter the next of kin’s name.";
+  if (!form.nextOfKinRelationship)
+    errors.nextOfKinRelationship = "Select a relationship.";
+  if (!isPhone(form.nextOfKinPhone))
+    errors.nextOfKinPhone = "Enter an 11-digit phone number.";
+  if (!isStrongPassword(form.password))
+    errors.password =
+      "Use at least 8 characters with upper and lower case letters and a number.";
+  if (form.password !== form.passwordConfirmation)
+    errors.passwordConfirmation = "Passwords do not match.";
+  return errors;
+}
+
+/** Converts API validation messages into inline form errors. */
+function mapAddMemberErrors(
+  fields: Record<string, string[]>,
+): AddMemberErrors {
+  const errors: AddMemberErrors = {};
+  for (const [apiField, messages] of Object.entries(fields)) {
+    const field = ADD_MEMBER_API_FIELDS[apiField];
+    if (!field) continue;
+    const message = (Array.isArray(messages) ? messages : [messages])
+      .filter(Boolean)
+      .join(" ");
+    if (!message) continue;
+    errors[field] = errors[field]
+      ? `${errors[field]} ${message}`
+      : message;
+  }
+  return errors;
+}
+
+/** ADM-04/05: tabs, filters and the Add member modal for `POST /admin/members`. */
 export function MembersPage() {
   const { repos } = useServices();
   const toast = useToast();
@@ -87,6 +241,13 @@ export function MembersPage() {
     MemberQuery["tab"],
     number
   > | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState<AddMemberForm>(
+    EMPTY_ADD_MEMBER_FORM,
+  );
+  const [addErrors, setAddErrors] = useState<AddMemberErrors>({});
+  const [addFormError, setAddFormError] = useState<string | null>(null);
+  const [savingMember, setSavingMember] = useState(false);
   useEffect(() => {
     let live = true;
     setLoading(true);
@@ -113,6 +274,85 @@ export function MembersPage() {
   /** Any filter change starts again from the first page. */
   const updateQuery = (patch: Partial<MemberQuery>) =>
     setQ((prev) => ({ ...prev, ...patch, page: 1 }));
+
+  const openAddMember = () => {
+    setAddForm(EMPTY_ADD_MEMBER_FORM);
+    setAddErrors({});
+    setAddFormError(null);
+    setAddOpen(true);
+  };
+  const closeAddMember = () => {
+    if (savingMember) return;
+    setAddOpen(false);
+    setAddForm(EMPTY_ADD_MEMBER_FORM);
+    setAddErrors({});
+    setAddFormError(null);
+  };
+  const refreshAfterAdd = async () => {
+    const [page, nextCounts] = await Promise.all([
+      repos.admin.listMembers(q),
+      repos.admin.countMembers(),
+    ]);
+    setRows(page.data);
+    setMeta(page.meta);
+    setCounts(nextCounts);
+  };
+  const saveMember = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (typeof repos.admin.addMember !== "function") {
+      toast("The app is running stale code. Refresh the page and try again.");
+      return;
+    }
+    const nextErrors = validateAddMember(addForm);
+    if (Object.keys(nextErrors).length > 0) {
+      setAddErrors(nextErrors);
+      setAddFormError("Check the highlighted fields.");
+      return;
+    }
+    setSavingMember(true);
+    setAddFormError(null);
+    try {
+      const created = await repos.admin.addMember({
+        firstName: addForm.firstName.trim(),
+        lastName: addForm.lastName.trim(),
+        dateOfBirth: addForm.dateOfBirth,
+        gender: addForm.gender,
+        email: addForm.email.trim(),
+        phone: addForm.phone.trim() || undefined,
+        stateOfResidence: addForm.stateOfResidence,
+        residentialAddress: addForm.residentialAddress.trim(),
+        howHeardAboutUs: addForm.howHeardAboutUs,
+        nextOfKinName: addForm.nextOfKinName.trim(),
+        nextOfKinRelationship: addForm.nextOfKinRelationship,
+        nextOfKinPhone: addForm.nextOfKinPhone.trim(),
+        password: addForm.password,
+        referredBy: addForm.referredBy.trim() || null,
+      });
+      setAddOpen(false);
+      setAddForm(EMPTY_ADD_MEMBER_FORM);
+      setAddErrors({});
+      void refreshAfterAdd().catch(() => {});
+      toast(created.message || `${created.name} added.`);
+      if (created.id) navigate(paths.admin.member(created.id));
+    } catch (error) {
+      if (error instanceof ValidationError) {
+        setAddErrors((prev) => ({
+          ...prev,
+          ...mapAddMemberErrors(error.fields),
+        }));
+        setAddFormError(error.message);
+        toast(error.message);
+      } else {
+        const message =
+          error instanceof Error ? error.message : "Could not add the member.";
+        setAddFormError(message);
+        toast(message);
+      }
+    } finally {
+      setSavingMember(false);
+    }
+  };
+
   const firstRow =
     meta.total === 0 ? 0 : (meta.current_page - 1) * meta.per_page + 1;
   const lastRow = meta.total === 0 ? 0 : firstRow + rows.length - 1;
@@ -192,7 +432,7 @@ export function MembersPage() {
             <Button
               size="md"
               icon={<Plus size={18} />}
-              onClick={() => toast("Add member: build modal per ADM-05")}
+              onClick={openAddMember}
             >
               Add member
             </Button>
@@ -430,6 +670,248 @@ export function MembersPage() {
           )}
         </div>
       </div>
+
+      <Modal
+        open={addOpen}
+        title="Add member"
+        onClose={closeAddMember}
+        wide
+        footer={
+          <>
+            <Button
+              variant="outline"
+              disabled={savingMember}
+              onClick={closeAddMember}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="add-member-form"
+              disabled={savingMember}
+              icon={
+                savingMember ? (
+                  <LoaderCircle className="animate-spin" size={16} />
+                ) : undefined
+              }
+            >
+              {savingMember ? "Adding member…" : "Add member"}
+            </Button>
+          </>
+        }
+      >
+        <form
+          id="add-member-form"
+          className="flex flex-col gap-3.5"
+          onSubmit={saveMember}
+        >
+          <p className="text-sm leading-relaxed text-mute">
+            Onboard a member directly. They’ll get a login invite and complete
+            the payout and baseline setup when they first log in.
+          </p>
+          {addFormError && <Banner tone="fail">{addFormError}</Banner>}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField
+              label="First name"
+              autoComplete="given-name"
+              value={addForm.firstName}
+              error={addErrors.firstName}
+              onChange={(e) =>
+                setAddForm((prev) => ({ ...prev, firstName: e.target.value }))
+              }
+            />
+            <TextField
+              label="Last name"
+              autoComplete="family-name"
+              value={addForm.lastName}
+              error={addErrors.lastName}
+              onChange={(e) =>
+                setAddForm((prev) => ({ ...prev, lastName: e.target.value }))
+              }
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <TextField
+              label="Date of birth"
+              type="date"
+              autoComplete="bday"
+              max={new Date().toISOString().slice(0, 10)}
+              value={addForm.dateOfBirth}
+              error={addErrors.dateOfBirth}
+              onChange={(e) =>
+                setAddForm((prev) => ({
+                  ...prev,
+                  dateOfBirth: e.target.value,
+                }))
+              }
+            />
+            <SelectField
+              label="Gender"
+              options={GENDER_OPTIONS}
+              value={addForm.gender}
+              error={addErrors.gender}
+              onChange={(e) =>
+                setAddForm((prev) => ({
+                  ...prev,
+                  gender: e.target.value as NewAdminMemberInput["gender"],
+                }))
+              }
+            />
+            <TextField
+              label="Phone number"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              optional
+              placeholder="08012345678"
+              value={addForm.phone}
+              error={addErrors.phone}
+              onChange={(e) =>
+                setAddForm((prev) => ({ ...prev, phone: e.target.value }))
+              }
+            />
+          </div>
+
+          <TextField
+            label="Email"
+            type="email"
+            autoComplete="email"
+            placeholder="john.doe@example.com"
+            value={addForm.email}
+            error={addErrors.email}
+            onChange={(e) =>
+              setAddForm((prev) => ({ ...prev, email: e.target.value }))
+            }
+          />
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SelectField
+              label="State of residence"
+              options={NG_STATES}
+              placeholder="Select state"
+              value={addForm.stateOfResidence}
+              error={addErrors.stateOfResidence}
+              onChange={(e) =>
+                setAddForm((prev) => ({
+                  ...prev,
+                  stateOfResidence: e.target.value,
+                }))
+              }
+            />
+            <TextField
+              label="Residential address"
+              autoComplete="street-address"
+              placeholder="12 Example Street, Lekki"
+              value={addForm.residentialAddress}
+              error={addErrors.residentialAddress}
+              onChange={(e) =>
+                setAddForm((prev) => ({
+                  ...prev,
+                  residentialAddress: e.target.value,
+                }))
+              }
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SelectField
+              label="How heard about us"
+              options={HEARD_OPTIONS}
+              placeholder="Select an option"
+              value={addForm.howHeardAboutUs}
+              error={addErrors.howHeardAboutUs}
+              onChange={(e) =>
+                setAddForm((prev) => ({
+                  ...prev,
+                  howHeardAboutUs: e.target.value,
+                }))
+              }
+            />
+            <TextField
+              label="Referred by"
+              optional
+              placeholder="Member ID or phone number"
+              value={addForm.referredBy}
+              error={addErrors.referredBy}
+              onChange={(e) =>
+                setAddForm((prev) => ({ ...prev, referredBy: e.target.value }))
+              }
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <TextField
+              label="Next of kin name"
+              autoComplete="off"
+              placeholder="Jane Doe"
+              value={addForm.nextOfKinName}
+              error={addErrors.nextOfKinName}
+              onChange={(e) =>
+                setAddForm((prev) => ({
+                  ...prev,
+                  nextOfKinName: e.target.value,
+                }))
+              }
+            />
+            <SelectField
+              label="Relationship"
+              options={RELATIONSHIP_OPTIONS}
+              placeholder="Select relationship"
+              value={addForm.nextOfKinRelationship}
+              error={addErrors.nextOfKinRelationship}
+              onChange={(e) =>
+                setAddForm((prev) => ({
+                  ...prev,
+                  nextOfKinRelationship: e.target.value,
+                }))
+              }
+            />
+            <TextField
+              label="Next of kin phone"
+              type="tel"
+              inputMode="tel"
+              placeholder="08087654321"
+              value={addForm.nextOfKinPhone}
+              error={addErrors.nextOfKinPhone}
+              onChange={(e) =>
+                setAddForm((prev) => ({
+                  ...prev,
+                  nextOfKinPhone: e.target.value,
+                }))
+              }
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField
+              label="Password"
+              type="password"
+              autoComplete="new-password"
+              hint="At least 8 characters, with upper and lower case letters and a number."
+              value={addForm.password}
+              error={addErrors.password}
+              onChange={(e) =>
+                setAddForm((prev) => ({ ...prev, password: e.target.value }))
+              }
+            />
+            <TextField
+              label="Confirm password"
+              type="password"
+              autoComplete="new-password"
+              value={addForm.passwordConfirmation}
+              error={addErrors.passwordConfirmation}
+              onChange={(e) =>
+                setAddForm((prev) => ({
+                  ...prev,
+                  passwordConfirmation: e.target.value,
+                }))
+              }
+            />
+          </div>
+        </form>
+      </Modal>
     </>
   );
 }
