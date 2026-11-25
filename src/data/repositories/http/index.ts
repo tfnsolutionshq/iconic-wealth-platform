@@ -85,11 +85,13 @@ import type {
   AuthRepository,
   ChangeField,
   ContributionIntent,
+  CreatedAdminMember,
   ContributionRepository,
   InterestRulesInput,
   MemberQuery,
   MemberListPage,
   MemberRepository,
+  NewAdminMemberInput,
   NewRegistration,
   NotificationListPage,
   NotificationQuery,
@@ -3825,6 +3827,63 @@ export class HttpAdminRepository implements AdminRepository {
         Forfeited: 0,
       }
     );
+  }
+  async addMember(input: NewAdminMemberInput): Promise<CreatedAdminMember> {
+    const phone = input.phone?.trim();
+    const referredBy = input.referredBy?.trim();
+    try {
+      const payload = await this.http.post<ApiEnvelope<unknown> | unknown>(
+        "/admin/members",
+        {
+          first_name: input.firstName.trim(),
+          last_name: input.lastName.trim(),
+          dob: input.dateOfBirth,
+          gender: input.gender.toLowerCase(),
+          email: input.email.trim(),
+          ...(phone ? { phone } : {}),
+          state_of_residence: input.stateOfResidence,
+          residential_address: input.residentialAddress.trim(),
+          how_heard_about_us: input.howHeardAboutUs,
+          next_of_kin_name: input.nextOfKinName.trim(),
+          next_of_kin_relationship: input.nextOfKinRelationship,
+          next_of_kin_phone: input.nextOfKinPhone.trim(),
+          password: input.password,
+          password_confirmation: input.password,
+          referred_by: referredBy || null,
+        },
+      );
+      const record = asRecord(unwrapData<unknown>(payload));
+      const member = asRecord(record.member ?? record.data);
+      const user = asRecord(member.user ?? record.user);
+      const id =
+        readString(
+          record.member_id,
+          record.memberId,
+          record.id,
+          member.member_id,
+          member.memberId,
+          member.id,
+          user.member_id,
+          user.id,
+        ) ?? "";
+      const name =
+        readString(
+          record.full_name,
+          record.name,
+          member.full_name,
+          member.name,
+          user.full_name,
+          `${input.firstName.trim()} ${input.lastName.trim()}`,
+        ) ?? input.email.trim();
+      const envelope = asRecord(payload);
+      return {
+        id,
+        name,
+        message: readString(envelope.message),
+      };
+    } catch (error) {
+      rethrowWithFieldErrors(error);
+    }
   }
   listRegistrations() {
     return this.http.get<Registration[]>("/admin/registrations");

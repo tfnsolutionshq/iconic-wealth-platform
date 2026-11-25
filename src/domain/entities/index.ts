@@ -77,11 +77,14 @@ export interface Bank {
   code: string;
 }
 
+/** Gender values accepted by the members API. */
+export type MemberGender = "Female" | "Male" | "Other";
+
 export interface Member {
   id: MemberId;
   firstName: string;
   lastName: string;
-  gender: "Female";
+  gender: MemberGender;
   dateOfBirth: string; // ISO date
   email: string;
   phone: string;
@@ -269,7 +272,7 @@ export interface Registration {
   id: string;
   firstName: string;
   lastName: string;
-  gender: "Female";
+  gender: MemberGender;
   dateOfBirth: string;
   email: string;
   phone: string;
