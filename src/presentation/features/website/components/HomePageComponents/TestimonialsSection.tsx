@@ -11,7 +11,10 @@ export function TestimonialsSection() {
   const { repos } = useServices();
   const [items, setItems] = useState<Testimonial[]>([]);
   useEffect(() => {
-    repos.testimonials.listPublished().then(setItems);
+    repos.testimonials
+      .listPublished()
+      .then(setItems)
+      .catch(() => setItems([]));
   }, [repos]);
   if (!items.length) return null;
   const scroll = items.length > 3;
@@ -28,7 +31,7 @@ export function TestimonialsSection() {
       {scroll ? (
         <Marquee items={items} />
       ) : (
-        <div className="grid gap-3.5 md:grid-cols-3">
+        <div className="grid items-start gap-3.5 md:grid-cols-3">
           {items.map((t) => (
             <Card key={t.id} t={t} />
           ))}
@@ -39,23 +42,35 @@ export function TestimonialsSection() {
 }
 
 function Card({ t, hidden }: { t: Testimonial; hidden?: boolean }) {
+  const initials = t.name
+    .split(" ")
+    .filter(Boolean)
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
     <figure
       aria-hidden={hidden || undefined}
       tabIndex={hidden ? -1 : 0}
-      className="flex w-70 shrink-0 flex-col gap-3 rounded-card border border-line bg-white p-5.5 transition duration-300 hover:-translate-y-1.5 hover:shadow-lift md:w-90 md:shrink md:in-[.grid_&]:w-auto"
+      className="flex w-70 shrink-0 flex-col gap-3 rounded-card border border-line bg-white p-5.5 transition duration-300 hover:-translate-y-1.5 hover:shadow-lift focus-visible:-translate-y-1.5 focus-visible:shadow-lift md:w-90 md:shrink md:in-[.grid_&]:w-auto"
     >
-      <span className="font-display text-5xl leading-[.5] text-gold">“</span>
-      <q className="font-display text-[17.5px] leading-snug">{t.quote}</q>
+      <span
+        aria-hidden="true"
+        className="h-4.5 font-display text-[48px] leading-[0.5] text-gold select-none"
+      >
+        “
+      </span>
+      <q className="font-display text-[17.5px] leading-[1.45] text-ink">
+        {t.quote}
+      </q>
       <figcaption className="mt-auto flex items-center gap-3">
-        <span className="flex size-9 items-center justify-center rounded-full bg-[#e4d7fb] text-xs font-extrabold text-[#3b1580]">
-          {t.name
-            .split(" ")
-            .map((n) => n[0])
-            .join("")}
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#e4d7fb] text-xs font-extrabold text-[#3b1580]">
+          {initials}
         </span>
         <span className="flex flex-col">
-          <b className="text-sm">{t.name}</b>
+          <b className="text-sm text-ink">{t.name}</b>
           <span className="text-xs font-semibold text-mute">
             {t.descriptor}
           </span>
@@ -70,7 +85,7 @@ function Marquee({ items }: { items: Testimonial[] }) {
   const reduce = useReducedMotion();
   if (reduce)
     return (
-      <div className="flex snap-x gap-3.5 overflow-x-auto pb-2">
+      <div className="flex snap-x items-start gap-3.5 overflow-x-auto pb-2">
         {items.map((t) => (
           <div key={t.id} className="snap-start">
             <Card t={t} />
@@ -84,7 +99,7 @@ function Marquee({ items }: { items: Testimonial[] }) {
       className="testimonial-marquee overflow-hidden py-2.5 mask-[linear-gradient(90deg,transparent,#000_5%,#000_95%,transparent)]"
     >
       <div
-        className="testimonial-track flex w-max gap-3.5 pr-3.5"
+        className="testimonial-track flex w-max items-start gap-3.5 pr-3.5"
         style={{ animationDuration: `${items.length * 8}s` }}
       >
         {[...items, ...items].map((t, k) => (
