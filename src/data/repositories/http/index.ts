@@ -3351,12 +3351,15 @@ export class HttpSettingsRepository implements SettingsRepository {
 interface ApiTestimonial {
   id?: string;
   name?: string;
+  student_name?: string;
   descriptor?: string;
+  programme_label?: string;
   content?: string;
   quote?: string;
   agreed_to_appear?: boolean;
   status?: string;
   order?: number;
+  sort_order?: number;
   published_at?: string | null;
   created_by?: {
     id?: string;
@@ -3367,13 +3370,23 @@ interface ApiTestimonial {
 
 function mapTestimonial(t: ApiTestimonial, index = 0): Testimonial {
   const statusLower = (t.status ?? "").toLowerCase();
+  const status: Testimonial["status"] = t.status
+    ? statusLower === "published"
+      ? "Published"
+      : "Draft"
+    : "Published";
   return {
     id: t.id ?? "",
-    name: t.name ?? "",
-    descriptor: t.descriptor ?? "",
+    name: t.name ?? t.student_name ?? "",
+    descriptor: t.descriptor ?? t.programme_label ?? "",
     quote: t.content ?? t.quote ?? "",
-    status: statusLower === "published" ? "Published" : "Draft",
-    order: typeof t.order === "number" ? t.order : index + 1,
+    status,
+    order:
+      typeof t.order === "number"
+        ? t.order
+        : typeof t.sort_order === "number"
+          ? t.sort_order
+          : index + 1,
     agreedToAppear: t.agreed_to_appear,
     publishedAt: t.published_at ?? null,
     createdAt: t.created_at,
@@ -3383,17 +3396,32 @@ function mapTestimonial(t: ApiTestimonial, index = 0): Testimonial {
 
 export class HttpTestimonialRepository implements TestimonialRepository {
   constructor(private readonly http: HttpClient) {}
-  async listPublished() {
-    const payload = await this.http.get<ApiEnvelope<Testimonial[]> | Testimonial[]>(
-      "/content/testimonials?status=Published",
-    );
-    return unwrapData(payload) ?? [];
+  async listPublished(): Promise<Testimonial[]> {
+    try {
+      const payload = await this.http.get<
+        ApiEnvelope<ApiTestimonial[]> | ApiTestimonial[]
+      >("/testimonials");
+      const raw = unwrapData(payload) ?? [];
+      if (!Array.isArray(raw)) return [];
+      return raw
+        .map((t, i) => mapTestimonial(t, i))
+        .filter((t) => t.status === "Published");
+    } catch {
+      try {
+        const payload = await this.http.get<
+          ApiEnvelope<ApiTestimonial[]> | ApiTestimonial[]
+        >("/admin/testimonials?status=published");
+        const raw = unwrapData(payload) ?? [];
+        if (!Array.isArray(raw)) return [];
+        return raw.map((t, i) => mapTestimonial(t, i));
+      } catch {
+        return [];
+      }
+    }
   }
-  async listAll() {
-    const payload = await this.http.get<ApiEnvelope<Testimonial[]> | Testimonial[]>(
-      "/content/testimonials",
-    );
-    return unwrapData(payload) ?? [];
+  async listAll(query: TestimonialQuery = {}): Promise<Testimonial[]> {
+    const page = await this.listAllPage(query);
+    return page.data;
   }
 
   async listAllPage(
